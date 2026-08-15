@@ -1,0 +1,76 @@
+# ═══════════════════════════════════════════
+# Harness CD 模板：SSH 部署 → 健康检查 → 失败自动回滚
+# 在 Harness UI 导入后需替换占位符 secrets 引用
+# ═══════════════════════════════════════════
+name: neuops-cd
+identifier: neuops_cd
+projectIdentifier: neuops
+orgIdentifier: devops
+tags: {}
+
+stages:
+  - stage:
+      name: Deploy to Server
+      identifier: deploy_server
+      type: Deployment
+      spec:
+        service:
+          serviceRef: neuops_service
+        environment:
+          environmentRef: production
+          infrastructureDefinitions:
+            - identifier: ssh_target
+              type: Ssh
+              spec:
+                sshKeyRef: $<+secrets.getValue("ssh_key")>
+                hosts:
+                  - host: $<+secrets.getValue("ssh_host")>
+                    hostName: $<+secrets.getValue("ssh_host")>
+        execution:
+          steps:
+            - step:
+                type: ShellScript
+                name: Pull & Start
+                identifier: pull_start
+                spec:
+                  shell: Bash
+                  executionTarget: {}
+                  source:
+                    type: Inline
+                    spec:
+                      script: |-
+                        set -e
+                        PREV_TAG=$(cat /home/ubuntu/neuops/CURRENT_TAG 2>/dev/null || echo none)
+                        echo "$<+secrets.getValue("docker_password")>" | docker login \
+                          "$<+secrets.getValue("docker_registry")>" -u "$<+secrets.getValue("docker_username")>" --password-stdin
+                        docker pull "$<+secrets.getValue("docker_registry")>:latest"
+                        cd /home/ubuntu/neuops && docker compose down || true
+                        docker compose up -d
+                        echo latest > /home/ubuntu/neuops/CURRENT_TAG
+                        echo "$PREV_TAG" > /home/ubuntu/neuops/PREV_TAG
+            - step:
+                type: ShellScript
+                name: Health Check
+                identifier: health_check
+                spec:
+                  shell: Bash
+                  executionTarget: {}
+                  source:
+                    type: Inline
+                    spec:
+                      script: |-
+                        for i in $(seq 1 20); do
+                          if curl -fsS -m 3 http://127.0.0.1:9007/api/ops/overview >/dev/null 2>&1; then
+                            echo "healthy after ${i}x3s"; exit 0
+                          fi
+                          sleep 3
+                        done
+                        echo "health check failed, rolling back"
+                        PREV=$(cat /home/ubuntu/neuops/PREV_TAG 2>/dev/null || echo none)
+                        if [ "$PREV" != "none" ]; then
+                          cd /home/ubuntu/neuops && docker compose down || true
+                          docker compose up -d   # 使用上一个可用镜像
+                          sleep 20
+                          curl -fsS -m 3 http://127.0.0.1:9007/api/ops/overview >/dev/null 2>&1 || echo "rollback failed, manual intervention"
+                        fi
+                        exit 1

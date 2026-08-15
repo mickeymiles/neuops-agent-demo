@@ -1,0 +1,37 @@
+# ═══════════════════════════════════════════
+# NeuOps Agent 运维监控平台 docker-compose
+# network_mode: host → 容器直接共享宿主机网络，
+# 可访问 127.0.0.1:9006（contract-compare）等本机服务，
+# psutil/docker/ss 等真实采集也依赖宿主机视角。
+# ═══════════════════════════════════════════
+services:
+  neuops:
+    build: .
+    container_name: neuops-ops
+    network_mode: host            # 关键：访问 9006 与真实采集宿主指标
+    restart: unless-stopped
+    environment:
+      - PORT=9007
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - APP_9006_ROOT=/home/ubuntu/contract-compare
+    volumes:
+      - neuops-data:/srv/neuops/data
+      - neuops-chroma:/srv/neuops/chroma_data
+      - neuops-uploads:/srv/neuops/uploads
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # 容器采集（可选）
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9007/api/ops/overview"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  neuops-data:
+  neuops-chroma:
+  neuops-uploads:

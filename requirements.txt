@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+httpx
+python-multipart
+openpyxl
+pypdf
+python-docx
+chromadb
+fastembed
+psutil>=5.9.0
+requests>=2.31.0

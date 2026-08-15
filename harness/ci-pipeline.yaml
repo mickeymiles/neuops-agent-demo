@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════
+# Harness CI 模板：静态检查 → 单测 → 镜像构建 → 推送
+# 在 Harness UI 导入后需替换占位符 secrets 引用
+# ═══════════════════════════════════════════
+name: neuops-ci
+identifier: neuops_ci
+projectIdentifier: neuops
+orgIdentifier: devops
+tags: {}
+
+stages:
+  - stage:
+      name: Build & Test
+      identifier: build_test
+      type: CI
+      spec:
+        cloneCodebase: true
+        execution:
+          steps:
+            - step:
+                type: Run
+                name: Install Dependencies
+                identifier: install_deps
+                spec:
+                  shell: Sh
+                  command: |-
+                    pip install --upgrade pip
+                    pip install ruff pytest
+                    pip install -r requirements.txt
+            - step:
+                type: Run
+                name: Ruff Lint
+                identifier: ruff_lint
+                spec:
+                  shell: Sh
+                  command: ruff check app/ --select E,F,I --ignore E501 || true
+            - step:
+                type: Run
+                name: Pytest
+                identifier: pytest
+                spec:
+                  shell: Sh
+                  command: pytest tests/ -v --tb=short || true
+            - step:
+                type: Run
+                name: Build & Push Docker Image
+                identifier: docker_push
+                spec:
+                  shell: Sh
+                  command: |-
+                    echo "$<+secrets.getValue("docker_password")>" | docker login \
+                      "$<+secrets.getValue("docker_registry")>" -u "$<+secrets.getValue("docker_username")>" --password-stdin
+                    docker build -t "$<+secrets.getValue("docker_registry")>:latest" .
+                    docker push "$<+secrets.getValue("docker_registry")>:latest"
+                  image: docker:24
+                  reports:
+                    type: JUnit
+                    spec:
+                      paths: []

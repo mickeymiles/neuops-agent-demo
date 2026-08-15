@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeuOps · 会话分享</title>
+<style>
+  :root {
+    --c-bg: #0B1121;
+    --c-panel: #111A2C;
+    --c-panel-2: #1E2A44;
+    --c-border: rgba(99,102,241,0.22);
+    --c-primary: #0EA5E9;
+    --c-primary-2: #6366F1;
+    --c-text: #E6EDF7;
+    --c-text-2: #9AA4BF;
+    --c-text-3: #5B6A91;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background:
+      radial-gradient(1200px 600px at 20% -10%, rgba(99,102,241,0.16), transparent 60%),
+      radial-gradient(1000px 500px at 90% 110%, rgba(14,165,233,0.13), transparent 60%),
+      var(--c-bg);
+    color: var(--c-text);
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 40px 16px 60px;
+  }
+  .wrap { width: 100%; max-width: 860px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; font-size: 15px; font-weight: 600; letter-spacing: .5px; }
+  .brand .logo {
+    width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--c-primary), var(--c-primary-2));
+    display: flex; align-items: center; justify-content: center; font-size: 15px; color: #fff;
+    box-shadow: 0 4px 16px rgba(14,165,233,0.35);
+  }
+  .brand .sub { font-size: 12px; color: var(--c-text-3); font-weight: 400; margin-left: auto; }
+  .hero {
+    background: linear-gradient(160deg, rgba(99,102,241,0.14), rgba(14,165,233,0.06));
+    border: 1px solid var(--c-border);
+    border-radius: 16px;
+    padding: 26px 28px; margin-bottom: 20px;
+    backdrop-filter: blur(10px);
+  }
+  .hero .tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--c-primary);
+    background: rgba(14,165,233,0.12); border: 1px solid rgba(14,165,233,0.3);
+    padding: 4px 10px; border-radius: 20px; margin-bottom: 12px;
+  }
+  .hero h1 { font-size: 22px; font-weight: 700; line-height: 1.5; margin-bottom: 8px; }
+  .hero .meta { font-size: 13px; color: var(--c-text-2); }
+  .msg {
+    background: var(--c-panel);
+    border: 1px solid rgba(91,106,145,0.2);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 12px;
+  }
+  .msg.user { background: rgba(14,165,233,0.07); border-color: rgba(14,165,233,0.25); }
+  .msg .role { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--c-text-3); margin-bottom: 10px; }
+  .msg.user .role { color: var(--c-primary); }
+  .msg .role .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-primary-2); }
+  .msg.user .role .dot { background: var(--c-primary); }
+  .msg .content { font-size: 14px; line-height: 1.75; color: var(--c-text); white-space: pre-wrap; word-break: break-word; }
+  .msg .content h1,.msg .content h2,.msg .content h3 { margin: 12px 0 8px; font-size: 16px; }
+  .msg .content table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+  .msg .content th,.msg .content td { border: 1px solid rgba(91,106,145,0.35); padding: 6px 10px; text-align: left; }
+  .msg .content th { background: rgba(99,102,241,0.12); }
+  .msg .content code { background: rgba(91,106,145,0.25); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  .empty {
+    text-align: center; color: var(--c-text-3); padding: 60px 0; font-size: 14px;
+  }
+  .footer { text-align: center; font-size: 12px; color: var(--c-text-3); margin-top: 30px; }
+  .loading { text-align: center; color: var(--c-text-2); padding: 60px 0; }
+  @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+  .loading { animation: pulse 1.4s ease-in-out infinite; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="logo">N</div>
+    <span>NeuOps Agent</span>
+    <span class="sub">分享快照 · 只读</span>
+  </div>
+  <div id="hero" class="hero">
+    <span class="tag">● 会话分享</span>
+    <h1 id="title">加载中...</h1>
+    <div class="meta" id="meta"></div>
+  </div>
+  <div id="list"></div>
+  <div class="footer">本页面为 NeuOps Agent 平台生成的会话只读快照，内容由数字员工自动生成，仅供参考。</div>
+</div>
+
+<script>
+const ESC = (s) => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  let t = ESC(text);
+  t = t.replace(/```([\s\S]*?)```/g, '<pre style="background:rgba(91,106,145,.15);padding:12px;border-radius:8px;font-size:13px;overflow:auto;margin:8px 0;"><code>$1</code></pre>');
+  t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // 表格
+  t = t.replace(/((?:\|.*\|(?:\r?\n|$))+)/g, (m) => {
+    const rows = m.trim().split(/\r?\n/).filter(r => r.includes('|'));
+    if (!rows.length) return m;
+    const cells = rows.map(r => r.split('|').slice(1, -1).map(c => c.trim()));
+    if (cells[1] && cells[1].every(c => /^:?-{2,}:?$/.test(c))) cells.splice(1, 1);
+    if (!cells.length) return m;
+    return '<table>' + cells.map((row, i) =>
+      '<tr>' + row.map(c => (i === 0 ? '<th>' : '<td>') + c + (i === 0 ? '</th>' : '</td>')).join('') + '</tr>'
+    ).join('') + '</table>';
+  });
+  t = t.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  t = t.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  t = t.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  t = t.replace(/^- (.+)$/gm, '• $1');
+  t = t.replace(/\n/g, '<br>');
+  return t;
+}
+
+async function load() {
+  const shareId = location.hash.replace(/^#/, '');
+  const titleEl = document.getElementById('title');
+  const metaEl = document.getElementById('meta');
+  const listEl = document.getElementById('list');
+  if (!shareId) {
+    titleEl.textContent = '无效的分享链接';
+    listEl.innerHTML = '<div class="empty">请在 NeuOps Agent 平台通过「分享」生成链接后访问。</div>';
+    return;
+  }
+  try {
+    const r = await fetch('/api/share/' + encodeURIComponent(shareId)).then(x => x.json());
+    if (!r.success) throw new Error(r.error || '分享不存在');
+    const c = r.conversation;
+    titleEl.textContent = c.title || '未命名会话';
+    metaEl.textContent = '会话 ID：' + (c.conversation_id || '-') + ' · 消息 ' + (c.messages || []).length + ' 条';
+    if (!c.messages || !c.messages.length) {
+      listEl.innerHTML = '<div class="empty">该会话暂无消息内容。</div>';
+      return;
+    }
+    listEl.innerHTML = c.messages.map(m => {
+      const isUser = m.role === 'user';
+      return `<div class="msg ${isUser ? 'user' : ''}">
+        <div class="role"><span class="dot"></span>${isUser ? '你' : 'NeuOps 数字员工'}</div>
+        <div class="content">${isUser ? ESC(m.content || '') : renderMarkdown(m.conclusion || m.content || '')}</div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    titleEl.textContent = '分享不存在或已失效';
+    listEl.innerHTML = '<div class="empty">' + ESC(e.message || '无法加载分享内容') + '</div>';
+  }
+}
+load();
+</script>
+</body>
+</html>

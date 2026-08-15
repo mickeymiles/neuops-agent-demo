@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeuOps 一体化运维监控平台</title>
+<link rel="stylesheet" href="/static/ops.css">
+<script src="/static/vendor/echarts.min.js"></script>
+</head>
+<body>
+
+<div class="loading-bar" id="loadingBar"></div>
+
+<!-- ═══ 顶栏 ═══ -->
+<header class="topbar">
+  <div class="logo">⚙</div>
+  <div class="brand">
+    <h1>NeuOps 运维监控平台</h1>
+    <div class="sub">基于本体的一体化实时监控 · 统一探针采集 · 全自动自愈</div>
+  </div>
+  <div class="right">
+    <div class="status-pill" id="probePill"><span class="dot off"></span><span>探针连接中…</span></div>
+    <div class="status-pill" id="timePill"><span class="dot green"></span><span id="clock">--:--:--</span></div>
+    <div class="heal-switch" title="全自动自愈开关">
+      <span>自愈</span>
+      <div class="switch" id="healSwitch" onclick="toggleHeal()"></div>
+    </div>
+    <button class="btn" onclick="runProbeNow()">⟳ 立即采集</button>
+    <button class="btn primary" onclick="switchTab('settings')">⚙ 配置中心</button>
+  </div>
+</header>
+
+<!-- ═══ Tab 导航 ═══ -->
+<nav class="navtabs" id="navtabs">
+  <button class="navtab active" data-tab="overview" onclick="switchTab('overview')">📊 总览</button>
+  <button class="navtab" data-tab="server" onclick="switchTab('server')">🖥 服务器 <span class="cnt" id="cnt-server">0</span></button>
+  <button class="navtab" data-tab="database" onclick="switchTab('database')">🗄 数据库 <span class="cnt" id="cnt-database">0</span></button>
+  <button class="navtab" data-tab="network" onclick="switchTab('network')">🌐 网络 <span class="cnt" id="cnt-network">0</span></button>
+  <button class="navtab" data-tab="container" onclick="switchTab('container')">📦 容器 <span class="cnt" id="cnt-container">0</span></button>
+  <button class="navtab" data-tab="middleware" onclick="switchTab('middleware')">🧩 中间件 <span class="cnt" id="cnt-middleware">0</span></button>
+  <button class="navtab" data-tab="application" onclick="switchTab('application')">🚀 应用 <span class="cnt" id="cnt-application">0</span></button>
+  <button class="navtab" data-tab="logs" onclick="switchTab('logs')">📜 日志 <span class="cnt" id="cnt-logs">0</span></button>
+  <button class="navtab" data-tab="topology" onclick="switchTab('topology')">🕸 本体拓扑</button>
+  <button class="navtab" data-tab="events" onclick="switchTab('events')">🩺 自愈事件 <span class="cnt" id="cnt-incidents">0</span></button>
+  <button class="navtab" data-tab="settings" onclick="switchTab('settings')">⚙ 配置</button>
+</nav>
+
+<div class="wrap">
+
+  <!-- ═══ 总览 Tab ═══ -->
+  <section class="tab-page active" id="page-overview">
+    <div class="grid grid-4" style="margin-bottom:14px" id="kpiCards">
+      <div class="card kpi"><div class="k-label"><span class="ic blue">🧠</span>CPU 使用率</div><div class="k-value" id="k-cpu">--</div><div class="k-sub">服务器实时</div><div class="k-bar"><i id="kb-cpu" style="width:0%"></i></div></div>
+      <div class="card kpi"><div class="k-label"><span class="ic green">💾</span>内存使用率</div><div class="k-value" id="k-mem">--</div><div class="k-sub">物理内存</div><div class="k-bar"><i id="kb-mem" style="width:0%"></i></div></div>
+      <div class="card kpi"><div class="k-label"><span class="ic purple">💽</span>磁盘使用率</div><div class="k-value" id="k-disk">--</div><div class="k-sub">根分区</div><div class="k-bar"><i id="kb-disk" style="width:0%"></i></div></div>
+      <div class="card kpi"><div class="k-label"><span class="ic cyan">🌐</span>网络吞吐</div><div class="k-value" id="k-net">--</div><div class="k-sub" id="k-net-sub">-</div><div class="k-bar"><i id="kb-net" style="width:0%"></i></div></div>
+    </div>
+
+    <div class="grid grid-3">
+      <div class="card hoverable accent-bar" style="--g1:#4f8cff;--g2:#22d3ee">
+        <div class="card-head"><h3>🏗 本体实体分布</h3><span class="tag" id="entityTotalTag">共 0</span></div>
+        <div class="chart sm" id="chartEntityDist"></div>
+        <div class="legend-row" id="entityLegend"></div>
+      </div>
+      <div class="card hoverable accent-bar" style="--g1:#34d399;--g2:#22d3ee">
+        <div class="card-head"><h3>🚨 最新告警</h3><span class="tag" id="alertSummaryTag">-</span></div>
+        <div class="alert-strip" id="alertStrip"><div class="empty">暂无告警数据</div></div>
+      </div>
+      <div class="card hoverable accent-bar" style="--g1:#a78bfa;--g2:#fb923c">
+        <div class="card-head"><h3>🕸 本体拓扑</h3><span class="tag">点击查看</span></div>
+        <div class="chart sm" id="chartTopoMini" style="cursor:pointer" onclick="switchTab('topology')"></div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:14px">
+      <div class="card hoverable accent-bar" style="--g1:#f87171;--g2:#fb923c">
+        <div class="card-head"><h3>🔧 探针状态</h3><span class="tag" id="probeLastTag">-</span></div>
+        <div id="probeStatusBox"><div class="empty">探针信息加载中…</div></div>
+      </div>
+      <div class="card hoverable accent-bar" style="--g1:#4f8cff;--g2:#a78bfa">
+        <div class="card-head"><h3>💊 自愈事件</h3><span class="tag" id="incidentSummaryTag">-</span></div>
+        <div class="alert-strip" id="incidentStrip"><div class="empty">暂无自愈事件</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 实体 Tab（服务器/数据库/网络/容器/中间件/应用） ═══ -->
+  <section class="tab-page" id="page-server"><div class="card"><div class="card-head"><h3>🖥 服务器实体</h3><span class="tag" id="ts-server">-</span></div><div id="tb-server"></div></div></section>
+  <section class="tab-page" id="page-database"><div class="card"><div class="card-head"><h3>🗄 数据库实体</h3><span class="tag" id="ts-database">-</span></div><div id="tb-database"></div></div></section>
+  <section class="tab-page" id="page-network"><div class="card"><div class="card-head"><h3>🌐 网络实体</h3><span class="tag" id="ts-network">-</span></div><div id="tb-network"></div></div></section>
+  <section class="tab-page" id="page-container"><div class="card"><div class="card-head"><h3>📦 容器实体</h3><span class="tag" id="ts-container">-</span></div><div id="tb-container"></div></div></section>
+  <section class="tab-page" id="page-middleware"><div class="card"><div class="card-head"><h3>🧩 中间件实体</h3><span class="tag" id="ts-middleware">-</span></div><div id="tb-middleware"></div></div></section>
+  <section class="tab-page" id="page-application"><div class="card"><div class="card-head"><h3>🚀 应用实体</h3><span class="tag" id="ts-application">-</span></div><div id="tb-application"></div></div></section>
+
+  <!-- ═══ 统一日志 Tab ═══ -->
+  <section class="tab-page" id="page-logs">
+    <div class="card">
+      <div class="card-head"><h3>📜 统一日志采集（系统 + 应用，增量 tail）</h3>
+        <span class="tag">来源/级别过滤 · 实时刷新</span></div>
+      <div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <select id="logSource" onchange="loadLogs()" style="flex:1;min-width:200px">
+          <option value="">全部来源</option>
+        </select>
+        <select id="logLevel" onchange="loadLogs()">
+          <option value="">全部级别</option>
+          <option value="error">ERROR</option>
+          <option value="warn">WARN</option>
+          <option value="info">INFO</option>
+          <option value="debug">DEBUG</option>
+        </select>
+        <span class="tag" id="logStatsTag">-</span>
+        <button class="btn" onclick="loadLogs()">↺ 刷新</button>
+      </div>
+      <div class="log-view" id="logView" style="max-height:62vh;overflow:auto;border:1px solid #24324d;border-radius:10px;background:rgba(8,13,28,.6);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.7">
+        <div class="empty">日志加载中…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 本体拓扑 Tab ═══ -->
+  <section class="tab-page" id="page-topology">
+    <div class="card">
+      <div class="card-head"><h3>🕸 运维本体拓扑（六类实体 × 三类关系）</h3>
+        <span class="tag">节点点击查看详情 · 力导向布局</span></div>
+      <div class="topo-legend" id="topoLegend"></div>
+      <div class="chart topo" id="chartTopo"></div>
+    </div>
+  </section>
+
+  <!-- ═══ 自愈事件 Tab ═══ -->
+  <section class="tab-page" id="page-events">
+    <div class="card">
+      <div class="card-head"><h3>🩺 自愈事件中心</h3>
+        <span class="tag"><select id="eventFilter" onchange="loadEvents()">
+          <option value="">全部状态</option>
+          <option value="detected">待处理 detected</option>
+          <option value="repairing">修复中 repairing</option>
+          <option value="verifying">验证中 verifying</option>
+          <option value="recovered">已恢复 recovered</option>
+          <option value="failed">失败 failed</option>
+          <option value="manual">升级人工 manual</option>
+        </select></span></div>
+      <div class="timeline" id="eventTimeline"></div>
+    </div>
+  </section>
+
+  <!-- ═══ 配置中心 Tab ═══ -->
+  <section class="tab-page" id="page-settings">
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-head"><h3>⚙ 基础配置</h3><span class="tag">保存后即时生效</span></div>
+        <fieldset class="group"><legend>🔔 飞书告警（预留）</legend>
+          <div class="form-grid">
+            <div class="form-item"><label>飞书机器人 Webhook</label>
+              <input type="text" id="s-feishu_webhook" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/...">
+              <div class="desc">留空则告警仅入库不推送；配置后自动发送告警到飞书群</div></div>
+            <div class="form-item"><label>飞书签名密钥（可选）</label>
+              <input type="text" id="s-feishu_secret" placeholder="加签模式 secret"></div>
+          </div>
+        </fieldset>
+        <fieldset class="group"><legend>🔬 统一探针</legend>
+          <div class="form-grid">
+            <div class="form-item"><label>采集周期（秒）</label><input type="number" id="s-probe_interval" min="5"></div>
+            <div class="form-item"><label>数据保留（天）</label><input type="number" id="s-retention_days" min="1"></div>
+          </div>
+        </fieldset>
+        <fieldset class="group"><legend>🩺 全自动自愈</legend>
+          <div class="form-grid">
+            <div class="form-item"><label>自愈开关</label><select id="s-self_heal_enabled"><option value="0">关闭</option><option value="1">开启</option></select></div>
+            <div class="form-item"><label>最大重试次数</label><input type="number" id="s-self_heal_max_retry" min="0" max="5"></div>
+            <div class="form-item"><label>代码级自愈开关</label><select id="s-code_heal_enabled"><option value="0">关闭</option><option value="1">开启</option></select>
+              <div class="desc">日志/代码故障自动 修复→测试→发布→验证（失败自动回滚）</div></div>
+            <div class="form-item"><label>代码仓库路径</label><input type="text" id="s-app_code_repo" placeholder="留空默认当前项目">
+              <div class="desc">代码自愈操作的 Git 仓库根目录</div></div>
+            <div class="form-item"><label>代码修复 LLM 地址（预留）</label><input type="text" id="s-code_heal_llm_url" placeholder="留空使用内置规则修复器"></div>
+            <div class="form-item"><label>代码修复 LLM 密钥（预留）</label><input type="password" id="s-code_heal_llm_key"></div>
+          </div>
+        </fieldset>
+        <fieldset class="group"><legend>📜 日志采集</legend>
+          <div class="form-grid">
+            <div class="form-item"><label>9006 应用日志路径</label><input type="text" id="s-app_9006_log" placeholder="如 /data/contract-compare/logs/app.log"></div>
+            <div class="form-item"><label>9007 应用日志路径</label><input type="text" id="s-app_9007_log" placeholder="如 /data/neuops/logs/app.log">
+              <div class="desc">系统日志自动采集（system.log/syslog/messages），应用日志在此配置后自动增量采集</div></div>
+          </div>
+        </fieldset>
+        <fieldset class="group"><legend>🚨 告警阈值（%）</legend>
+          <div class="form-grid">
+            <div class="form-item"><label>CPU</label><input type="number" id="s-cpu_threshold" min="1" max="100"></div>
+            <div class="form-item"><label>内存</label><input type="number" id="s-mem_threshold" min="1" max="100"></div>
+            <div class="form-item"><label>磁盘</label><input type="number" id="s-disk_threshold" min="1" max="100"></div>
+          </div>
+        </fieldset>
+        <div style="margin-top:8px;display:flex;gap:10px">
+          <button class="btn primary" onclick="saveSettings()">💾 保存配置</button>
+          <button class="btn" onclick="loadSettings()">↺ 重新加载</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h3>📋 告警规则</h3><span class="tag">ops 真实指标检测</span></div>
+        <div id="ruleList"><div class="empty">加载中…</div></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ═══ 实体详情抽屉 ═══ -->
+<div class="drawer-mask" id="drawerMask" onclick="closeDrawer()"></div>
+<aside class="drawer" id="drawer">
+  <button class="d-close" onclick="closeDrawer()">✕</button>
+  <h2 id="dTitle">-</h2>
+  <div class="d-sub" id="dSub">-</div>
+  <div id="dBody"><div class="empty">加载中…</div></div>
+</aside>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ═══════════════ 全局状态 ═══════════════ */
+const API = "/api/ops";
+let ENTITY_META = {};
+let RELATION_META = {};
+let STATUS_META = {};
+let currentTab = "overview";
+let charts = {};
+const ENTITY_TABS = ["server", "database", "network", "container", "middleware", "application"];
+
+const $ = (id) => document.getElementById(id);
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function fmtNum(v, d = 1) {
+  if (v === null || v === undefined || isNaN(v)) return "--";
+  return Number(v).toFixed(d);
+}
+function fmtBytes(b) {
+  if (!b && b !== 0) return "--";
+  b = Number(b);
+  if (b >= 1024*1024*1024) return (b/1024/1024/1024).toFixed(1)+" GB/s";
+  if (b >= 1024*1024) return (b/1024/1024).toFixed(1)+" MB/s";
+  if (b >= 1024) return (b/1024).toFixed(1)+" KB/s";
+  return b.toFixed(0)+" B/s";
+}
+function toast(msg, type = "ok") {
+  const t = document.createElement("div");
+  t.className = "toast " + type;
+  t.textContent = msg;
+  $("toastWrap").appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+function loading(on) { $("loadingBar").classList.toggle("show", on); }
+function statusTag(s) {
+  const map = { running: "running", degraded: "degraded", down: "down", unknown: "unknown" };
+  const c = map[s] || "unknown";
+  const label = (STATUS_META[s] && STATUS_META[s].label) || s;
+  return `<span class="tag-status tag-${c}">${label}</span>`;
+}
+function stateTag(s) {
+  return `<span class="tag-state st-${s}">${s}</span>`;
+}
+
+/* ═══════════════ Tab 切换 ═══════════════ */
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll(".navtab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll(".tab-page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab));
+  if (tab === "overview") loadOverview();
+  if (ENTITY_TABS.includes(tab)) loadEntities(tab);
+  if (tab === "logs") loadLogs();
+  if (tab === "topology") loadTopology();
+  if (tab === "events") loadEvents();
+  if (tab === "settings") { loadSettings(); loadRules(); }
+}
+
+/* ═══════════════ 总览 ═══════════════ */
+async function loadOverview() {
+  loading(true);
+  try {
+    const r = await fetch(API + "/overview").then(d => d.json());
+    renderOverview(r);
+  } catch (e) { toast("总览加载失败: " + e.message, "err"); }
+  loading(false);
+}
+
+function renderOverview(o) {
+  if (!o || !o.ok) return;
+  // 探针状态
+  const p = o.probe || {};
+  const pill = $("probePill");
+  if (p.running) { pill.innerHTML = '<span class="dot green"></span><span>探针运行中 · ' + p.lastRunAt + '</span>'; }
+  else { pill.innerHTML = '<span class="dot off"></span><span>探针未运行</span>'; }
+  // 实体计数徽标
+  const byType = o.entities.byType || {};
+  ENTITY_TABS.forEach(t => { $("cnt-" + t).textContent = byType[t] || 0; });
+  $("entityTotalTag").textContent = "共 " + (o.entities.total || 0) + " 个";
+  $("incidentSummaryTag").textContent = (o.incidents.open || 0) + " 个待处理";
+  $("alertSummaryTag").textContent = (o.alerts.firing || 0) + " 个告警中";
+  $("cnt-incidents").textContent = o.incidents.open || 0;
+
+  // 服务器快照 → KPI
+  const ss = o.serverSnapshot || {};
+  let cpu = null, mem = null, disk = null, tx = 0, rx = 0;
+  Object.values(ss).forEach(m => {
+    if (m.cpu_percent !== undefined && cpu === null) cpu = m.cpu_percent;
+    if (m.mem_percent !== undefined && mem === null) mem = m.mem_percent;
+    if (m.tx_total_bps !== undefined) tx = Math.max(tx, m.tx_total_bps);
+    if (m.rx_total_bps !== undefined) rx = Math.max(rx, m.rx_total_bps);
+  });
+  if (disk === null) { disk = Math.max(0, ...Object.values(ss).filter(m => m.disk_percent !== undefined).map(m => m.disk_percent)); }
+  // 从实体中取磁盘
+  if (disk === null || disk === 0) {
+    const ent = (o.entities && o.entities.byType && o.entities.byType.server) || [];
+    // overview 未返回列表，跳过
+  }
+  setKpi("k-cpu", "kb-cpu", cpu, 90, "%");
+  setKpi("k-mem", "kb-mem", mem, 90, "%");
+  setKpi("k-disk", "kb-disk", disk, 90, "%");
+  $("k-net").innerHTML = fmtBytes(tx + rx);
+  $("k-net-sub").textContent = "↓" + fmtBytes(rx) + " ↑" + fmtBytes(tx);
+
+  // 实体分布饼图
+  const distChart = getChart("chartEntityDist");
+  const colors = { server: "#4f8cff", database: "#34d399", network: "#22d3ee", container: "#a78bfa", middleware: "#fb923c", application: "#fbbf24" };
+  const pieData = ENTITY_TABS.filter(t => (byType[t] || 0) > 0).map(t => ({
+    name: (ENTITY_META[t] && ENTITY_META[t].label) || t, value: byType[t], itemStyle: { color: colors[t] }
+  }));
+  distChart.setOption({
+    backgroundColor: "transparent",
+    tooltip: { trigger: "item", backgroundColor: "#182338", borderColor: "#24324d", textStyle: { color: "#dbe4f5" } },
+    legend: { show: false },
+    series: [{
+      type: "pie", radius: ["45%", "72%"], center: ["50%", "48%"],
+      label: { show: false }, emphasis: { label: { show: true, color: "#dbe4f5", fontWeight: 600 } },
+      itemStyle: { borderColor: "#0b1020", borderWidth: 2, borderRadius: 6 },
+      data: pieData.length ? pieData : [{ name: "暂无数据", value: 1, itemStyle: { color: "#24324d" } }]
+    }]
+  });
+  // 图例
+  $("entityLegend").innerHTML = ENTITY_TABS.map(t =>
+    `<div class="legend-item"><span class="sw" style="background:${colors[t]}"></span>${esc((ENTITY_META[t]&&ENTITY_META[t].label)||t)} <b>${byType[t]||0}</b></div>`).join("");
+
+  // 最新告警
+  renderAlerts();
+  // 自愈事件摘要
+  const inc = o.incidents.recent || [];
+  $("incidentStrip").innerHTML = inc.length ? inc.map(i =>
+    `<div class="alert-item ${i.severity === "critical" ? "sev-critical" : "sev-warning"}" onclick="openIncident('${i.id}')">
+      <span class="a-time">${esc(i.created_at||"")}</span>
+      <span class="a-msg">[${esc(i.rule_name||"")}] ${esc(i.entity_name||"")} → ${stateTag(i.state)}</span>
+    </div>`).join("") : `<div class="empty">暂无自愈事件</div>`;
+
+  // 拓扑缩略
+  renderTopoMini();
+  // 探针详情
+  renderProbeStatus(o);
+}
+
+function setKpi(id, barId, v, threshold, unit) {
+  const el = $(id), bar = $(barId);
+  if (v === null || v === undefined) return;
+  el.classList.remove("warn", "crit");
+  if (v >= threshold) el.classList.add("crit");
+  else if (v >= threshold * 0.8) el.classList.add("warn");
+  el.innerHTML = fmtNum(v) + (unit ? ` <small>${unit}</small>` : "");
+  bar.style.width = Math.min(100, v) + "%";
+}
+
+async function renderAlerts() {
+  try {
+    const r = await fetch("/api/monitor/alerts").then(d => d.json());
+    const list = (r.alerts || r || []).slice(0, 12);
+    const firing = (r.alerts || []).filter(a => a.status === "firing").length;
+    $("alertSummaryTag").textContent = firing + " 个告警中";
+    $("alertStrip").innerHTML = list.length ? list.map(a =>
+      `<div class="alert-item ${a.severity === "critical" ? "sev-critical" : "sev-warning"}">
+        <span class="a-time">${esc(a.created_at||"")}</span>
+        <span class="a-msg">[${esc(a.rule_name||"")}] ${esc(a.message||a.target_name||"")}</span>
+      </div>`).join("") : `<div class="empty">暂无告警</div>`;
+  } catch (e) { /* 忽略 */ }
+}
+
+function renderProbeStatus(o) {
+  const p = o.probe || {};
+  const cols = (p.collectors || []).map(c => `<span class="tag-status tag-running">${esc(c)}</span>`).join(" ");
+  const lastReports = "";
+  $("probeLastTag").textContent = "上次采集: " + (p.lastRunAt || "-");
+  $("probeStatusBox").innerHTML = `
+    <div class="legend-row">
+      <div class="legend-item">运行状态: ${p.running ? '<span class="tag-status tag-running">运行中</span>' : '<span class="tag-status tag-down">停止</span>'}</div>
+      <div class="legend-item">采集周期: <b>${p.interval}s</b></div>
+      <div class="legend-item">采集器: <b>${(p.collectors||[]).length}</b> 个</div>
+      <div class="legend-item">上次错误: <b style="color:${p.lastError ? "var(--red)" : "var(--green)"}">${p.lastError ? esc(p.lastError) : "无"}</b></div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${cols}</div>
+    <div style="margin-top:12px"><button class="btn" onclick="runProbeNow()">⟳ 手动触发一轮采集</button></div>`;
+}
+
+async function runProbeNow() {
+  loading(true);
+  try {
+    const r = await fetch(API + "/probe/run-now", { method: "POST" }).then(d => d.json());
+    toast("采集完成: " + JSON.stringify(r.summary));
+    loadOverview();
+  } catch (e) { toast("采集失败: " + e.message, "err"); }
+  loading(false);
+}
+
+/* ═══════════════ 实体 Tab ═══════════════ */
+async function loadEntities(type) {
+  loading(true);
+  try {
+    const r = await fetch(API + "/entities?type=" + type).then(d => d.json());
+    const list = r.entities || [];
+    $("cnt-" + type).textContent = list.length;
+    $("ts-" + type).textContent = "共 " + list.length + " 个 · 最近采集 " + new Date().toLocaleTimeString();
+    renderEntityTable(type, list);
+  } catch (e) { toast("实体加载失败: " + e.message, "err"); }
+  loading(false);
+}
+
+function entityColumns(type) {
+  switch (type) {
+    case "server": return ["name", "status", "cpu_percent", "mem_percent", "disk_percent", "uptime_days", "process_count"];
+    case "database": return ["name", "status", "size_mb", "health", "engine", "path"];
+    case "network": return ["name", "status", "listen_ports", "established_conns", "tx_rate_bps", "rx_rate_bps"];
+    case "container": return ["name", "status", "cpu_percent", "mem_percent", "image", "container_id"];
+    case "middleware": return ["name", "status", "health", "port_open", "label", "ports"];
+    case "application": return ["name", "status", "health", "latency_ms", "port_open", "url"];
+    default: return ["name", "status"];
+  }
+}
+
+function metricCell(m, key, fmt) {
+  const v = m[key];
+  if (v === undefined || v === null) return '<span style="color:#5a6b8c">-</span>';
+  if (fmt === "bytes") return fmtBytes(v);
+  if (fmt === "pct") return fmtNum(v) + "%";
+  if (fmt === "ms") return fmtNum(v, 1) + "ms";
+  return esc(v);
+}
+
+function renderEntityTable(type, list) {
+  const box = $("tb-" + type);
+  if (!list.length) { box.innerHTML = '<div class="empty"><div class="big">🗂</div>暂无 ' + (ENTITY_META[type]?.label || type) + ' 实体<br>请确认探针已运行且采集成功</div>'; return; }
+  const cols = entityColumns(type);
+  const head = cols.map(c => `<th>${c}</th>`).join("");
+  const rows = list.map(e => {
+    const m = e.metrics || {}, a = e.attrs || {};
+    let name = esc(e.name);
+    const extra = { name, status: statusTag(e.status) };
+    let cells = cols.map(c => {
+      switch (c) {
+        case "name": return `<td><b>${name}</b></td>`;
+        case "status": return `<td>${statusTag(e.status)}</td>`;
+        case "cpu_percent": return `<td>${metricCell(m, "cpu_percent", "pct")}</td>`;
+        case "mem_percent": return `<td>${metricCell(m, "mem_percent", "pct")}</td>`;
+        case "disk_percent": return `<td>${metricCell(m, "disk_percent", "pct")}</td>`;
+        case "uptime_days": return `<td>${metricCell(m, "uptime_days")}天</td>`;
+        case "process_count": return `<td>${metricCell(m, "process_count")}</td>`;
+        case "size_mb": return `<td>${metricCell(m, "size_mb")} MB</td>`;
+        case "health": return `<td>${(m.health === 1 || m.health === true) ? '<span class="tag-status tag-running">健康</span>' : '<span class="tag-status tag-down">异常</span>'}</td>`;
+        case "engine": return `<td>${esc(a.engine || "-")}</td>`;
+        case "path": return `<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${esc(a.path || a.url || "-")}</td>`;
+        case "listen_ports": return `<td>${metricCell(m, "listen_ports")}</td>`;
+        case "established_conns": return `<td>${metricCell(m, "established_conns")}</td>`;
+        case "tx_rate_bps": return `<td>${metricCell(m, "tx_rate_bps", "bytes")}</td>`;
+        case "rx_rate_bps": return `<td>${metricCell(m, "rx_rate_bps", "bytes")}</td>`;
+        case "image": return `<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(a.image || "-")}</td>`;
+        case "container_id": return `<td style="font-family:monospace;font-size:11px">${esc(a.container_id || "-")}</td>`;
+        case "label": return `<td>${esc(a.label || "-")}</td>`;
+        case "ports": return `<td>${esc((a.ports || []).join(", ") || "-")}</td>`;
+        case "port_open": return `<td>${(m.port_open === 1 || m.port_open === true) ? '<span class="tag-status tag-running">开</span>' : '<span class="tag-status tag-down">关</span>'}</td>`;
+        case "latency_ms": return `<td>${metricCell(m, "latency_ms", "ms")}</td>`;
+        case "url": return `<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(a.url || "-")}</td>`;
+        default: return `<td>-</td>`;
+      }
+    }).join("");
+    const cls = e.status === "down" ? "row-down" : e.status === "degraded" ? "row-degraded" : "";
+    return `<tr class="${cls}" onclick="openEntity('${e.id}')">${cells}</tr>`;
+  }).join("");
+  box.innerHTML = `<table class="tbl"><thead><tr><th>#</th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/* ═══════════════ 实体详情抽屉 ═══════════════ */
+async function openEntity(id) {
+  $("drawer").classList.add("open");
+  $("drawerMask").style.display = "block";
+  $("dTitle").textContent = "加载中…";
+  $("dSub").textContent = id;
+  try {
+    const r = await fetch(API + "/entities/" + id).then(d => d.json());
+    const e = r.entity, m = e.metrics || {}, a = e.attrs || {};
+    $("dTitle").innerHTML = `${esc(e.name)} ${statusTag(e.status)}`;
+    $("dSub").textContent = `${(ENTITY_META[e.type]?.label) || e.type} · ${id} · 更新 ${e.updated_at}`;
+    const metricBox = Object.entries(m).map(([k, v]) =>
+      `<div class="metric-box"><div class="m-label">${esc(k)}</div><div class="m-value">${esc(v)}</div></div>`).join("") || '<div class="empty">无指标</div>';
+    const attrBox = Object.entries(a).map(([k, v]) =>
+      `<div class="attr-row"><span class="k">${esc(k)}</span><span>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</span></div>`).join("") || '<div class="empty">无属性</div>';
+    const subGraph = r.graph && r.graph.nodes ? `<div class="card-head" style="margin-top:14px"><h3>本体关联</h3></div><div id="drawerGraph" style="height:260px"></div>` : "";
+    $("dBody").innerHTML = `
+      <h4 style="margin-bottom:10px;color:var(--muted);font-size:12px">实时指标</h4>
+      <div class="metric-grid">${metricBox}</div>
+      <h4 style="margin:16px 0 10px;color:var(--muted);font-size:12px">属性</h4>
+      <div class="attr-list">${attrBox}</div>
+      ${subGraph}`;
+    if (r.graph && r.graph.nodes) setTimeout(() => renderSubGraph("drawerGraph", r.graph), 60);
+  } catch (e) {
+    $("dTitle").textContent = "加载失败";
+    $("dBody").innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+function closeDrawer() {
+  $("drawer").classList.remove("open");
+  $("drawerMask").style.display = "none";
+}
+function renderSubGraph(elId, graph) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const ch = echarts.init(el, null, { renderer: "canvas" });
+  const nodes = graph.nodes.map(n => ({
+    id: n.id, name: n.name.length > 18 ? n.name.slice(0, 18) + "…" : n.name,
+    symbolSize: n.type === "server" ? 42 : 30,
+    itemStyle: { color: n.color, shadowBlur: 8, shadowColor: n.statusColor },
+    label: { show: true, color: "#dbe4f5", fontSize: 10 },
+    category: n.type
+  }));
+  const links = graph.edges.map(e => ({ source: e.source, target: e.target }));
+  ch.setOption({
+    backgroundColor: "transparent",
+    tooltip: { backgroundColor: "#182338", borderColor: "#24324d", textStyle: { color: "#dbe4f5" } },
+    series: [{
+      type: "graph", layout: "force", roam: true, draggable: true,
+      data: nodes, links, force: { repulsion: 180, edgeLength: 90 },
+      categories: Object.entries(ENTITY_META).map(([k, v]) => ({ name: v.label }))
+    }]
+  });
+  window.addEventListener("resize", () => ch.resize());
+}
+
+/* ═══════════════ 拓扑 ═══════════════ */
+let topoCache = null;
+async function loadTopology() {
+  loading(true);
+  try {
+    const r = await fetch(API + "/topology").then(d => d.json());
+    topoCache = r.topology;
+    renderTopo(r.topology);
+  } catch (e) { toast("拓扑加载失败: " + e.message, "err"); }
+  loading(false);
+}
+function getChart(id) {
+  if (!charts[id]) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    charts[id] = echarts.init(el, null, { renderer: "canvas" });
+    window.addEventListener("resize", () => charts[id] && charts[id].resize());
+  }
+  return charts[id];
+}
+function renderTopo(topo) {
+  // 图例
+  const colors = { server: "#4f8cff", database: "#34d399", network: "#22d3ee", container: "#a78bfa", middleware: "#fb923c", application: "#fbbf24" };
+  $("topoLegend").innerHTML = Object.entries(ENTITY_META).map(([k, v]) =>
+    `<div class="tg"><span class="sw" style="width:10px;height:10px;border-radius:3px;background:${colors[k] || v.color}"></span>${v.label} ${topo.summary.byType[k] || 0}</div>`).join("")
+    + `<div class="tg" style="margin-left:auto">实线=运行于/承载于 · 虚线=连接至</div>`;
+
+  const nodes = topo.nodes.map(n => ({
+    id: n.id,
+    name: n.name.length > 16 ? n.name.slice(0, 16) + "…" : n.name,
+    fullName: n.name,
+    symbolSize: n.type === "server" ? 46 : n.type === "application" ? 34 : 28,
+    itemStyle: { color: n.color, shadowBlur: 12, shadowColor: n.statusColor, borderColor: "#0b1020", borderWidth: 2 },
+    label: { show: true, color: "#dbe4f5", fontSize: 10 },
+    category: n.type,
+    status: n.status
+  }));
+  const links = topo.edges.map(e => ({
+    source: e.source, target: e.target,
+    lineStyle: { color: e.color, width: e.type === "connects_to" ? 1.6 : 2.4, type: e.type === "connects_to" ? "dashed" : "solid", opacity: .85 }
+  }));
+  const ch = getChart("chartTopo");
+  ch.setOption({
+    backgroundColor: "transparent",
+    tooltip: {
+      backgroundColor: "#182338", borderColor: "#24324d", textStyle: { color: "#dbe4f5", fontSize: 12 },
+      formatter: (p) => {
+        if (p.dataType === "edge") return `${p.data.source} → ${p.data.target}`;
+        const n = topo.nodes.find(x => x.id === p.data.id);
+        if (!n) return p.data.name;
+        const m = n.metrics || {};
+        const lines = Object.entries(m).slice(0, 8).map(([k, v]) => `${k}: <b>${esc(v)}</b>`).join("<br>");
+        return `<b>${esc(n.fullName || n.name)}</b><br>类型: ${n.typeLabel}<br>状态: ${n.statusLabel}${lines ? "<br>" + lines : ""}`;
+      }
+    },
+    legend: { show: false },
+    series: [{
+      type: "graph", layout: "force", roam: true, draggable: true,
+      data: nodes, links,
+      force: { repulsion: 220, edgeLength: [60, 160], gravity: 0.08 },
+      emphasis: { focus: "adjacency", lineStyle: { width: 3 } },
+      categories: Object.entries(ENTITY_META).map(([k, v]) => ({ name: v.label, itemStyle: { color: colors[k] } }))
+    }]
+  }, true);
+  ch.off("click");
+  ch.on("click", (p) => { if (p.dataType === "node" && p.data.id) openEntity(p.data.id); });
+}
+function renderTopoMini() {
+  if (!topoCache) return;
+  const nodes = topoCache.nodes.slice(0, 30).map(n => ({
+    id: n.id, name: "",
+    symbolSize: n.type === "server" ? 14 : 9,
+    itemStyle: { color: n.color }, category: n.type
+  }));
+  const links = topoCache.edges.slice(0, 60).map(e => ({ source: e.source, target: e.target }));
+  const ch = getChart("chartTopoMini");
+  ch.setOption({
+    backgroundColor: "transparent",
+    series: [{
+      type: "graph", layout: "force", roam: false, silent: true,
+      data: nodes, links, force: { repulsion: 90, edgeLength: 40 },
+      lineStyle: { color: "#31467a", width: 1, opacity: .6 },
+      categories: Object.entries(ENTITY_META).map(([k, v]) => ({ name: v.label }))
+    }]
+  }, true);
+}
+
+/* ═══════════════ 自愈事件 ═══════════════ */
+async function loadEvents() {
+  loading(true);
+  try {
+    const f = $("eventFilter").value;
+    const r = await fetch(API + "/incidents?state=" + f).then(d => d.json());
+    const list = r.incidents || [];
+    $("cnt-incidents").textContent = list.filter(i => i.state !== "recovered").length;
+    if (!list.length) { $("eventTimeline").innerHTML = '<div class="empty"><div class="big">💊</div>暂无自愈事件<br>自愈引擎启动后，检测到故障会自动创建事件</div>'; loading(false); return; }
+    $("eventTimeline").innerHTML = list.map(i => `
+      <div class="tl-item st-${i.state}">
+        <div class="tl-time">${esc(i.created_at || "")}</div>
+        <div class="tl-title">[${esc(i.rule_name || "")}] ${esc(i.entity_name || "")} ${stateTag(i.state)}
+          <button class="btn" style="padding:2px 10px" onclick="openIncident('${i.id}')">详情</button></div>
+        <div class="tl-body">${esc((i.message || "") + (i.fix_log ? "\n" + i.fix_log : ""))}</div>
+      </div>`).join("");
+  } catch (e) { toast("事件加载失败: " + e.message, "err"); }
+  loading(false);
+}
+async function openIncident(id) {
+  $("drawer").classList.add("open");
+  $("drawerMask").style.display = "block";
+  $("dTitle").textContent = "事件 " + id;
+  try {
+    const r = await fetch(API + "/incidents/" + id).then(d => d.json());
+    const i = r.incident;
+    $("dTitle").innerHTML = `[${esc(i.rule_name || "")}] ${esc(i.entity_name || "")} ${stateTag(i.state)}`;
+    $("dSub").textContent = `创建 ${i.created_at} · 更新 ${i.updated_at}`;
+    $("dBody").innerHTML = `
+      <div class="metric-grid">
+        <div class="metric-box"><div class="m-label">严重级别</div><div class="m-value" style="color:${i.severity === "critical" ? "var(--red)" : "var(--amber)"}">${esc(i.severity)}</div></div>
+        <div class="metric-box"><div class="m-label">重试次数</div><div class="m-value">${i.retry_count}</div></div>
+        <div class="metric-box"><div class="m-label">修复动作</div><div class="m-value" style="font-size:14px">${esc(i.fix_action || "-")}</div></div>
+        <div class="metric-box"><div class="m-label">恢复时间</div><div class="m-value" style="font-size:13px">${esc(i.resolved_at || "-")}</div></div>
+      </div>
+      <h4 style="margin:16px 0 10px;color:var(--muted);font-size:12px">故障描述</h4>
+      <div class="attr-list"><div class="attr-row"><span>${esc(i.message || "-")}</span></div></div>
+      ${(i.entity_type === "log" || String(i.rule_name || "").indexOf("log_error") >= 0 || String(i.rule_name || "").toLowerCase().indexOf("code") >= 0)
+        ? `<div style="margin:14px 0 0"><button class="btn primary" onclick="runCodeHeal('${i.id}')">🧬 执行代码级自愈</button>
+           <span class="tag" style="margin-left:8px">修复→测试→发布→验证（失败自动回滚）</span></div>` : ""}
+      <h4 style="margin:16px 0 10px;color:var(--muted);font-size:12px">修复日志</h4>
+      <div class="tl-body">${esc(i.fix_log || "无")}</div>`;
+  } catch (e) { $("dTitle").textContent = "加载失败"; $("dBody").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+async function runCodeHeal(id) {
+  loading(true);
+  try {
+    const r = await fetch(API + "/code-heal/run", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ incident_id: id }) })
+      .then(d => d.json());
+    const i = r.incident || {};
+    toast("代码自愈完成，状态: " + (i.state || "?"));
+    openIncident(id);
+  } catch (e) { toast("代码自愈失败: " + e.message, "err"); }
+  loading(false);
+}
+
+/* ═══════════════ 配置中心 ═══════════════ */
+async function loadSettings() {
+  try {
+    const r = await fetch(API + "/settings").then(d => d.json());
+    const s = r.settings || {};
+    Object.entries(s).forEach(([k, v]) => {
+      const el = $("s-" + k);
+      if (el) el.value = v.value;
+    });
+    const healOn = s.self_heal_enabled && s.self_heal_enabled.value === "1";
+    $("healSwitch").classList.toggle("on", healOn);
+  } catch (e) { toast("配置加载失败: " + e.message, "err"); }
+}
+async function saveSettings() {
+  const payload = {};
+  Object.entries({ feishu_webhook: "s-feishu_webhook", feishu_secret: "s-feishu_secret",
+    probe_interval: "s-probe_interval", retention_days: "s-retention_days",
+    self_heal_enabled: "s-self_heal_enabled", self_heal_max_retry: "s-self_heal_max_retry",
+    code_heal_enabled: "s-code_heal_enabled", app_code_repo: "s-app_code_repo",
+    code_heal_llm_url: "s-code_heal_llm_url", code_heal_llm_key: "s-code_heal_llm_key",
+    app_9006_log: "s-app_9006_log", app_9007_log: "s-app_9007_log",
+    cpu_threshold: "s-cpu_threshold", mem_threshold: "s-mem_threshold", disk_threshold: "s-disk_threshold" })
+    .forEach(([k, id]) => { payload[k] = $(id).value; });
+  loading(true);
+  try {
+    const r = await fetch(API + "/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    }).then(d => d.json());
+    toast("配置已保存: " + (r.updated || []).join(", "));
+    const healOn = payload.self_heal_enabled === "1";
+    $("healSwitch").classList.toggle("on", healOn);
+  } catch (e) { toast("保存失败: " + e.message, "err"); }
+  loading(false);
+}
+function toggleHeal() {
+  const el = $("healSwitch");
+  const on = !el.classList.contains("on");
+  el.classList.toggle("on", on);
+  const id = "s-self_heal_enabled";
+  const s = $("s-self_heal_enabled");
+  if (s) s.value = on ? "1" : "0";
+  const payload = { self_heal_enabled: on ? "1" : "0" };
+  fetch(API + "/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+    .then(d => d.json()).then(r => toast(on ? "自愈已开启" : "自愈已关闭"));
+}
+
+async function loadRules() {
+  try {
+    const r = await fetch(API + "/alert-rules").then(d => d.json());
+    const list = r.rules || [];
+    if (!list.length) { $("ruleList").innerHTML = '<div class="empty">暂无告警规则</div>'; return; }
+    $("ruleList").innerHTML = `<table class="tbl"><thead><tr><th>规则</th><th>指标</th><th>目标</th><th>阈值</th><th>级别</th><th>启用</th></tr></thead><tbody>
+      ${list.map(x => `<tr>
+        <td><b>${esc(x.name)}</b></td><td style="font-family:monospace;font-size:12px">${esc(x.metric || "")}</td>
+        <td>${esc(x.target || "")}</td><td>${esc(x.threshold)}</td>
+        <td><span class="tag-state ${x.severity === "critical" ? "st-failed" : "st-detected"}">${esc(x.severity)}</span></td>
+        <td>${x.enabled ? '<span class="tag-status tag-running">开</span>' : '<span class="tag-status tag-unknown">关</span>'}</td>
+      </tr>`).join("")}</tbody></table>`;
+  } catch (e) { /* ignore */ }
+}
+
+/* ═══════════════ 统一日志 ═══════════════ */
+const LOG_COLOR = { error: "#f87171", critical: "#f87171", warn: "#fbbf24", info: "#4f8cff", debug: "#7d8db0", trace: "#7d8db0" };
+async function loadLogs() {
+  try {
+    const src = $("logSource").value, lv = $("logLevel").value;
+    const q = new URLSearchParams({ minutes: "30", limit: "400" });
+    if (src) q.set("source", src);
+    if (lv) q.set("level", lv);
+    const r = await fetch(API + "/logs?" + q.toString()).then(d => d.json());
+    const logs = r.logs || [];
+    const st = r.stats || {};
+    $("cnt-logs").textContent = logs.length;
+    $("logStatsTag").textContent = `📊 30min: ${st.error || 0}✖ ${st.warn || 0}⚠ ${st.info || 0}ℹ 共${st.total || 0}`;
+    // 来源下拉（首次填充）
+    const sel = $("logSource");
+    const known = new Set(Array.from(sel.options).map(o => o.value));
+    const sources = [...new Set(logs.map(l => l.source))].filter(s => s && !known.has(s));
+    sources.forEach(s => { const o = document.createElement("option"); o.value = s; o.textContent = s; sel.appendChild(o); });
+    if (!logs.length) { $("logView").innerHTML = '<div class="empty">近 30 分钟无匹配日志</div>'; return; }
+    $("logView").innerHTML = logs.map(l => {
+      const c = LOG_COLOR[l.level] || "#7d8db0";
+      const lv = esc(l.level || "info").toUpperCase();
+      return `<div class="log-line" style="display:flex;gap:10px;padding:2px 10px;border-bottom:1px solid rgba(36,50,77,.25)">
+        <span style="color:#5a6b8c;white-space:nowrap">${esc(l.ts || "")}</span>
+        <span style="color:${c};min-width:64px;font-weight:600">${lv}</span>
+        <span style="color:#22d3ee;white-space:nowrap">${esc(l.source || "")}</span>
+        <span style="color:#dbe4f5;word-break:break-all">${esc(l.message || "")}</span>
+      </div>`;
+    }).join("");
+  } catch (e) { $("logView").innerHTML = '<div class="empty">日志加载失败: ' + esc(e.message) + '</div>'; }
+}
+
+/* ═══════════════ 轮询 & 时钟 ═══════════════ */
+setInterval(() => {
+  $("clock").textContent = new Date().toLocaleTimeString();
+}, 1000);
+setInterval(() => {
+  if (currentTab === "overview") loadOverview();
+  if (ENTITY_TABS.includes(currentTab)) loadEntities(currentTab);
+  if (currentTab === "logs") loadLogs();
+  if (currentTab === "topology") loadTopology();
+  if (currentTab === "events") loadEvents();
+}, 30000);
+
+/* 启动 */
+(async function init() {
+  $("clock").textContent = new Date().toLocaleTimeString();
+  try {
+    const t = await fetch(API + "/topology").then(d => d.json());
+    topoCache = t.topology;
+    ENTITY_META = t.topology.entityMeta || ENTITY_META;
+    RELATION_META = t.topology.relationMeta || RELATION_META;
+    STATUS_META = t.topology.statusMeta || STATUS_META;
+  } catch (e) { console.error(e); }
+  loadOverview();
+  await loadSettings();
+})();
+</script>
+</body>
+</html>
