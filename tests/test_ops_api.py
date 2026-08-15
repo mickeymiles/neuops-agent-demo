@@ -13,8 +13,13 @@ client = TestClient(app)
 
 
 def test_ops_page():
+    # 页面路由（浏览器入口 /ops）与 API 内页路由必须均可达
     r = client.get("/api/ops/page")
-    assert r.status_code in (200, 404)
+    assert r.status_code == 200
+    assert "text/html" in r.headers.get("content-type", "")
+    r2 = client.get("/ops")
+    assert r2.status_code == 200
+    assert "text/html" in r2.headers.get("content-type", "")
 
 
 def test_ops_overview():

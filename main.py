@@ -79,6 +79,7 @@ app.include_router(routes_tasks.router)
 app.include_router(routes_monitor.router)
 app.include_router(routes_knowledge.router)
 app.include_router(routes_ops.router)
+app.include_router(routes_ops.page_router)
 
 # 静态资源
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

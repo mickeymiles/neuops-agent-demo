@@ -18,6 +18,9 @@ from .probe import ProbeManager
 
 router = APIRouter(prefix="/api/ops", tags=["ops"])
 
+# /ops 一体化运维监控平台页面路由（无 /api 前缀，供浏览器直接访问）
+page_router = APIRouter(tags=["ops-page"])
+
 OPS_HTML = Path(__file__).resolve().parent.parent / "static" / "ops.html"
 
 # 全局探针实例（由 main.py 启动；此处负责手动采集等）
@@ -40,6 +43,14 @@ def _now() -> str:
 @router.get("/page")
 def ops_page():
     """/ops 页面（独立一体化运维监控平台）"""
+    if not OPS_HTML.exists():
+        raise HTTPException(404, "ops.html not found")
+    return FileResponse(str(OPS_HTML))
+
+
+@page_router.get("/ops")
+def ops_page_root():
+    """/ops 一体化运维监控平台页面（浏览器直接访问入口）"""
     if not OPS_HTML.exists():
         raise HTTPException(404, "ops.html not found")
     return FileResponse(str(OPS_HTML))
