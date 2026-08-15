@@ -129,7 +129,7 @@
 |---|---|---|
 | 开发 | 本地 git 工作流（app/ static/ tests/ scripts/ harness/） | ✅ |
 | 测试 | `pytest tests/`（36 项全绿）+ `ruff check app/` 全绿 | ✅ |
-| 上传 | `git push main` → GitHub Actions CI（lint → 单测 → 镜像构建 ghcr.io） | ✅ 配置完成 |
+| 上传 | `git push main` → GitHub Actions CI（lint → 单测） | ✅ 配置完成 |
 | 部署 | CI deploy job：SSH rsync 同步 → `remote_deploy.sh`（装依赖 → 重启 `neuops-9007` → 健康检查） | ✅ 已在服务器预演通过 |
 
 ### 关键修复与配置
