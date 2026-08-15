@@ -4,7 +4,6 @@
 覆盖：总览 / 六类实体 / 本体拓扑 / 时序查询 / 告警规则 / 配置中心 /
 自愈事件 / 探针控制（手动采集、远程探针上报）
 """
-import json
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -12,8 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from . import db
-from . import ops_ontology
+from . import db, ops_ontology
 from .probe import ProbeManager
 
 router = APIRouter(prefix="/api/ops", tags=["ops"])
@@ -299,6 +297,25 @@ def ops_incident_detail(incident_id: str):
     return {"ok": True, "incident": inc}
 
 
+@router.get("/alerts/aggregate")
+def ops_alerts_aggregate(status: str = Query("firing", description="告警状态筛选：firing/resolved/all")):
+    """告警中心聚合：合并智能体告警(alerts)与基础设施自愈事件(incidents)统一返回。"""
+    if status not in ("firing", "resolved", "all"):
+        status = "firing"
+    if status == "all":
+        alerts = db._query_rows("SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?", (100,))
+    else:
+        alerts = db._query_rows("SELECT * FROM alerts WHERE status=? ORDER BY created_at DESC LIMIT ?", (status, 100))
+    incidents = db.incident_list(state="", limit=200)
+    active_incidents = [i for i in incidents if (i.get("state") or "") != "recovered"]
+    return {
+        "ok": True,
+        "alerts": alerts,
+        "incidents": incidents,
+        "active_incident_count": len(active_incidents),
+    }
+
+
 # ---------------- 代码级自愈 ----------------
 
 @router.post("/code-heal/run")
@@ -318,7 +335,8 @@ def ops_code_heal_run(payload: dict = Body(...)):
 @router.get("/code-heal/status")
 def ops_code_heal_status():
     """代码自愈能力状态：仓库、git 可用性、LLM 配置、白名单路径"""
-    from . import ops_code_heal, config as ops_config
+    from . import config as ops_config
+    from . import ops_code_heal
     repo = ops_code_heal._resolve_repo()
     git_ok = ops_code_heal._is_git_repo(repo)
     return {

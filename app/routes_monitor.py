@@ -1,20 +1,25 @@
 """AI 智能体监控后台 API 路由（monitor.html 独立页面配套）"""
 
 import json
-import os
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
-from .config import STATIC_DIR
-from .knowledge import EMBED_MODEL
 from .db import (
-    _agent_name_map, _COST_INPUT_PER_M, _COST_OUTPUT_PER_M,
-    _db_lock, _est_tokens, _get_conn, _parse_route,
-    _query_rows, _text_summary,
-    db_get_employee, db_set_employee_enabled,
+    _COST_INPUT_PER_M,
+    _COST_OUTPUT_PER_M,
+    _agent_name_map,
+    _db_lock,
+    _est_tokens,
+    _get_conn,
+    _parse_route,
+    _query_rows,
+    _text_summary,
+    db_get_employee,
+    db_set_employee_enabled,
 )
+from .knowledge import EMBED_MODEL
 
 router = APIRouter()
 
@@ -270,7 +275,6 @@ async def monitor_conversation_detail(conv_id: str):
 @router.get("/api/monitor/timeseries")
 async def monitor_timeseries(days: int = Query(7, ge=1, le=90)):
     """按天聚合的 LLM 调用量 / Token 趋势（近 N 天）"""
-    since = (datetime.now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
     calls = _query_rows("SELECT created_at, total_tokens, prompt_tokens, completion_tokens FROM llm_calls")
     msgs = _query_rows("SELECT created_at, content FROM messages")
 
@@ -337,7 +341,6 @@ async def monitor_topology():
         if c.get("error"):
             s["errors"] += 1
 
-    name_map = _agent_name_map()
     nodes = []
     hub = hub_stat
     nodes.append({
@@ -760,8 +763,7 @@ async def monitor_slow_calls(threshold_ms: int = Query(10000, ge=0), limit: int 
     return JSONResponse({"ok": True, "data": calls})
 
 
-@router.get("/monitor", response_class=HTMLResponse)
+@router.get("/monitor")
 async def monitor_page():
-    """AI 智能体监控后台页面"""
-    return HTMLResponse(open(os.path.join(STATIC_DIR, "monitor.html"),
-                             encoding="utf-8").read())
+    """保留旧 URL 兼容：重定向到一体化监控平台 /ops"""
+    return RedirectResponse(url="/ops", status_code=302)

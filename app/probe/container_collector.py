@@ -3,7 +3,6 @@
 
 无 docker 时返回失败但不断言系统错误（降级为无容器实体）。
 """
-import json
 import subprocess
 
 from .base import BaseCollector, ProbeReport

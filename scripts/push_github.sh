@@ -41,8 +41,9 @@ fi
 
 echo ""
 echo "────────────────────────────────────────────"
-echo " 下一步：GitHub 仓库 → Settings → Secrets 配置"
+echo " 下一步：GitHub 仓库 → Settings → Secrets and variables → Actions 配置"
+echo "  - DEPLOY_SSH_KEY / DEPLOY_HOST / DEPLOY_USER / DEPLOY_PATH（CD 自动部署必需）"
 echo "  - DEEPSEEK_API_KEY（可选，LLM 功能）"
-echo "  - 推送后 .github/workflows/ci.yml 自动触发 CI"
-echo "  - Harness 激活见 harness/README.md"
+echo "  - 推送后 .github/workflows/ci.yml 自动触发 CI+CD（lint→测试→镜像→自动部署 122.51.98.98）"
+echo "  - Harness 云版激活（备选）见 harness/README.md"
 echo "────────────────────────────────────────────"

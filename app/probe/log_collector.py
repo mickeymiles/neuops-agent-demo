@@ -12,8 +12,8 @@ import re
 import time
 from datetime import datetime
 
-from app.probe.base import BaseCollector, ProbeReport
 from app.db import db_get_setting
+from app.probe.base import BaseCollector, ProbeReport
 
 # 日志级别解析：正则捕获 [LEVEL] / LEVEL: / "LEVEL" 等常见格式
 _LEVEL_RE = re.compile(

@@ -8,19 +8,17 @@
 """
 import json
 import threading
-import time
 from datetime import datetime
 
-from .. import config
-from .. import db
+from .. import config, db
+from .application_collector import ApplicationCollector
 from .base import ProbeReport
-from .server_collector import ServerCollector
 from .container_collector import ContainerCollector
 from .database_collector import DatabaseCollector
-from .middleware_collector import MiddlewareCollector
-from .application_collector import ApplicationCollector
-from .network_collector import NetworkCollector
 from .log_collector import LogCollector
+from .middleware_collector import MiddlewareCollector
+from .network_collector import NetworkCollector
+from .server_collector import ServerCollector
 
 
 class ProbeManager:

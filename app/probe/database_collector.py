@@ -10,8 +10,8 @@ import os
 import socket
 import sqlite3
 
-from .base import BaseCollector, ProbeReport
 from .. import config
+from .base import BaseCollector, ProbeReport
 
 
 class DatabaseCollector(BaseCollector):

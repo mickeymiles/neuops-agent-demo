@@ -22,6 +22,7 @@ from app import (
     agent_chat,
     routes_employees,
     routes_knowledge,
+    routes_manage,
     routes_monitor,
     routes_ops,
     routes_tasks,
@@ -80,6 +81,7 @@ app.include_router(routes_monitor.router)
 app.include_router(routes_knowledge.router)
 app.include_router(routes_ops.router)
 app.include_router(routes_ops.page_router)
+app.include_router(routes_manage.page_router)
 
 # 静态资源
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

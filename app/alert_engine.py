@@ -200,7 +200,8 @@ def _check_ops_logs(rule):
     from . import config, db
     threshold = float(rule["threshold"] or 0)
     window = int(rule.get("window_min") or config.LOG_ERROR_WINDOW_MIN)
-    n = db.ops_count_logs(minutes=window, level="error")
+    # 只统计应用日志（app: 源），排除 system 系统日志噪音，避免误报
+    n = db.ops_count_logs(minutes=window, level="error", source_prefix="app:")
     if n >= threshold:
         # 附带最近一条错误日志，便于代码自愈诊断定位
         last = db.ops_get_logs(source="", level="error", minutes=window, limit=1)
@@ -217,7 +218,6 @@ def _process_alert_ops(rule, value, message, entity_type: str, entity_name: str)
     判定方向：cpu/mem/disk 等百分比类指标「大于等于阈值」触发；
     health 类指标（值域 0/1）通过 inverted 规则判定「低于阈值」触发。
     """
-    from . import db
     rule_id = rule["id"]
     is_health = "health" in str(rule_id) or rule.get("metric") == "health"
     threshold = float(rule["threshold"] or 0)

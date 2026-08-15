@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>后台管理 · NeuOps Agent</title>
+<link rel="stylesheet" href="/static/manage.css">
+</head>
+<body>
+<div class="app-layout" id="app-root" data-biz9006="__BIZ_9006_BASE__">
+
+  <!-- ═══════ SIDEBAR ═══════ -->
+  <nav class="nav-sidebar">
+    <div class="nav-brand">
+      <span class="icon" style="display:inline-flex;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
+      <span>NeuOps Admin</span>
+    </div>
+    <div class="nav-menu">
+      <div class="nav-section-gap"></div>
+      <div class="nav-section-header">能力配置</div>
+      <div class="nav-item active" data-page="work" onclick="navigateTo('work')">
+        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>工作成果
+      </div>
+      <div class="nav-item" data-page="knowledge" onclick="navigateTo('knowledge')">
+        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg></span>知识库
+      </div>
+      <div class="nav-item" data-page="tools" onclick="navigateTo('tools')">
+        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>MCP 服务与工具
+      </div>
+      <div class="nav-item" data-page="skills" onclick="navigateTo('skills')">
+        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg></span>技能中心
+      </div>
+      <div class="nav-section-gap"></div>
+      <div class="nav-section-header">数字员工</div>
+      <div class="nav-item" data-page="employees" onclick="navigateTo('employees')">
+        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><circle cx="9" cy="14" r="1.4"/><circle cx="15" cy="14" r="1.4"/><path d="M12 8V5M9 3h6"/><path d="M4 13H2M22 13h-2"/></svg></span>数字员工配置
+      </div>
+    </div>
+    <div class="nav-footer">
+      <div class="nav-item" onclick="location.href='/'">
+        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></svg></span>返回工作台
+      </div>
+      <div class="nav-item" onclick="location.href='/ops'">
+        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg></span>进入监控
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══════ MAIN CONTENT ═══════ -->
+  <div class="main-content" style="overflow:auto;">
+
+    <!-- ═══════ PAGE: WORK (9006 外链) ═══════ -->
+    <div id="page-work" class="page" style="height:100%;display:flex;flex-direction:column;">
+      <div class="page-header">
+        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>工作成果</h2>
+        <div class="header-right">
+          <button class="btn-primary" onclick="window.open(document.getElementById('app-root').dataset.biz9006, '_blank')">打开业务平台</button>
+        </div>
+      </div>
+      <div class="page-body" style="padding:24px 32px;">
+        <div class="work-tip" style="margin-bottom:16px;padding:12px 16px;border:1px solid var(--c-border-light);border-radius:12px;background:rgba(56,189,248,0.05);font-size:13px;color:var(--c-text-secondary);display:flex;align-items:center;gap:10px;">
+          <svg class="svg-icon" style="color:var(--c-primary);flex:none;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M12 12v4"/></svg>
+          业务成果由独立业务平台（端口 9006）承载，点击卡片在新窗口打开，无需重新登录。
+        </div>
+        <div class="card-grid" id="workCardGrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
+      </div>
+    </div>
+
+    <!-- ═══════ PAGE: KNOWLEDGE ═══════ -->
+    <div id="page-knowledge" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
+      <div class="page-header">
+        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>知识库</h2>
+        <div class="header-right">
+          <button class="btn-primary" onclick="kbOpenCreate()">＋ 新建知识库</button>
+        </div>
+      </div>
+      <div class="page-body" style="padding:24px 32px;">
+        <div id="kbListView">
+          <div class="kb-kpis">
+            <div class="kb-kpi"><div class="kb-kpi-label">知识库总数</div><div class="kb-kpi-value blue" id="kbKpiTotal">0</div></div>
+            <div class="kb-kpi"><div class="kb-kpi-label">文档总数</div><div class="kb-kpi-value green" id="kbKpiDocs">0</div></div>
+            <div class="kb-kpi"><div class="kb-kpi-label">切块总数</div><div class="kb-kpi-value purple" id="kbKpiChunks">0</div></div>
+            <div class="kb-kpi"><div class="kb-kpi-label">绑定智能体</div><div class="kb-kpi-value amber" id="kbKpiEmps">0</div></div>
+          </div>
+          <div class="kb-grid" id="kbGrid"></div>
+        </div>
+        <div id="kbDetailView" class="hidden">
+          <div class="kb-back" onclick="kbShowList()">← 返回知识库列表</div>
+          <div class="kb-hbar">
+            <h2 id="kbDName"></h2>
+            <span class="kb-badge" id="kbDStats"></span>
+            <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="card-btn" onclick="kbOpenBind()">绑定智能体</button>
+              <button class="card-btn" onclick="kbRebuildIndex()">重建索引</button>
+              <button class="card-btn" onclick="kbOpenUpload()">上传文件</button>
+              <button class="card-btn danger" onclick="kbDeleteBase()">删除知识库</button>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center;">
+            <span style="color:var(--c-text-secondary);font-size:12px;">绑定智能体：</span>
+            <span id="kbDEmps"></span>
+          </div>
+          <div style="color:var(--c-text-secondary);font-size:12px;" id="kbDDesc"></div>
+          <div class="kb-chunk-wrap" id="kbChunkList"></div>
+          <div class="kb-pager" id="kbPager"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ PAGE: TOOLS ═══════ -->
+    <div id="page-tools" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
+      <div class="page-header">
+        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>MCP 服务与工具</h2>
+        <div class="header-right">
+          <button class="btn-primary" onclick="openServerModal()">+ 添加MCP Server</button>
+        </div>
+      </div>
+      <div class="page-body" style="padding:24px 32px;overflow-y:auto;">
+        <div class="search-bar" style="margin-bottom:16px;">
+          <input type="text" id="toolSearchInput" placeholder="搜索工具名称 / MCP Server..." oninput="renderToolsPage()">
+        </div>
+        <div class="tools-section">
+          <div class="tools-section-title" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px;font-weight:600;color:var(--c-text-body);">MCP Server <span class="tag" id="serverCountTag" style="margin-left:4px;">0</span></div>
+          <div id="serverCardGrid" style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;"></div>
+        </div>
+        <div class="tools-section">
+          <div class="tools-section-title" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px;font-weight:600;color:var(--c-text-body);">已同步工具 <span class="tag" id="toolCountTag" style="margin-left:4px;">0</span></div>
+          <div class="card-grid" id="toolCardGrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════ PAGE: SKILLS ═══════ -->
+    <div id="page-skills" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
+      <div class="page-header">
+        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg>技能中心</h2>
+        <div class="header-right">
+          <button class="btn-primary" onclick="openCreateSkill()">+ 导入Skill</button>
+        </div>
+      </div>
+      <div class="page-body" style="padding:24px 32px;">
+        <div class="search-bar">
+          <input type="text" id="skillSearchInput" placeholder="搜索技能名称..." oninput="searchSkills(this.value)">
+        </div>
+        <div class="tabs" id="skillTabs">
+          <button class="tab-btn active" data-tab="market" onclick="switchSkillTab('market')">技能市场</button>
+          <button class="tab-btn" data-tab="official" onclick="switchSkillTab('official')">官方推荐</button>
+          <button class="tab-btn" data-tab="custom" onclick="switchSkillTab('custom')">自定义技能</button>
+        </div>
+        <div class="skill-card-grid" id="skillCardGrid"></div>
+      </div>
+    </div>
+
+    <!-- ═══════ PAGE: EMPLOYEES ═══════ -->
+    <div id="page-employees" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
+      <div id="empListView" style="height:100%;display:flex;flex-direction:column;">
+        <div class="page-header">
+          <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><circle cx="9" cy="14" r="1.4"/><circle cx="15" cy="14" r="1.4"/><path d="M12 8V5M9 3h6"/><path d="M4 13H2M22 13h-2"/></svg>数字员工配置</h2>
+          <div class="header-right">
+            <button class="btn-primary" onclick="openCreateEmp()">+ 创建数字员工</button>
+          </div>
+        </div>
+        <div class="page-body" style="padding:24px 32px;">
+          <div class="search-bar">
+            <input type="text" placeholder="搜索数字员工..." oninput="renderEmployees(this.value)">
+          </div>
+          <table class="data-table" id="empTable">
+            <thead><tr><th>ID</th><th>显示名称</th><th>描述</th><th>类型</th><th>创建时间</th><th>操作</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div id="empDetailView" class="hidden" style="height:100%;display:flex;flex-direction:column;">
+        <div id="empDetailTop" class="emp-detail-top"></div>
+        <div id="emp-tab-conv" style="flex:1;overflow-y:auto;" class="hidden"></div>
+        <div id="emp-tab-skill" style="flex:1;overflow-y:auto;" class="hidden"></div>
+        <div id="emp-tab-mcp" style="flex:1;overflow-y:auto;" class="hidden"></div>
+        <div id="emp-tab-settings" style="flex:1;overflow-y:auto;" class="hidden"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════ MODALS ═══════ -->
+
+<!-- 知识库上传 -->
+<div class="modal-overlay hidden" id="kbUploadOverlay">
+  <div class="modal-box" style="max-width:560px;">
+    <h3>上传文件到「<span id="kbUpKbName"></span>」</h3>
+    <div class="kb-file-drop" id="kbFileDrop" onclick="document.getElementById('kbFileInput').click()">
+      <div class="kb-file-drop-big">点击选择 或 拖拽文件到此处</div>
+      <div style="font-size:12px;margin-top:4px;">支持 txt / md / xlsx / pdf / docx，可多选</div>
+    </div>
+    <input type="file" id="kbFileInput" multiple accept=".txt,.md,.xlsx,.pdf,.docx" class="hidden">
+    <div class="kb-upload-list" id="kbUploadList"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="kbCloseUpload()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新建知识库 -->
+<div class="modal-overlay hidden" id="kbCreateOverlay">
+  <div class="modal-box">
+    <h3>新建知识库</h3>
+    <div class="kb-field"><label>名称 *</label><input id="kbNewName" placeholder="例如：运维知识库-告警案例"></div>
+    <div class="kb-field"><label>描述</label><textarea id="kbNewDesc" placeholder="说明这个知识库的领域与用途"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="kbCloseCreate()">取消</button>
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="kbSubmitCreate()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 绑定智能体 -->
+<div class="modal-overlay hidden" id="kbBindOverlay">
+  <div class="modal-box">
+    <h3>绑定智能体到「<span id="kbBindKbName"></span>」</h3>
+    <div id="kbBindEmpList"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="kbCloseBind()">取消</button>
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="kbSubmitBind()">保存绑定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 创建数字员工 -->
+<div class="modal-overlay hidden" id="createEmpModal">
+  <div class="modal-box" style="max-width:560px;">
+    <h3 style="display:flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><circle cx="9" cy="14" r="1.4"/><circle cx="15" cy="14" r="1.4"/><path d="M12 8V5M9 3h6"/><path d="M4 13H2M22 13h-2"/></svg>创建数字员工</h3>
+    <div style="display:flex;flex-direction:column;gap:14px;margin:16px 0;">
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> 员工名称</label><input id="empFormName" type="text" placeholder="如：经营业务专家" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"></div>
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">描述</label><textarea id="empFormDesc" placeholder="描述该员工擅长处理的业务场景..." style="width:100%;padding:10px 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;min-height:60px;resize:vertical;"></textarea></div>
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">员工类型</label><select id="empFormType" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option>告警分析</option><option>定时巡检</option><option>工单处置</option><option>经营分析</option><option>通用</option></select></div>
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">系统 Prompt</label><textarea id="empFormPrompt" placeholder="定义该员工的行为规则和专业知识..." style="width:100%;padding:10px 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;min-height:80px;resize:vertical;"></textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeCreateEmp()">取消</button>
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="doCreateEmployee()">确认创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 创建/编辑技能 -->
+<div class="modal-overlay hidden" id="createSkillModal">
+  <div class="modal-box" style="max-width:680px;">
+    <h3 style="display:flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg><span id="skillModalTitle">创建技能</span></h3>
+    <div style="display:flex;flex-direction:column;gap:14px;margin:16px 0;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> 技能名称</label><input id="skillFormName" type="text" placeholder="如：采购清单比对" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"></div>
+        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">分类</label><select id="skillFormCategory" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="custom">自定义技能</option><option value="official">官方推荐</option><option value="market">技能市场</option></select></div>
+      </div>
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">简短描述</label><input id="skillFormDesc" type="text" placeholder="一句话描述该技能的功能..." style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;"></div>
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">执行流程 / Prompt 说明</label><textarea id="skillFormFlow" placeholder="描述技能的执行流程、约束与目标..." style="width:100%;padding:10px 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;min-height:70px;resize:vertical;"></textarea></div>
+      <div>
+        <label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">绑定工具 <span style="color:var(--c-text-time);font-weight:400;">（可多选，技能执行时按所选工具调度）</span></label>
+        <div id="skillFormTools" style="max-height:200px;overflow-y:auto;border:1px solid var(--c-border-light);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeCreateSkill()">取消</button>
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="doCreateSkill()">确认保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 技能详情 -->
+<div class="skill-detail-overlay hidden" id="skillDetailModal">
+  <div class="skill-detail-box">
+    <div class="detail-header">
+      <span id="skillDetailTitle">Skill 详情</span>
+      <span style="cursor:pointer;font-size:16px;display:inline-flex;color:var(--c-text-secondary);" onclick="closeSkillDetail()"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+    </div>
+    <div class="detail-body" id="skillDetailBody"></div>
+    <div class="modal-actions" style="padding:12px 20px;border-top:1px solid var(--c-border-light);margin-top:0;">
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="closeSkillDetail();openEditSkill(SKILL_DETAIL_ID)">编辑技能</button>
+    </div>
+  </div>
+</div>
+
+<!-- MCP Server -->
+<div class="modal-overlay hidden" id="serverModal">
+  <div class="modal-box" style="max-width:560px;">
+    <h3 style="display:flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span id="serverModalTitle">添加 MCP Server</span></h3>
+    <div style="display:flex;flex-direction:column;gap:14px;margin:16px 0;">
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> Server 名称</label><input id="serverFormName" type="text" placeholder="如：MCP Hub / 本地 MCP Gateway" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"></div>
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> Base URL</label><input id="serverFormUrl" type="text" placeholder="如：http://127.0.0.1:9010 或 https://mcp-hub.example.com" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">类型</label><select id="serverFormType" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="local">本地</option><option value="remote">远程</option></select></div>
+        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">认证方式</label><select id="serverFormAuth" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="none">无</option><option value="bearer">Bearer Token</option><option value="basic">Basic Auth</option></select></div>
+      </div>
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">描述</label><input id="serverFormDesc" type="text" placeholder="该 Server 提供哪些工具能力..." style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeServerModal()">取消</button>
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="doSaveServer()">确认保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- UI DIALOG -->
+<div class="ui-dialog-mask hidden" id="uiDialogMask">
+  <div class="ui-dialog">
+    <div class="ui-dialog-head">
+      <span class="ui-dialog-icon type-info" id="uiDialogIcon"></span>
+      <div class="ui-dialog-title" id="uiDialogTitle">提示</div>
+    </div>
+    <div class="ui-dialog-msg" id="uiDialogMsg"></div>
+    <div class="ui-dialog-actions">
+      <button class="btn-cancel hidden" id="uiDialogCancelBtn">取消</button>
+      <button class="btn-confirm primary" id="uiDialogOkBtn">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="appToast"></div>
+
+<script src="/static/manage.app.js"></script>
+</body>
+</html>

@@ -123,8 +123,8 @@ def _dev_edit_file(path: str, old_string: str, new_string: str) -> dict:
 
 def _dev_search_code(query: str, file_glob: str = None, max_results: int = 30) -> dict:
     """按关键词搜索代码内容，返回匹配的文件、行号、行内容"""
-    import pathlib
     import fnmatch
+    import pathlib
     results = []
     for sub in DEV_ALLOWED_SUBDIRS:
         d = pathlib.Path(DEV_9006_ROOT) / sub

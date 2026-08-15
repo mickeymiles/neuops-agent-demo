@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """服务器采集器：psutil 真实采集 CPU / 内存 / 磁盘 / 负载 / 进程 / 网络IO"""
-import os
 import socket
 import time
 

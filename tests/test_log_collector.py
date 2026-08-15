@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """统一探针日志采集器测试：级别解析、增量 tail、ops_logs 落库"""
+import datetime
 import os
 import sys
 import tempfile
@@ -70,9 +71,10 @@ def test_log_collector_collect():
 def test_ops_logs_db_roundtrip():
     """ops_logs 表读写与统计"""
     db.init_ops_db()
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     before = db.ops_count_logs(minutes=10, level="error")
-    db.ops_save_logs([("2026-08-15 10:00:00", "app:test", "error", "boom"),
-                      ("2026-08-15 10:00:01", "app:test", "info", "ok")])
+    db.ops_save_logs([(now, "app:test", "error", "boom"),
+                      (now, "app:test", "info", "ok")])
     rows = db.ops_get_logs(source="app:test", minutes=30)
     assert len(rows) == 2
     assert db.ops_count_logs(minutes=10, level="error") == before + 1

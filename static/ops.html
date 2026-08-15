@@ -11,6 +11,42 @@
 
 <div class="loading-bar" id="loadingBar"></div>
 
+<div class="ops-layout">
+<aside class="ops-sidebar">
+  <div class="ops-brand">
+    <div class="ops-brand-logo">🛰</div>
+    <div class="ops-brand-txt">
+      <div class="ops-brand-title">NeuOps 监控</div>
+      <div class="ops-brand-sub">一体化运维监控平台</div>
+    </div>
+  </div>
+  <nav class="ops-nav">
+    <div class="ops-nav-group">监控中心</div>
+    <div class="ops-nav-item active" data-tab="overview" onclick="switchTab('overview')"><span class="oi">📊</span>总览</div>
+    <div class="ops-nav-sub">基础设施</div>
+    <div class="ops-nav-item" data-tab="server" onclick="switchTab('server')"><span class="oi">🖥</span>服务器 <span class="cnt" id="cnt-server">0</span></div>
+    <div class="ops-nav-item" data-tab="database" onclick="switchTab('database')"><span class="oi">🗄</span>数据库 <span class="cnt" id="cnt-database">0</span></div>
+    <div class="ops-nav-item" data-tab="network" onclick="switchTab('network')"><span class="oi">🌐</span>网络 <span class="cnt" id="cnt-network">0</span></div>
+    <div class="ops-nav-item" data-tab="container" onclick="switchTab('container')"><span class="oi">📦</span>容器 <span class="cnt" id="cnt-container">0</span></div>
+    <div class="ops-nav-item" data-tab="middleware" onclick="switchTab('middleware')"><span class="oi">🧩</span>中间件 <span class="cnt" id="cnt-middleware">0</span></div>
+    <div class="ops-nav-item" data-tab="application" onclick="switchTab('application')"><span class="oi">🚀</span>应用 <span class="cnt" id="cnt-application">0</span></div>
+    <div class="ops-nav-item" data-tab="agents" onclick="switchTab('agents')"><span class="oi">🤖</span>智能体监控</div>
+    <div class="ops-nav-item" data-tab="logs" onclick="switchTab('logs')"><span class="oi">📜</span>统一日志 <span class="cnt" id="cnt-logs">0</span></div>
+    <div class="ops-nav-group">本体中心</div>
+    <div class="ops-nav-item" data-tab="topology" onclick="switchTab('topology')"><span class="oi">🕸</span>本体拓扑</div>
+    <div class="ops-nav-group">告警中心</div>
+    <div class="ops-nav-item" data-tab="alerts" onclick="switchTab('alerts')"><span class="oi">🚨</span>告警中心</div>
+    <div class="ops-nav-item" data-tab="events" onclick="switchTab('events')"><span class="oi">🩺</span>自愈事件 <span class="cnt" id="cnt-incidents">0</span></div>
+    <div class="ops-nav-group">系统配置</div>
+    <div class="ops-nav-item" data-tab="settings" onclick="switchTab('settings')"><span class="oi">⚙</span>配置中心</div>
+  </nav>
+  <div class="ops-nav-foot">
+    <div class="ops-foot-btn" onclick="window.location.href='/'"><span class="oi">🏠</span>返回工作台</div>
+    <div class="ops-foot-btn" onclick="window.location.href='/manage'"><span class="oi">🗂</span>进入后台</div>
+  </div>
+</aside>
+<main class="ops-content">
+
 <!-- ═══ 顶栏 ═══ -->
 <header class="topbar">
   <div class="logo">⚙</div>
@@ -29,21 +65,6 @@
     <button class="btn primary" onclick="switchTab('settings')">⚙ 配置中心</button>
   </div>
 </header>
-
-<!-- ═══ Tab 导航 ═══ -->
-<nav class="navtabs" id="navtabs">
-  <button class="navtab active" data-tab="overview" onclick="switchTab('overview')">📊 总览</button>
-  <button class="navtab" data-tab="server" onclick="switchTab('server')">🖥 服务器 <span class="cnt" id="cnt-server">0</span></button>
-  <button class="navtab" data-tab="database" onclick="switchTab('database')">🗄 数据库 <span class="cnt" id="cnt-database">0</span></button>
-  <button class="navtab" data-tab="network" onclick="switchTab('network')">🌐 网络 <span class="cnt" id="cnt-network">0</span></button>
-  <button class="navtab" data-tab="container" onclick="switchTab('container')">📦 容器 <span class="cnt" id="cnt-container">0</span></button>
-  <button class="navtab" data-tab="middleware" onclick="switchTab('middleware')">🧩 中间件 <span class="cnt" id="cnt-middleware">0</span></button>
-  <button class="navtab" data-tab="application" onclick="switchTab('application')">🚀 应用 <span class="cnt" id="cnt-application">0</span></button>
-  <button class="navtab" data-tab="logs" onclick="switchTab('logs')">📜 日志 <span class="cnt" id="cnt-logs">0</span></button>
-  <button class="navtab" data-tab="topology" onclick="switchTab('topology')">🕸 本体拓扑</button>
-  <button class="navtab" data-tab="events" onclick="switchTab('events')">🩺 自愈事件 <span class="cnt" id="cnt-incidents">0</span></button>
-  <button class="navtab" data-tab="settings" onclick="switchTab('settings')">⚙ 配置</button>
-</nav>
 
 <div class="wrap">
 
@@ -203,6 +224,44 @@
     </div>
   </section>
 
+  <!-- ═══ 智能体监控 Tab（迁入 /monitor 全部智能体） ═══ -->
+  <section class="tab-page" id="page-agents">
+    <div class="agent-stats" id="agent-stats"></div>
+    <div class="agent-toolbar">
+      <div class="agent-seg">
+        <button data-f="all" class="active" onclick="AG_setAgentFilter('all',this)">全部</button>
+        <button data-f="on" onclick="AG_setAgentFilter('on',this)">已启用</button>
+        <button data-f="off" onclick="AG_setAgentFilter('off',this)">已停用</button>
+      </div>
+      <div class="agent-search">
+        <span class="ico">🔍</span>
+        <input type="text" placeholder="搜索名称 / ID / 类型 / 模型…" oninput="AG_onAgentSearch(this.value)">
+      </div>
+    </div>
+    <div class="agent-grid" id="agent-grid"></div>
+  </section>
+
+  <!-- ═══ 告警中心 Tab（alerts + incidents 聚合） ═══ -->
+  <section class="tab-page" id="page-alerts">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-head"><h3>🚨 告警聚合</h3>
+        <div class="agent-seg" style="margin-left:auto">
+          <button data-status="firing" class="active" onclick="AG_setAlertStatus('firing',this)">未恢复</button>
+          <button data-status="resolved" onclick="AG_setAlertStatus('resolved',this)">已恢复</button>
+          <button data-status="all" onclick="AG_setAlertStatus('all',this)">全部</button>
+        </div>
+      </div>
+      <div id="alertAggList"><div class="empty">加载中…</div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>🩺 自愈事件</h3><span class="tag" id="incidentSub">基础设施自愈</span></div>
+      <div id="incidentAggList"><div class="empty">加载中…</div></div>
+    </div>
+  </section>
+
+</div>
+
+</main>
 </div>
 
 <!-- ═══ 实体详情抽屉 ═══ -->
@@ -264,12 +323,14 @@ function stateTag(s) {
 /* ═══════════════ Tab 切换 ═══════════════ */
 function switchTab(tab) {
   currentTab = tab;
-  document.querySelectorAll(".navtab").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll(".ops-nav-item").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".tab-page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab));
   if (tab === "overview") loadOverview();
   if (ENTITY_TABS.includes(tab)) loadEntities(tab);
+  if (tab === "agents") AG_loadAgents();
   if (tab === "logs") loadLogs();
   if (tab === "topology") loadTopology();
+  if (tab === "alerts") AG_loadAlerts();
   if (tab === "events") loadEvents();
   if (tab === "settings") { loadSettings(); loadRules(); }
 }
@@ -744,6 +805,557 @@ async function loadRules() {
   } catch (e) { /* ignore */ }
 }
 
+/* ═══════════════ 智能体监控（迁入 /monitor 全部智能体） ═══════════════ */
+let AG_agentsAll = [], AG_agentsFilter = "all", AG_agentsQuery = "";
+function AG_fmtNum(n) {
+  n = Number(n) || 0;
+  if (n >= 1e8) return (n / 1e8).toFixed(2) + "亿";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e4) return (n / 1e4).toFixed(1) + "w";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(Math.round(n * 10) / 10);
+}
+function AG_fmtTime(t) { return (t || "").replace("T", " ").slice(0, 19); }
+async function AG_api(url, opts) {
+  const r = await fetch(url, opts).then(d => d.json());
+  if (r && r.ok === false) throw new Error(r.error || "请求失败");
+  return r && r.data !== undefined ? r.data : r;
+}
+function AG_parseTools(s) {
+  if (!s) return [];
+  try { const a = JSON.parse(s); return Array.isArray(a) ? a.map(t => typeof t === "string" ? t : (t.name || JSON.stringify(t))) : []; }
+  catch (e) { return []; }
+}
+function AG_renderAgentStats(list) {
+  const total = list.length;
+  const on = list.filter(a => a.enabled).length;
+  const off = total - on;
+  const alerts = list.reduce((s, a) => s + (a.active_alerts || 0), 0);
+  $("agent-stats").innerHTML = [
+    { l: "智能体总数", v: total, c: "blue", e: "已配置数字员工" },
+    { l: "已启用", v: on, c: "green", e: "运行中" },
+    { l: "已停用", v: off, c: off ? "amber" : "green", e: off ? "需关注" : "全部在线" },
+    { l: "活跃告警", v: alerts, c: alerts ? "red" : "green", e: alerts ? "有告警未恢复" : "全部正常" },
+  ].map(s => `<div class="ag-kpi"><div class="label">${s.l}</div><div class="value ${s.c}">${s.v}</div><div class="extra">${s.e}</div></div>`).join("");
+}
+function AG_filterAgents() {
+  const q = AG_agentsQuery.toLowerCase();
+  return AG_agentsAll.filter(a =>
+    !a.is_internal &&
+    (AG_agentsFilter === "all" || (AG_agentsFilter === "on" ? a.enabled : !a.enabled)) &&
+    (!q || (a.name + " " + a.id + " " + (a.type || "") + " " + (a.model || "")).toLowerCase().includes(q))
+  );
+}
+function AG_renderAgentCards(list) {
+  const el = $("agent-grid");
+  if (!el) return;
+  if (!list.length) { el.innerHTML = `<div class="empty" style="grid-column:1/-1">暂无匹配的智能体</div>`; return; }
+  el.innerHTML = list.map(a => {
+    const on = a.enabled;
+    const skills = (a.skills || []).slice(0, 6).map(s =>
+      `<span class="badge skill" title="${esc(s.category)}">${esc(s.name)}<span class="muted" style="margin-left:4px;font-size:10px">${esc(s.category)}</span></span>`).join("");
+    const mcp = (a.mcp_tools || []).slice(0, 6).map(m =>
+      `<span class="badge mcp">${esc(m.name)}</span>`).join("");
+    const tagHtml = (skills || mcp) ? `<div class="ac-tags">${skills}${mcp}</div>`
+      : `<div class="ac-tags muted sm">未配置技能 / 工具</div>`;
+    const est = a.est_tokens ? ` <span class="muted" style="font-size:10px">+${AG_fmtNum(a.est_tokens)}</span>` : "";
+    const last = a.last_active ? AG_fmtTime(a.last_active).slice(5, 16) : "—";
+    const alertBadge = a.active_alerts > 0 ? `<span class="ac-alert">🔔 ${a.active_alerts} 条活跃告警</span>` : "";
+    return `<div class="agent-card ${on ? "" : "off"}">
+      <div class="ac-head">
+        <span class="ac-dot ${on ? "pulse" : "off"}"></span>
+        <div class="ac-name"><span class="ellipsis" style="max-width:170px">${esc(a.name)}</span><span class="id">${esc(a.id)}</span></div>
+        <span class="badge ac-type">${esc(a.type) || "数字员工"}</span>
+      </div>
+      <div class="ac-desc">${esc(a.desc) || "暂无描述"}</div>
+      <div class="ac-meta">
+        <span class="kv">模型 <b>${esc(a.model) || "—"}</b></span>
+        <span class="kv">知识库 <b>${esc(a.rag_kb) || "—"}</b></span>
+        <span class="kv">创建 <b>${AG_fmtTime(a.created).slice(0, 10)}</b></span>
+        <span class="kv">更新 <b>${AG_fmtTime(a.updated).slice(0, 10)}</b></span>
+      </div>
+      ${tagHtml}
+      <div class="ac-metrics">
+        <div class="ac-metric"><div class="v">${a.conversation_count}</div><div class="l">会话</div></div>
+        <div class="ac-metric"><div class="v">${a.message_count}</div><div class="l">消息</div></div>
+        <div class="ac-metric"><div class="v">${a.call_count}</div><div class="l">LLM 调用</div></div>
+        <div class="ac-metric"><div class="v ${a.error_count > 0 ? "red" : ""}">${a.error_count}</div><div class="l">错误</div></div>
+        <div class="ac-metric"><div class="v">${a.avg_latency_ms ? a.avg_latency_ms + "ms" : "—"}</div><div class="l">平均耗时</div></div>
+        <div class="ac-metric"><div class="v">${AG_fmtNum(a.total_tokens)}${est}</div><div class="l">Token</div></div>
+        <div class="ac-metric"><div class="v">${a.today_call_count}</div><div class="l">今日调用</div></div>
+        <div class="ac-metric"><div class="v">${last}</div><div class="l">最近活跃</div></div>
+      </div>
+      <div class="ac-foot">
+        <label class="ag-switch" onclick="event.stopPropagation()" title="开启/关闭（仅监控状态）">
+          <input type="checkbox" ${on ? "checked" : ""} onchange="AG_toggleAgent('${a.id}', this)">
+          <span class="slider"></span>
+        </label>
+        <span class="sm ${on ? "" : "muted"}">${on ? "运行中" : "已停用"}</span>
+        ${alertBadge}
+        <button class="ac-btn" onclick="AG_openAgentDetail('${a.id}')">查看详情 →</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+async function AG_loadAgents() {
+  try {
+    AG_agentsAll = await AG_api("/api/monitor/agents");
+    AG_renderAgentStats(AG_agentsAll);
+    AG_renderAgentCards(AG_filterAgents());
+  } catch (e) {
+    $("agent-grid").innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`;
+  }
+}
+function AG_setAgentFilter(f, el) {
+  AG_agentsFilter = f;
+  document.querySelectorAll("#page-agents .agent-seg button").forEach(b => b.classList.toggle("active", b.dataset.f === f));
+  AG_renderAgentCards(AG_filterAgents());
+}
+function AG_onAgentSearch(v) { AG_agentsQuery = v; AG_renderAgentCards(AG_filterAgents()); }
+async function AG_toggleAgent(id, cb) {
+  try {
+    const d = await AG_api(`/api/monitor/agents/${encodeURIComponent(id)}/toggle`, { method: "POST" });
+    const a = AG_agentsAll.find(x => x.id === id);
+    if (a) { a.enabled = !!d.enabled; AG_renderAgentCards(AG_filterAgents()); AG_renderAgentStats(AG_agentsAll); }
+  } catch (e) {
+    if (cb) cb.checked = !cb.checked;
+    console.error(e);
+  }
+}
+async function AG_openAgentDetail(id) {
+  $("drawer").classList.add("open");
+  $("drawerMask").style.display = "block";
+  $("dBody").innerHTML = `<div class="loading">加载中…</div>`;
+  $("dTitle").textContent = "加载中…";
+  $("dSub").textContent = "";
+  try {
+    const d = await AG_api(`/api/monitor/agents/${encodeURIComponent(id)}/full`);
+    const e = d.employee;
+    $("dTitle").textContent = e.name;
+    $("dSub").textContent = `${e.id} · ${e.type || "数字员工"} · ${e.enabled ? "🟢 运行中" : "⚪ 已停用"}`;
+    AG_renderAgentDetail(d);
+  } catch (err) {
+    $("dBody").innerHTML = `<div class="empty">加载失败：${esc(err.message)}</div>`;
+  }
+}
+function AG_renderAgentDetail(d) {
+  const e = d.employee, m = d.metrics;
+  let html = "";
+
+  html += `<div class="dp-block"><h4>📋 基本信息</h4>
+    <div class="dp-row"><span class="k">ID</span><span class="v tnum">${esc(e.id)}</span></div>
+    <div class="dp-row"><span class="k">名称</span><span class="v">${esc(e.name)}</span></div>
+    <div class="dp-row"><span class="k">类型</span><span class="v">${esc(e.type) || "数字员工"}</span></div>
+    <div class="dp-row"><span class="k">模型</span><span class="v">${esc(e.model) || "—"}</span></div>
+    <div class="dp-row"><span class="k">知识库</span><span class="v">${esc(e.rag_kb) || "—"}</span></div>
+    <div class="dp-row"><span class="k">创建时间</span><span class="v">${AG_fmtTime(e.created)}</span></div>
+    <div class="dp-row"><span class="k">更新时间</span><span class="v">${AG_fmtTime(e.updated)}</span></div>
+    <div class="dp-row"><span class="k">描述</span><span class="v">${esc(e.desc) || "—"}</span></div>
+  </div>`;
+
+  html += `<div class="dp-block"><h4>📈 监控指标</h4>
+    <div class="dp-row"><span class="k">会话数</span><span class="v tnum">${m.conversation_count}</span></div>
+    <div class="dp-row"><span class="k">消息数</span><span class="v tnum">${m.message_count}</span></div>
+    <div class="dp-row"><span class="k">LLM 调用</span><span class="v tnum">${m.call_count} <span class="muted">(今日 ${m.today_call_count})</span></span></div>
+    <div class="dp-row"><span class="k">Prompt Tokens</span><span class="v tnum">${AG_fmtNum(m.prompt_tokens)}</span></div>
+    <div class="dp-row"><span class="k">Completion Tokens</span><span class="v tnum">${AG_fmtNum(m.completion_tokens)}</span></div>
+    <div class="dp-row"><span class="k">总 Tokens</span><span class="v tnum" style="color:var(--green)">${AG_fmtNum(m.total_tokens)} ${m.est_tokens ? `<span class="muted">(+${AG_fmtNum(m.est_tokens)} 估算)</span>` : ""}</span></div>
+    <div class="dp-row"><span class="k">错误数</span><span class="v tnum" style="color:${m.error_count ? "var(--red)" : "var(--green)"}">${m.error_count}</span></div>
+    <div class="dp-row"><span class="k">平均耗时</span><span class="v tnum">${m.avg_latency_ms}ms</span></div>
+    <div class="dp-row"><span class="k">最近活跃</span><span class="v">${AG_fmtTime(m.last_active) || "—"}</span></div>
+  </div>`;
+
+  html += `<div class="dp-block"><h4>🧠 系统提示词</h4>${
+    e.prompt ? `<div class="dp-prompt">${esc(e.prompt)}</div>` : `<div class="muted sm">未配置</div>`
+  }</div>`;
+
+  html += `<div class="dp-block"><h4>🛠 关联技能 (${d.skill_details.length})</h4>${
+    d.skill_details.length ? d.skill_details.map(s => `
+      <div class="dp-skill">
+        <span class="badge skill" style="flex:none">${esc(s.category || "通用")}</span>
+        <div>
+          <div class="dp-item-name">${esc(s.name)}${s.enabled === false ? ` <span class="badge warn">已停用</span>` : ""}</div>
+          <div class="dp-item-sub">${esc(s.desc) || "无描述"}</div>
+        </div>
+      </div>`).join("") : `<div class="muted sm">未配置技能</div>`
+  }</div>`;
+
+  html += `<div class="dp-block"><h4>🔌 MCP 工具 (${d.mcp_detail.length})</h4>${
+    d.mcp_detail.length ? d.mcp_detail.map(t => `
+      <div class="dp-skill">
+        <span class="badge mcp" style="flex:none">MCP</span>
+        <div>
+          <div class="dp-item-name">${esc(t.name)}</div>
+          <div class="dp-item-sub">${esc(t.desc) || "无描述"}</div>
+        </div>
+      </div>`).join("") : `<div class="muted sm">未配置 MCP 工具</div>`
+  }</div>`;
+
+  html += `<div class="dp-block"><h4>💬 最近会话 (${d.recent_conversations.length})</h4>${
+    d.recent_conversations.length ? d.recent_conversations.map(c => `
+      <div class="dp-list-item" style="cursor:pointer" onclick="AG_openConv('${c.id}')">
+        <div class="t"><span class="ellipsis" style="max-width:220px">${esc(c.title) || "(无标题)"}</span><span class="muted">${AG_fmtTime(c.updated_at)}</span></div>
+        <div class="m"><span>${c.message_count} 条消息</span><span>${c.llm_call_count} 次调用</span><span>${AG_fmtNum(c.total_tokens)} tokens</span>${c.error_count ? `<span class="badge crit">${c.error_count} 错误</span>` : ""}</div>
+      </div>`).join("") : `<div class="muted sm">暂无会话记录</div>`
+  }</div>`;
+
+  html += `<div class="dp-block"><h4>🔗 相关链路追踪 (${d.traces.length})</h4>${
+    d.traces.length ? d.traces.map(t => `
+      <div class="dp-list-item" style="cursor:pointer" onclick="AG_openTrace('${t.conversation_id}')">
+        <div class="t"><span class="ellipsis" style="max-width:220px">${esc(t.title) || t.conversation_id}</span><span class="muted">${AG_fmtTime(t.start)}</span></div>
+        <div class="m"><span>${t.span_count} spans</span><span>${AG_fmtNum(t.total_latency_ms)}ms</span><span>${AG_fmtNum(t.total_tokens)} tokens</span>${t.error_count ? `<span class="badge crit">${t.error_count} 错误</span>` : ""}</div>
+      </div>`).join("") : `<div class="muted sm">暂无链路数据</div>`
+  }</div>`;
+
+  html += `<div class="dp-block"><h4>🚨 相关告警 (${d.alerts.length})</h4>${
+    d.alerts.length ? d.alerts.map(a => {
+      const sev = a.severity === "critical" ? "crit" : a.severity === "warning" ? "warn" : "ok";
+      const st = a.status === "firing" ? `<span class="badge crit">未恢复</span>` : `<span class="badge ok">已恢复</span>`;
+      return `<div class="dp-list-item">
+        <div class="t"><span class="badge ${sev}">${esc(a.severity)}</span><span class="ellipsis" style="max-width:160px">${esc(a.rule_name)}</span>${st}</div>
+        <div class="m" style="color:var(--text)">${esc(a.message)}</div>
+        <div class="m"><span>${AG_fmtTime(a.created_at)}</span>${a.value != null ? `<span>指标值 ${AG_fmtNum(a.value)}</span>` : ""}</div>
+      </div>`;
+    }).join("") : `<div class="muted sm">暂无相关告警</div>`
+  }</div>`;
+
+  $("dBody").innerHTML = html;
+}
+
+/* ══════════ 会话详情抽屉（monitor 迁入） ══════════ */
+function AG_openConv(id) {
+  $("drawer").classList.add("open");
+  $("drawerMask").style.display = "block";
+  $("dBody").innerHTML = `<div class="loading">加载中…</div>`;
+  AG_api(`/api/monitor/conversations/${encodeURIComponent(id)}`).then(d => {
+    const cv = d.conversation;
+    $("dTitle").textContent = cv.title || "(无标题)";
+    const tok = d.llm_calls.reduce((s, c) => s + (c.total_tokens || 0), 0);
+    $("dSub").textContent = `ID ${cv.id} · ${d.messages.length} 条消息 · ${d.llm_calls.length} 次 LLM 调用 · ${AG_fmtNum(tok)} tokens`;
+    let html = `<div class="msgtl">`;
+    d.messages.forEach(m => {
+      const roleCls = m.role === "user" ? "user" : "agent";
+      const roleName = m.role === "user" ? "用户输入" : "智能体输出";
+      const route = m.route ? `<span class="badge emp">${esc(m.route)}</span>` : "";
+      const tools = AG_parseTools(m.tools);
+      const thought = m.thought ? `<div class="subsection"><h4>💭 思考过程</h4><div class="bubble muted">${esc(m.thought)}</div></div>` : "";
+      const toolHtml = tools.length ? `<div class="subsection"><h4>🛠 工具调用</h4>${tools.map(t => `<span class="tool-chip">${esc(t)}</span>`).join("")}</div>` : "";
+      const content = m.content || m.conclusion || "";
+      const collapsed = content.length > 400;
+      html += `<div class="msg ${roleCls}">
+        <div class="who"><span class="role">${roleName}</span>${route}<span>${AG_fmtTime(m.created_at)}</span></div>
+        <div class="bubble" ${collapsed ? `id="c-${m.id}"` : ""}>${esc(content)}${collapsed ? `<br><button class="collapse-btn" onclick="AG_expandMsg(${m.id})">展开全文 ↓</button>` : ""}</div>
+        ${thought}${toolHtml}
+      </div>`;
+    });
+    html += `</div>`;
+    if (d.llm_calls.length) {
+      html += `<div class="subsection"><h4>⚡ LLM 调用明细（Token 观测）</h4><table><thead><tr><th>阶段</th><th>模型</th><th>Prompt</th><th>Completion</th><th>Total</th><th>耗时</th><th>状态</th><th>时间</th></tr></thead><tbody>`;
+      d.llm_calls.forEach(c => {
+        html += `<tr>
+          <td><span class="badge">${esc(c.stage)}</span> ${esc(c.employee_name)}</td>
+          <td class="muted">${esc(c.model)}</td>
+          <td class="tnum">${AG_fmtNum(c.prompt_tokens)}</td>
+          <td class="tnum">${AG_fmtNum(c.completion_tokens)}</td>
+          <td class="tnum" style="color:var(--green)">${AG_fmtNum(c.total_tokens)}</td>
+          <td class="tnum">${c.latency_ms}ms</td>
+          <td>${c.error ? `<span class="badge crit">失败</span>` : `<span class="badge ok">成功</span>`}</td>
+          <td class="muted sm">${AG_fmtTime(c.created_at)}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+    $("dBody").innerHTML = html;
+  }).catch(e => {
+    $("dBody").innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`;
+  });
+}
+function AG_expandMsg(id) {
+  const el = $("c-" + id);
+  if (el) { el.style.whiteSpace = "normal"; el.classList.remove("bubble"); el.style.maxHeight = "none"; const b = el.querySelector(".collapse-btn"); if (b) b.remove(); }
+}
+
+/* ══════════ 链路追踪（monitor 迁入） ══════════ */
+const AG_STAGE_LABELS = { intent_route: "意图路由", agent_exec: "Agent 执行", agent_exec_fallback: "兜底推理", other: "其他" };
+function AG_stageColor(stage, err) {
+  const map = { intent_route: "#4f8cff", agent_exec: "#22d3ee", agent_exec_fallback: "#a78bfa", other: "#7d8db0" };
+  return err ? "#f87171" : (map[stage] || "#7d8db0");
+}
+function AG_openTrace(id) {
+  $("drawer").classList.add("open");
+  $("drawerMask").style.display = "block";
+  $("dBody").innerHTML = `<div class="loading">加载中…</div>`;
+  AG_api(`/api/monitor/traces/${encodeURIComponent(id)}`).then(d => {
+    const cv = d.conversation;
+    const st = d.stats || {};
+    const tools = d.tool_calls || [];
+    const rags = d.rag_calls || [];
+    $("dTitle").textContent = "Trace: " + (cv.title || cv.id);
+    $("dSub").textContent = `${cv.id} · ${d.spans.length} 个 Span · ${tools.length} 次工具调用 · ${rags.length} 次知识库检索`;
+    if (!d.spans.length) {
+      $("dBody").innerHTML = `<div class="empty">该会话暂无 LLM 调用观测</div>`;
+      return;
+    }
+    const errCount = st.error_count || 0;
+    const statusBadge = errCount ? `<span class="badge crit">含 ${errCount} 个错误</span>` : `<span class="badge ok">全部成功</span>`;
+    const ratio = st.stage_ratio || {};
+    const srcStats = d.source_stats || {};
+    const tSrc = srcStats.tool_calls || {};
+    let html = `
+    <div class="trace-sum">
+      <div class="ts-cell"><div class="k">状态</div><div class="v">${statusBadge}</div></div>
+      <div class="ts-cell"><div class="k">总耗时</div><div class="v amber">${AG_fmtNum(st.total_latency_ms || 0)}<span class="small"> ms</span></div></div>
+      <div class="ts-cell"><div class="k">总 Token · 估算成本</div><div class="v green">${AG_fmtNum(st.total_tokens || 0)}<span class="small"> · ¥${(st.cost || 0).toFixed(4)}</span></div></div>
+    </div>
+    <div class="src-line">
+      <span><span class="src-dot" style="background:#34d399"></span><b>${srcStats.llm_calls || 0}</b> 次真实 LLM 调用</span>
+      <span><span class="src-dot" style="background:#34d399"></span>工具 <b>${tSrc.real || 0}</b> 真实数据源</span>
+      <span><span class="src-dot" style="background:#fbbf24"></span>工具 <b>${tSrc.mock || 0}</b> Mock 数据源</span>
+      ${tSrc.unknown ? `<span><span class="src-dot" style="background:#7d8db0"></span>工具 <b>${tSrc.unknown}</b> 未知来源</span>` : ""}
+      <span style="margin-left:auto">真实=线上系统/接口/代码 · Mock=演示模拟数据</span>
+    </div>
+    <div class="subsection"><h4>阶段耗时占比</h4>
+      <div class="stagebar">
+        <i style="width:${ratio.intent_route || 0}%;background:#4f8cff" title="意图路由 ${ratio.intent_route || 0}%"></i>
+        <i style="width:${ratio.agent_exec || 0}%;background:#22d3ee" title="Agent 执行 ${ratio.agent_exec || 0}%"></i>
+        <i style="width:${ratio.agent_exec_fallback || 0}%;background:#a78bfa" title="兜底推理 ${ratio.agent_exec_fallback || 0}%"></i>
+        <i style="width:${ratio.other || 0}%;background:#7d8db0" title="其他 ${ratio.other || 0}%"></i>
+      </div>
+      <div class="stage-legend">
+        <span><b style="background:#4f8cff"></b>意图路由 ${ratio.intent_route || 0}%</span>
+        <span><b style="background:#22d3ee"></b>Agent 执行 ${ratio.agent_exec || 0}%</span>
+        <span><b style="background:#a78bfa"></b>兜底推理 ${ratio.agent_exec_fallback || 0}%</span>
+        <span><b style="background:#7d8db0"></b>其他 ${ratio.other || 0}%</span>
+      </div>
+    </div>
+    <div class="subsection"><h4>🕸 智能体协作链路</h4><div class="agent-flow" id="agent-flow"></div></div>
+    <div class="subsection"><h4>⛰ Span 瀑布图</h4><div id="trace-gantt" class="gantt"></div></div>
+    <div class="subsection"><h4>⚡ Span 明细（点击行展开）</h4><table><thead><tr><th style="width:26px"></th><th>#</th><th>阶段</th><th>智能体</th><th>模型</th><th>Token</th><th>耗时</th><th>成本</th><th>状态</th><th>时间</th></tr></thead><tbody>`;
+    d.spans.forEach((s, i) => {
+      const cost = s.cost != null ? "¥" + Number(s.cost).toFixed(4) : "—";
+      const col = AG_stageColor(s.stage, false);
+      html += `<tr onclick="AG_toggleSpanDetail(${i})" id="srow-${i}">
+        <td class="span-toggle" id="st-${i}"><i class="chev"></i></td>
+        <td class="muted">#${i + 1}</td>
+        <td><span class="badge" style="background:${col}22;color:${col};border-color:${col}55">${esc(s.stage || "—")}</span></td>
+        <td><span class="badge emp">${esc(s.employee_name)}</span></td>
+        <td class="muted">${esc(s.model)}</td>
+        <td class="tnum">${AG_fmtNum(s.total_tokens)}</td>
+        <td class="tnum">${s.latency_ms}ms</td>
+        <td class="tnum">${cost}</td>
+        <td>${s.error ? `<span class="badge crit">失败</span>` : `<span class="badge ok">成功</span>`}</td>
+        <td class="muted sm">${AG_fmtTime(s.created_at)}</td>
+      </tr>
+      <tr class="span-detail" id="sd-${i}"><td colspan="10">
+        <div class="dp-block"><h4>📥 输入（Prompt 摘要）</h4><div class="dp-prompt">${esc(s.input || "—")}</div></div>
+        <div class="dp-block"><h4>📤 输出（Completion 摘要）</h4><div class="dp-prompt">${esc(s.output || "—")}</div></div>
+        <div class="dp-block"><h4>⚙ 调用参数</h4>
+          <div class="dp-row"><span class="k">模型</span><span class="v">${esc(s.model || "—")}</span></div>
+          <div class="dp-row"><span class="k">温度</span><span class="v">${s.temperature != null ? s.temperature : "—"}</span></div>
+          <div class="dp-row"><span class="k">max_tokens</span><span class="v">${s.max_tokens || "—"}</span></div>
+          <div class="dp-row"><span class="k">轮次</span><span class="v">#${s.round_no || 0}</span></div>
+          <div class="dp-row"><span class="k">本轮工具</span><span class="v">${esc(s.tool_names || "—")}</span></div>
+          <div class="dp-row"><span class="k">Token 用量</span><span class="v">${AG_fmtNum(s.prompt_tokens)} / ${AG_fmtNum(s.completion_tokens)} / ${AG_fmtNum(s.total_tokens)}</span></div>
+          <div class="dp-row"><span class="k">估算成本</span><span class="v" style="color:var(--green)">¥${(s.cost || 0).toFixed(4)}</span></div>
+          ${s.error ? `<div class="dp-row"><span class="k">错误信息</span><span class="v" style="color:var(--red)">${esc(s.error)}</span></div>` : ""}
+        </div>
+      </td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+    if (tools.length) {
+      html += `<div class="subsection"><h4>🛠 工具调用（${tools.length}）</h4>`;
+      tools.forEach(t => {
+        const argsTxt = (t.args || "—").replace(/\n/g, "\n");
+        const srcMeta = { real: { cls: "src-real", label: "真实数据源" }, mock: { cls: "src-mock", label: "Mock 数据源" }, unknown: { cls: "src-unknown", label: "来源未知" } };
+        const sm = srcMeta[t.data_source] || srcMeta.unknown;
+        html += `<div class="toolcard">
+          <div class="th"><span class="fn">⚙ ${esc(t.function_name)}</span>
+            ${t.success ? `<span class="badge ok">成功</span>` : `<span class="badge crit">失败</span>`}
+            <span class="badge ${sm.cls}">${sm.label}</span>
+            <span class="muted">轮次 #${t.round_no || 0}</span>
+            <span class="lat">${t.latency_ms}ms</span></div>
+          <pre>入参：${esc(argsTxt)}${t.result !== "" && t.result != null ? `\n\n出参：${esc(t.result)}` : ""}${t.error ? `\n\n错误：${esc(t.error)}` : ""}</pre>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+    if (rags.length) {
+      html += `<div class="subsection"><h4>📚 RAG 知识库检索（${rags.length}）</h4>`;
+      rags.forEach(r => {
+        let src = "";
+        try { src = JSON.parse(r.sources || "[]").join("、"); } catch (e) { src = r.sources || ""; }
+        html += `<div class="ragcard">
+          <div class="q">🔍 ${esc(r.query || "—")}</div>
+          <div class="m">
+            <span>命中 <b>${r.hit_count || 0}</b> 条</span>
+            <span>最高相似度 <b>${r.top_score || 0}</b></span>
+            <span>最低 <b>${r.min_score || 0}</b></span>
+            <span class="tnum">${r.latency_ms}ms</span>
+            <span class="muted">${AG_fmtTime(r.created_at)}</span>
+          </div>
+          ${src ? `<div class="src">来源：${esc(src)}</div>` : ""}
+        </div>`;
+      });
+      html += `</div>`;
+    }
+    const msgs = d.messages || [];
+    if (msgs.length) {
+      html += `<div class="subsection"><h4>💬 会话消息时间线</h4><div class="msgtl">`;
+      msgs.forEach(m => {
+        const roleCls = m.role === "user" ? "user" : "agent";
+        const roleName = m.role === "user" ? "用户输入" : "智能体输出";
+        const srcMap = { user: { cls: "src-user", label: "用户输入" }, llm_real: { cls: "src-llm", label: "真实 LLM" }, seed: { cls: "src-seed", label: "演示数据" } };
+        const sm = srcMap[m.source] || srcMap.seed;
+        const route = m.route ? `<span class="badge emp">${esc(m.route)}</span>` : "";
+        const tools2 = AG_parseTools(m.tools);
+        const thought = m.thought ? `<div class="subsection" style="margin-top:8px"><div class="bubble muted" style="font-size:12px">💭 ${esc(m.thought)}</div></div>` : "";
+        const toolHtml = tools2.length ? `<div class="meta">🛠 ${tools2.map(t => `<span class="tool-chip">${esc(t)}</span>`).join("")}</div>` : "";
+        const content = m.content || m.conclusion || "";
+        html += `<div class="msg ${roleCls}">
+          <div class="who"><span class="role">${roleName}</span><span class="badge ${sm.cls}">${sm.label}</span>${route}<span>${AG_fmtTime(m.created_at)}</span></div>
+          <div class="bubble">${esc(content) || "—"}</div>${thought}${toolHtml}
+        </div>`;
+      });
+      html += `</div></div>`;
+    }
+    $("dBody").innerHTML = html;
+    AG_renderAgentFlow($("agent-flow"), d.spans, tools);
+    AG_renderTraceGantt($("trace-gantt"), d.spans);
+  }).catch(e => {
+    $("dBody").innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`;
+  });
+}
+function AG_toggleSpanDetail(i) {
+  const sd = $("sd-" + i);
+  const st = $("st-" + i);
+  if (!sd) return;
+  const open = sd.classList.toggle("open");
+  if (st) st.classList.toggle("open", open);
+}
+function AG_focusSpan(name) {
+  const rows = document.querySelectorAll("#dBody tr[id^='srow-']");
+  for (const r of rows) {
+    if (r.textContent.includes(name)) {
+      r.scrollIntoView({ behavior: "smooth", block: "center" });
+      r.style.background = "rgba(34,211,238,.14)";
+      setTimeout(() => { r.style.background = ""; }, 1600);
+      return;
+    }
+  }
+}
+function AG_renderAgentFlow(el, spans, tools) {
+  if (!el || !spans.length) return;
+  const routeSpan = spans.find(s => s.stage === "intent_route");
+  const tByEmp = {};
+  (tools || []).forEach(t => { const k = t.employee_id || t.employee_name || "?"; (tByEmp[k] = tByEmp[k] || []).push(t); });
+  const nodes = [];
+  if (routeSpan) {
+    const rTarget = routeSpan.employee_name && routeSpan.employee_name !== "意图路由" ? routeSpan.employee_name : "";
+    nodes.push({ kind: "route", title: "意图路由", sub: rTarget ? `→ ${rTarget}` : "分发到业务智能体" });
+  }
+  const seen = new Set();
+  spans.forEach(s => {
+    const empId = s.employee_id || s.employee_name || "?";
+    if (s.stage === "intent_route" || seen.has(empId)) return;
+    seen.add(empId);
+    nodes.push({
+      kind: s.stage === "agent_exec_fallback" ? "fallback" : "emp",
+      title: s.employee_name || s.employee_id || empId,
+      sub: `${s.model || "—"} · 共 ${spans.filter(x => (x.employee_id || x.employee_name || "?") === empId).length} 轮`,
+      tools: tByEmp[empId] || [],
+    });
+  });
+  if (!nodes.length) nodes.push({ kind: "emp", title: spans[0].employee_name || "Agent", sub: spans[0].model || "" });
+  el.innerHTML = nodes.map((n, i) => {
+    const arrow = i ? `<div class="flow-arrow">→</div>` : "";
+    const toolsHtml = (n.tools || []).map(t => {
+      const cls = t.data_source === "real" ? "real" : t.data_source === "mock" ? "mock" : "";
+      return `<span class="flow-tool ${cls}" title="${esc(t.function_name)} · ${t.latency_ms}ms">${esc(t.function_name)}</span>`;
+    }).join("");
+    return `${arrow}<div class="flow-node ${n.kind}" onclick="AG_focusSpan('${esc(n.title).replace(/'/g, "\\'")}')">
+      <div class="fk">${n.kind === "route" ? "ROUTER" : n.kind === "fallback" ? "FALLBACK" : "AGENT"}</div>
+      <div class="fn">${esc(n.title)}</div>
+      <div class="fm">${esc(n.sub || "")}</div>
+      ${toolsHtml ? `<div class="flow-tools">${toolsHtml}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+function AG_renderTraceGantt(el, spans) {
+  if (!window.echarts || !el) return;
+  el.style.height = Math.max(140, spans.length * 34 + 60) + "px";
+  const t0 = new Date(spans[0].created_at).getTime();
+  const starts = spans.map(s => Math.max(0, new Date(s.created_at).getTime() - t0));
+  const lasts = spans.map((s, i) => Math.max(s.latency_ms || 100, 1));
+  const maxT = Math.max(...starts.map((s, i) => s + lasts[i]));
+  const chart = echarts.init(el);
+  chart.setOption({
+    backgroundColor: "transparent",
+    grid: { left: 8, right: 44, top: 10, bottom: 8, containLabel: true },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      backgroundColor: "#101A2E", borderColor: "#263350", textStyle: { color: "#dbe4f5", fontSize: 12 },
+      formatter: ps => {
+        const p = ps.find(x => x.seriesName !== "占位");
+        if (!p) return "";
+        const s = spans[p.dataIndex];
+        return `<b>#${p.dataIndex + 1} ${esc(AG_STAGE_LABELS[s.stage] || s.stage || "")}</b><br/>${esc(s.employee_name || "")} · ${esc(s.model || "")}<br/>耗时 <b>${s.latency_ms}ms</b> · Token <b>${AG_fmtNum(s.total_tokens)}</b><br/>轮次 #${s.round_no || 0}${s.error ? `<br/><span style="color:#f87171">✗ ${esc(s.error)}</span>` : ""}`;
+      }
+    },
+    xAxis: { type: "value", max: maxT, axisLabel: { formatter: v => v + "ms", color: "#7d8db0", fontSize: 11 }, splitLine: { lineStyle: { color: "rgba(27,39,64,.6)" } } },
+    yAxis: { type: "category", data: spans.map((s, i) => "#" + (i + 1) + " " + (AG_STAGE_LABELS[s.stage] || s.stage || "")), axisLabel: { color: "#7d8db0", fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
+    series: [
+      { name: "占位", type: "bar", stack: "g", data: starts, barWidth: 16, itemStyle: { color: "transparent" }, emphasis: { disabled: true }, silent: true, tooltip: { show: false } },
+      { name: "Span", type: "bar", stack: "g", barWidth: 16, data: spans.map((s, i) => ({ value: lasts[i], itemStyle: { color: AG_stageColor(s.stage, !!s.error), borderRadius: 3 } })) }
+    ]
+  });
+  setTimeout(() => chart.resize(), 60);
+}
+
+/* ═══════════════ 告警中心聚合（alerts + incidents） ═══════════════ */
+let AG_alertStatus = "firing";
+function AG_renderAlerts(list, status) {
+  const sev = a => a.severity === "critical" ? "crit" : a.severity === "warning" ? "warn" : "ok";
+  $("alertAggList").innerHTML = list.map(a => {
+    const st = a.status === "firing" ? `<span class="badge crit">未恢复</span>` : `<span class="badge ok">已恢复</span>`;
+    return `<div class="agg-row">
+      <span class="badge ${sev(a)}">${esc(a.severity)}</span>
+      <span class="badge">${esc(a.rule_name)}</span>
+      <span class="agg-target">${esc(a.target_name) || "全局"}</span>
+      <span class="ellipsis muted" style="flex:1;max-width:360px">${esc(a.message)}</span>
+      <span class="tnum">${AG_fmtNum(a.value)}</span>
+      ${st}
+      <span class="muted sm">${AG_fmtTime(a.created_at)}${a.resolved_at ? `<br/>恢复 ${AG_fmtTime(a.resolved_at)}` : ""}</span>
+    </div>`;
+  }).join("") || `<div class="empty">暂无告警</div>`;
+}
+function AG_renderIncidentAgg(list) {
+  $("incidentAggList").innerHTML = list.map(i => `
+    <div class="tl-item st-${i.state}" style="cursor:pointer" onclick="openIncident('${i.id}')">
+      <div class="tl-time">${esc(i.created_at || "")}</div>
+      <div class="tl-title">[${esc(i.rule_name || "")}] ${esc(i.entity_name || "")} ${stateTag(i.state)}
+        <button class="btn" style="padding:2px 10px">详情</button></div>
+      <div class="tl-body">${esc((i.message || "") + (i.fix_log ? "\n" + i.fix_log : ""))}</div>
+    </div>`).join("") || `<div class="empty">暂无自愈事件</div>`;
+}
+function AG_setAlertStatus(s, el) {
+  AG_alertStatus = s;
+  document.querySelectorAll("#page-alerts .agent-seg button").forEach(b => b.classList.toggle("active", b.dataset.status === s));
+  AG_loadAlerts();
+}
+async function AG_loadAlerts() {
+  try {
+    const [al, inc] = await Promise.all([
+      AG_api(`/api/monitor/alerts?status=${AG_alertStatus}&limit=100`),
+      fetch(API + "/incidents").then(d => d.json()),
+    ]);
+    AG_renderAlerts(al || [], AG_alertStatus);
+    AG_renderIncidentAgg((inc && inc.incidents) || []);
+    const cnt = $("cnt-incidents");
+    if (cnt) cnt.textContent = (inc && inc.incidents || []).filter(i => i.state !== "recovered").length;
+  } catch (e) { console.error(e); }
+}
+
 /* ═══════════════ 统一日志 ═══════════════ */
 const LOG_COLOR = { error: "#f87171", critical: "#f87171", warn: "#fbbf24", info: "#4f8cff", debug: "#7d8db0", trace: "#7d8db0" };
 async function loadLogs() {
@@ -783,8 +1395,10 @@ setInterval(() => {
 setInterval(() => {
   if (currentTab === "overview") loadOverview();
   if (ENTITY_TABS.includes(currentTab)) loadEntities(currentTab);
+  if (currentTab === "agents") AG_loadAgents();
   if (currentTab === "logs") loadLogs();
   if (currentTab === "topology") loadTopology();
+  if (currentTab === "alerts") AG_loadAlerts();
   if (currentTab === "events") loadEvents();
 }, 30000);
 

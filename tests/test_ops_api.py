@@ -81,6 +81,22 @@ def test_ops_alert_rules():
     assert "cpu_percent" in metrics or "health" in metrics
 
 
+def test_ops_alerts_aggregate():
+    r = client.get("/api/ops/alerts/aggregate?status=all")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["ok"] is True
+    assert isinstance(d["alerts"], list)
+    assert isinstance(d["incidents"], list)
+    assert isinstance(d["active_incident_count"], int)
+
+
+def test_monitor_redirect_to_ops():
+    r = client.get("/monitor", follow_redirects=False)
+    assert r.status_code in (301, 302)
+    assert r.headers.get("location", "").endswith("/ops")
+
+
 def test_ops_probe_run_now():
     r = client.post("/api/ops/probe/run-now")
     assert r.status_code == 200

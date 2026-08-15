@@ -9,8 +9,8 @@
 import socket
 import subprocess
 
-from .base import BaseCollector, ProbeReport
 from .. import config
+from .base import BaseCollector, ProbeReport
 
 # 进程识别关键词 -> 中间件
 PROC_KEYWORDS = {

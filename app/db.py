@@ -1,17 +1,24 @@
 # -*- coding: utf-8 -*-
 """SQLite 数据层：连接 / 建表 / 种子数据 / 通用查询封装"""
-import os
+import json
 import sqlite3
 import threading
-import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from seed_data import (
-    SKILLS, SKILL_DETAILS, MOCK_EMPLOYEES, MOCK_LONG_TASKS,
-    MOCK_TODOS, MOCK_TODO_HISTORY, MOCK_BG_TASKS,
-    MOCK_CONV_MESSAGES, MCP_TOOL_SEED, MCP_SERVER_SEED,
+    MCP_SERVER_SEED,
+    MCP_TOOL_SEED,
+    MOCK_BG_TASKS,
+    MOCK_CONV_MESSAGES,
+    MOCK_EMPLOYEES,
+    MOCK_LONG_TASKS,
+    MOCK_TODO_HISTORY,
+    MOCK_TODOS,
+    SKILL_DETAILS,
+    SKILLS,
 )
+
 from .config import DB_PATH
 
 _db_lock = threading.Lock()
@@ -1738,12 +1745,19 @@ def ops_get_logs(source: str = "", level: str = "", minutes: int = 30,
     return [dict(r) for r in rows]
 
 
-def ops_count_logs(minutes: int = 10, level: str = "") -> int:
-    """统计最近窗口内指定级别（默认全部）日志条数，用于告警检测"""
+def ops_count_logs(minutes: int = 10, level: str = "", source_prefix: str = "") -> int:
+    """统计最近窗口内指定级别（默认全部）日志条数，用于告警检测。
+
+    source_prefix 仅统计匹配前缀的来源（如 "app:" 只看应用日志，
+    排除系统 syslog 噪音，避免 "应用日志错误突增" 规则被系统错误误触发）。
+    """
     where, args = ["ts >= datetime('now', ?)"], ["-" + str(minutes) + " minutes"]
     if level:
         where.append("level = ?")
         args.append(level)
+    if source_prefix:
+        where.append("source LIKE ?")
+        args.append(source_prefix + "%")
     row = _query_one(
         "SELECT COUNT(*) AS n FROM ops_logs WHERE " + " AND ".join(where),
         tuple(args))

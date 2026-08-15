@@ -7,7 +7,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from .mock_data import MOCK_METRICS, MOCK_LOGS, MOCK_CMDB, MOCK_CHANGES, MOCK_ALARMS
+from .mock_data import MOCK_ALARMS, MOCK_CHANGES, MOCK_CMDB, MOCK_LOGS, MOCK_METRICS
 
 
 class ChatRequest(BaseModel):
@@ -73,7 +73,6 @@ def tool_query_cmdb_topology(app: str = "order-service") -> dict:
     }
 
 def tool_query_change_record(service: str = "order-service", hours: int = 24) -> dict:
-    cutoff = datetime.now() - timedelta(hours=hours)
     changes = MOCK_CHANGES  # all recent enough for demo
     return {
         "tool": "query_change_record",

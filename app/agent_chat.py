@@ -15,18 +15,31 @@ from fastapi.responses import StreamingResponse
 
 from .config import BIZ_9006_BASE, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
 from .db import (
-    _db_lock, _get_conn, _load_chat_history, db_list_employees, db_get_employee,
-    db_get_mcp_tool, db_get_mcp_server, db_list_skills,
+    _COST_INPUT_PER_M,
+    _COST_OUTPUT_PER_M,
+    _db_lock,
+    _get_conn,
+    _load_chat_history,
+    db_get_employee,
     db_get_employee_kb_ids,
-    _COST_INPUT_PER_M, _COST_OUTPUT_PER_M,
-    ensure_conversation, save_agent_message, save_user_message,
+    db_get_mcp_server,
+    db_get_mcp_tool,
+    db_list_employees,
+    db_list_skills,
+    ensure_conversation,
+    save_agent_message,
+    save_user_message,
 )
-from .devtools import DEV_TOOLS, execute_dev_tool, _tool_result_summary
+from .devtools import DEV_TOOLS, _tool_result_summary, execute_dev_tool
 from .knowledge import search_knowledge
 from .mcp_tools import (
     ChatRequest,
-    tool_get_business_metric, tool_query_alarm_info, tool_query_change_record,
-    tool_query_cmdb_topology, tool_run_auto_job, tool_search_service_log,
+    tool_get_business_metric,
+    tool_query_alarm_info,
+    tool_query_change_record,
+    tool_query_cmdb_topology,
+    tool_run_auto_job,
+    tool_search_service_log,
 )
 
 router = APIRouter()
@@ -124,7 +137,7 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
     if mode == "skill" and selected_skill == "skill-10":
         BASE = "http://127.0.0.1:9006"
         
-        yield sse_event("agent_thought", f"""任务分析：
+        yield sse_event("agent_thought", """任务分析：
 1. 用户请求执行采购清单比对，已选择「采购清单比对Skill」
 2. 需要从9006合同比对系统获取真实数据
 3. 解析用户意图 → 查询合同列表 → 获取比对结果 → 生成报告
@@ -247,21 +260,21 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
             
             # 构建报告
             report_lines = [
-                f"## 📊 采购清单比对报告",
-                f"",
+                "## 📊 采购清单比对报告",
+                "",
                 f"**合同名称**：{cname}  ",
                 f"**合同编号**：{matched_contract.get('contract_no', 'N/A')}  ",
                 f"**供应商**：{supplier_name}  ",
                 f"**状态**：{cstatus}  ",
                 f"**比对项数**：{contract_total} 项  ",
                 f"**匹配率**：{match_rate}%（{matched_count}/{contract_total}）",
-                f"",
-                f"---",
-                f"",
-                f"### 一、比对结果总览",
-                f"",
-                f"| 状态 | 数量 | 占比 |",
-                f"|------|------|------|",
+                "",
+                "---",
+                "",
+                "### 一、比对结果总览",
+                "",
+                "| 状态 | 数量 | 占比 |",
+                "|------|------|------|",
             ]
             
             status_labels = {
@@ -275,9 +288,9 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
                     report_lines.append(f"| {status_labels[status_key]} |")
 
             report_lines.extend([
-                f"",
-                f"### 二、差异明细（真实数据来源：9006比对引擎）",
-                f"",
+                "",
+                "### 二、差异明细（真实数据来源：9006比对引擎）",
+                "",
             ])
 
             if anomaly_items:
@@ -306,9 +319,9 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
                 report_lines.append("> ✅ 所有合同项与供应商报价完全匹配，无差异项。")
 
             report_lines.extend([
-                f"",
-                f"### 三、评审建议",
-                f"",
+                "",
+                "### 三、评审建议",
+                "",
             ])
             
             if pending_count > 0:
@@ -322,15 +335,15 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
                 report_lines.append(f"2. **匹配异常 {anomaly_count} 项**：需逐项人工确认，可在9006系统中标记「已确认」。")
             
             if progress >= 100:
-                report_lines.append(f"3. 该合同已全部比对完毕，可直接导出Excel报告。")
+                report_lines.append("3. 该合同已全部比对完毕，可直接导出Excel报告。")
             else:
                 report_lines.append(f"3. 当前比对进度 {progress}%，尚有 {contract_total - matched_count - anomaly_count - pending_count - extra_count} 项待处理。")
 
             report_lines.extend([
-                f"",
-                f"---",
-                f"",
-                f"> 💡 **数据来源**：以上所有数据均来自9006合同比对系统真实API",
+                "",
+                "---",
+                "",
+                "> 💡 **数据来源**：以上所有数据均来自9006合同比对系统真实API",
                 f"> 📋 [查看9006系统完整明细]({BASE}) | 📊 [导出Excel报告]({BASE}/api/contract/{cid}/export/report?version_id={stats.get('version_id', '')})",
             ])
 
@@ -770,8 +783,8 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
 3. **长期**：引入连接池动态伸缩策略 + 慢查询监控自动熔断""",
         "actions": [
             {"type": "danger", "id": "restart_service", "label": "🔄 回滚连接池配置（恢复 max_connections=200）", "action": "db_pool_rollback"},
-            {"type": "link", "id": "view_metrics", "label": "📊 查看完整指标", "url": "/traditional/dashboard"},
-            {"type": "link", "id": "view_topology", "label": "🔗 查看拓扑详情", "url": "/traditional/cmdb"},
+            {"type": "link", "id": "view_metrics", "label": "📊 查看完整指标", "url": "/ops"},
+            {"type": "link", "id": "view_topology", "label": "🔗 查看拓扑详情", "url": "/ops#ontology"},
         ]
     })
     

@@ -6,15 +6,13 @@
 - 9007 neuops 自身：HTTP 健康探测 + 进程识别
 - 可扩展：从 settings 表 probe_apps 读取自定义应用（name|url|port|proc_kw）
 """
-import os
 import socket
 import subprocess
 import urllib.error
 import urllib.request
 
+from .. import config, db
 from .base import BaseCollector, ProbeReport
-from .. import config
-from .. import db
 
 
 class ApplicationCollector(BaseCollector):

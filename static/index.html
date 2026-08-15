@@ -111,6 +111,37 @@ body {
   flex-shrink: 0;
 }
 
+/* 门户区 */
+.nav-portal-header {
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: rgba(148,163,184,.9);
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+.nav-portal-item {
+  background: linear-gradient(90deg, rgba(56,189,248,.10), rgba(79,140,255,.06));
+  border: 1px solid rgba(56,189,248,.22);
+  color: #7DD3FC;
+  height: 38px;
+  margin-bottom: 6px;
+  position: relative;
+}
+.nav-portal-item:hover {
+  background: linear-gradient(90deg, rgba(56,189,248,.18), rgba(79,140,255,.10));
+  border-color: rgba(56,189,248,.45);
+  color: #E0F2FE;
+}
+.nav-portal-item::before {
+  content: "";
+  position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #38BDF8, #4F8CFF);
+  opacity: .75;
+}
+.nav-portal-item .nav-icon { color: #38BDF8; }
+.nav-portal-item:last-child { margin-bottom: 2px; }
+
 /* Section gap */
 .nav-section-gap { height: 20px; }
 
@@ -832,23 +863,6 @@ body {
 }
 .tab-btn.active { color: var(--c-primary); border-bottom-color: var(--c-primary); font-weight: 500; }
 
-/* ═══════ SKILL CARDS ═══════ */
-.skill-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 16px;
-}
-.skill-card {
-  background: var(--c-main-bg); border: 1px solid var(--c-border-light);
-  border-radius: 8px; padding: 18px; cursor: pointer;
-  transition: all 0.15s;
-}
-.skill-card:hover { border-color: var(--c-primary); box-shadow: 0 2px 12px rgba(0,0,0,0.05); }
-.skill-card .skill-name { font-size: 15px; font-weight: 600; color: var(--c-text-body); margin-bottom: 6px; }
-.skill-card .skill-desc { font-size: 13px; color: var(--c-text-secondary); line-height: 1.5; margin-bottom: 10px; }
-.skill-card .skill-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-.skill-card .skill-time { font-size: 12px; color: var(--c-text-placeholder); }
-
 /* ═══════ EMPLOYEE DETAIL PAGE ═══════ */
 .emp-detail-wrapper { padding: 0; }
 .emp-detail-top {
@@ -971,6 +985,41 @@ body {
 }
 .skill-switch input:checked + .slider { background: linear-gradient(135deg, #0EA5E9, #6366F1); border-color: transparent; }
 .skill-switch input:checked + .slider::before { transform: translateX(16px); background: #fff; }
+/* 选择式绑定卡片（数字员工详情） */
+.emp-select-card {
+  position: relative; cursor: pointer;
+}
+.emp-select-card input[type="checkbox"] {
+  position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
+}
+.emp-select-card .emp-check-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--c-text-time);
+  border: 1px solid var(--c-border-light); border-radius: 999px;
+  padding: 2px 10px; transition: all 0.15s;
+}
+.emp-select-card input:checked ~ .card-top .emp-check-badge,
+.emp-select-card input:checked + .tool-info + .tool-tag.emp-check-badge,
+.tool-card-detail.emp-select-card input:checked ~ .tool-tag.emp-check-badge {
+  color: var(--c-success); border-color: rgba(16,185,129,.45);
+  background: rgba(16,185,129,.08);
+}
+.emp-select-card input:checked ~ .card-top .emp-check-badge svg,
+.tool-card-detail.emp-select-card input:checked ~ .tool-tag.emp-check-badge svg { display: inline-flex; }
+.emp-select-card .emp-check-badge svg { display: none; width: 13px; height: 13px; }
+.emp-pool-hint {
+  font-size: 12px; color: var(--c-text-time); margin: 4px 0 16px;
+  padding: 8px 12px; border: 1px dashed rgba(148,163,184,.35); border-radius: 6px;
+  background: rgba(148,163,184,.05);
+}
+.emp-select-card.tool-card-detail {
+  border: 1px solid var(--c-border-light); border-radius: 8px;
+  padding: 12px 16px; background: var(--c-main-bg); transition: all 0.15s;
+}
+.emp-select-card.tool-card-detail:hover { border-color: var(--c-primary); }
+.emp-select-card.tool-card-detail:has(input:checked) { border-color: rgba(16,185,129,.5); background: rgba(16,185,129,.05); }
+.emp-select-card:has(input:checked) { border-color: rgba(16,185,129,.5); background: rgba(16,185,129,.05); }
+.skill-mgr-card.emp-select-card:has(input:checked) { border-color: rgba(16,185,129,.5); background: rgba(16,185,129,.05); }
 
 /* ─ Tab3: MCP服务 ─ */
 .mcp-header-row {
@@ -1317,61 +1366,6 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
 .panel-toggle-btn .svg-icon { width: 14px; height: 14px; }
 .doc-header .svg-icon, .doc-body h2 .svg-icon { vertical-align: -2px; }
 
-/* ═══════ 知识库（内嵌工作台） ═══════ */
-.kb-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
-.kb-kpi { background: linear-gradient(180deg, #111A2E 0%, #0E1626 100%); border: 1px solid #1E2A44; border-radius: 12px; padding: 16px 18px; box-shadow: 0 4px 20px rgba(0,0,0,0.25); }
-.kb-kpi .kb-kpi-label { color: var(--c-text-secondary); font-size: 12px; margin-bottom: 8px; }
-.kb-kpi .kb-kpi-value { font-size: 26px; font-weight: 700; color: var(--c-text-body); }
-.kb-kpi .kb-kpi-value.blue { color: #38BDF8; }
-.kb-kpi .kb-kpi-value.green { color: #34D399; }
-.kb-kpi .kb-kpi-value.purple { color: #A78BFA; }
-.kb-kpi .kb-kpi-value.amber { color: #FBBF24; }
-.kb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
-.kb-card { background: linear-gradient(180deg, #111A2E 0%, #0E1626 100%); border: 1px solid #1E2A44; border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.25); transition: border-color 0.15s, transform 0.15s; }
-.kb-card:hover { border-color: rgba(56,189,248,0.55); transform: translateY(-1px); }
-.kb-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #38BDF8, #22D3EE); opacity: .7; }
-.kb-card .kb-name { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; color: var(--c-text-body); }
-.kb-card .kb-desc { color: var(--c-text-secondary); font-size: 12px; min-height: 34px; line-height: 1.5; }
-.kb-card .kb-stats { display: flex; gap: 10px; }
-.kb-stat { background: var(--c-bg-hover); border-radius: 8px; padding: 6px 12px; font-size: 12px; color: var(--c-text-secondary); }
-.kb-stat b { color: var(--c-text-body); font-size: 15px; margin-left: 4px; }
-.kb-card .kb-emps { display: flex; flex-wrap: wrap; gap: 6px; min-height: 20px; }
-.kb-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; background: rgba(167,139,250,.14); color: #A78BFA; border: 1px solid rgba(167,139,250,.3); white-space: nowrap; }
-.kb-badge.empty { background: rgba(148,163,184,.1); color: var(--c-text-secondary); border-color: #1E2A44; }
-.kb-card .kb-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
-.kb-empty { text-align: center; color: var(--c-text-secondary); padding: 60px 0; font-size: 13px; }
-.kb-back { margin-bottom: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: #22D3EE; font-size: 13px; }
-.kb-back:hover { color: #38BDF8; }
-.kb-chunk-wrap { margin-top: 20px; }
-.kb-chunk-item { background: #101A2E; border: 1px solid #1E2A44; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
-.kb-chunk-item .kb-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px; color: var(--c-text-secondary); flex-wrap: wrap; }
-.kb-chunk-item pre { white-space: pre-wrap; word-break: break-all; font-family: inherit; font-size: 13px; line-height: 1.6; color: var(--c-text-body); max-height: 180px; overflow: auto; margin: 0; }
-.kb-pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 16px 0; color: var(--c-text-secondary); font-size: 13px; }
-.kb-file-drop { border: 1.5px dashed #2A3B5C; border-radius: 10px; padding: 26px; text-align: center; color: var(--c-text-secondary); cursor: pointer; transition: all .2s; margin-bottom: 14px; background: rgba(11,18,32,.4); }
-.kb-file-drop:hover, .kb-file-drop.drag { border-color: #22D3EE; color: #22D3EE; background: rgba(34,211,238,.06); }
-.kb-file-drop .kb-file-drop-big { font-size: 15px; margin-bottom: 6px; }
-.kb-upload-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; max-height: 200px; overflow: auto; }
-.kb-upload-item { background: var(--c-bg-hover); border: 1px solid #1E2A44; border-radius: 8px; padding: 9px 12px; display: flex; align-items: center; gap: 10px; font-size: 13px; }
-.kb-upload-item .kb-bar { flex: 1; height: 6px; background: #0D1526; border-radius: 4px; overflow: hidden; }
-.kb-upload-item .kb-bar i { display: block; height: 100%; width: 0; background: #38BDF8; transition: width .2s; }
-.kb-upload-item.ok .kb-bar i { background: #34D399; width: 100% !important; }
-.kb-upload-item .kb-st { color: var(--c-text-secondary); font-size: 12px; white-space: nowrap; }
-.kb-upload-item.ok .kb-st { color: #34D399; }
-.kb-upload-item.fail .kb-st { color: var(--c-danger); }
-.kb-field { margin-bottom: 14px; }
-.kb-field label { display: block; color: var(--c-text-secondary); font-size: 12px; margin-bottom: 6px; }
-.kb-field input, .kb-field textarea { width: 100%; background: #0D1526; border: 1px solid #263350; color: var(--c-text-body); border-radius: 8px; padding: 9px 12px; font-size: 13px; outline: none; transition: border-color .15s, box-shadow .15s; }
-.kb-field input:focus, .kb-field textarea:focus { border-color: #38BDF8; box-shadow: 0 0 0 3px rgba(56,189,248,.15); }
-.kb-field textarea { min-height: 70px; resize: vertical; }
-#kbUploadOverlay .modal-box h3, #kbCreateOverlay .modal-box h3, #kbBindOverlay .modal-box h3 { display: flex; align-items: center; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid #1E2A44; margin-bottom: 16px; }
-#kbUploadOverlay .modal-box h3::before, #kbCreateOverlay .modal-box h3::before, #kbBindOverlay .modal-box h3::before { content: ""; width: 4px; height: 16px; border-radius: 3px; background: linear-gradient(180deg, #38BDF8, #22D3EE); flex: none; }
-.kb-bind-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid #263350; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: border-color .15s; background: #0D1526; }
-.kb-bind-item:hover { border-color: rgba(56,189,248,.5); }
-.kb-bind-item input { accent-color: #38BDF8; }
-.kb-bind-item .kb-bind-name { flex: 1; }
-.kb-bind-item .kb-bind-tag { font-size: 11px; color: var(--c-text-placeholder); }
-.kb-hbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.kb-hbar h2 { font-size: 18px; }
 </style>
 </head>
 <body>
@@ -1397,17 +1391,16 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
       <div class="nav-item" data-page="employees" onclick="navigateTo('employees')">
         <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><circle cx="9" cy="14" r="1.4"/><circle cx="15" cy="14" r="1.4"/><path d="M12 8V5M9 3h6"/><path d="M4 13H2M22 13h-2"/></svg></span>数字员工
       </div>
-      <div class="nav-item" data-page="skills" onclick="navigateTo('skills')">
-        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg></span>技能中心
-      </div>
-      <div class="nav-item" data-page="tools" onclick="navigateTo('tools')">
-        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>工具库
-      </div>
-      <div class="nav-item" data-page="knowledge" onclick="navigateTo('knowledge')">
-        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg></span>知识库
-      </div>
     </div>
     <div class="nav-section-gap"></div>
+    <!-- ═══════ 门户区 ═══════ -->
+    <div class="nav-section-header nav-portal-header">统一门户</div>
+    <div class="nav-item nav-portal-item" onclick="window.location.href='/manage'">
+      <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="m14.31 8 5.74 9.94M9.69 8h11.48M7.38 12l5.74-9.88M9.69 16 3.95 6.06M14.31 16H2.83M16.62 12l-5.74 9.88"/></svg></span>后台管理
+    </div>
+    <div class="nav-item nav-portal-item" onclick="window.location.href='/ops'">
+      <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>监控管理
+    </div>
     <!-- ═══════ 项目区 ═══════ -->
     <div class="nav-section-header nav-proj-header">
       <span style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" onclick="toggleProjectsCollapsed()">
@@ -1445,7 +1438,6 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
       <!-- Time filter top-right -->
       <div class="time-filter-bar">
         <div style="display:flex;align-items:center;gap:12px;">
-          <a class="external-link" href="/legacy/monitor" target="_blank" style="display:inline-flex;align-items:center;gap:6px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12" y="8" width="3" height="10" rx="0.5"/><rect x="17" y="5" width="3" height="13" rx="0.5"/></svg>传统运维平台</a>
           <div style="position:relative;">
             <div class="time-filter" onclick="toggleTimeDropdown()">
               <span class="tf-label">1h</span>
@@ -1580,92 +1572,6 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
       </div>
     </div>
 
-    <!-- ═══════ PAGE: SKILLS ═══════ -->
-    <div id="page-skills" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
-      <div class="page-header">
-        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg>技能中心</h2>
-        <div class="header-right">
-          <button class="btn-primary" onclick="openCreateSkill()">+ 导入Skill</button>
-        </div>
-      </div>
-      <div class="page-body" style="padding:24px 32px;">
-        <div class="search-bar">
-          <input type="text" id="skillSearchInput" placeholder="搜索技能名称..." oninput="searchSkills(this.value)">
-        </div>
-        <div class="tabs" id="skillTabs">
-          <button class="tab-btn active" data-tab="market" onclick="switchSkillTab('market')">技能市场</button>
-          <button class="tab-btn" data-tab="official" onclick="switchSkillTab('official')">官方推荐</button>
-          <button class="tab-btn" data-tab="custom" onclick="switchSkillTab('custom')">自定义技能</button>
-        </div>
-        <div class="skill-card-grid" id="skillCardGrid"></div>
-      </div>
-    </div>
-
-    <!-- ═══════ PAGE: TOOLS ═══════ -->
-    <div id="page-tools" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
-      <div class="page-header">
-        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>工具库</h2>
-        <div class="header-right">
-          <button class="btn-primary" onclick="openServerModal()">+ 添加MCP Server</button>
-        </div>
-      </div>
-      <div class="page-body" style="padding:24px 32px;overflow-y:auto;">
-        <div class="search-bar" style="margin-bottom:16px;">
-          <input type="text" id="toolSearchInput" placeholder="搜索工具名称 / MCP Server..." oninput="renderToolsPage()">
-        </div>
-        <div class="tools-section">
-          <div class="tools-section-title" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px;font-weight:600;color:var(--c-text-body);">MCP Server <span class="tag" id="serverCountTag" style="margin-left:4px;">0</span></div>
-          <div id="serverCardGrid" style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;"></div>
-        </div>
-        <div class="tools-section">
-          <div class="tools-section-title" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px;font-weight:600;color:var(--c-text-body);">已同步工具 <span class="tag" id="toolCountTag" style="margin-left:4px;">0</span></div>
-          <div class="card-grid" id="toolCardGrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ═══════ KNOWLEDGE PAGE ═══════ -->
-    <div id="page-knowledge" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
-      <div class="page-header">
-        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>知识库</h2>
-        <div class="header-right">
-          <button class="btn-primary" onclick="kbOpenCreate()">＋ 新建知识库</button>
-        </div>
-      </div>
-      <div class="page-body" style="padding:24px 32px;">
-        <!-- 列表视图 -->
-        <div id="kbListView">
-          <div class="kb-kpis">
-            <div class="kb-kpi"><div class="kb-kpi-label">知识库总数</div><div class="kb-kpi-value blue" id="kbKpiTotal">0</div></div>
-            <div class="kb-kpi"><div class="kb-kpi-label">文档总数</div><div class="kb-kpi-value green" id="kbKpiDocs">0</div></div>
-            <div class="kb-kpi"><div class="kb-kpi-label">切块总数</div><div class="kb-kpi-value purple" id="kbKpiChunks">0</div></div>
-            <div class="kb-kpi"><div class="kb-kpi-label">绑定智能体</div><div class="kb-kpi-value amber" id="kbKpiEmps">0</div></div>
-          </div>
-          <div class="kb-grid" id="kbGrid"></div>
-        </div>
-        <!-- 详情视图 -->
-        <div id="kbDetailView" class="hidden">
-          <div class="kb-back" onclick="kbShowList()">← 返回知识库列表</div>
-          <div class="kb-hbar">
-            <h2 id="kbDName"></h2>
-            <span class="kb-badge" id="kbDStats"></span>
-            <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="card-btn" onclick="kbOpenBind()">绑定智能体</button>
-              <button class="card-btn" onclick="kbRebuildIndex()">重建索引</button>
-              <button class="card-btn" onclick="kbOpenUpload()">上传文件</button>
-              <button class="card-btn danger" onclick="kbDeleteBase()">删除知识库</button>
-            </div>
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center;">
-            <span style="color:var(--c-text-secondary);font-size:12px;">绑定智能体：</span>
-            <span id="kbDEmps"></span>
-          </div>
-          <div style="color:var(--c-text-secondary);font-size:12px;" id="kbDDesc"></div>
-          <div class="kb-chunk-wrap" id="kbChunkList"></div>
-          <div class="kb-pager" id="kbPager"></div>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- ═══════ RIGHT PANEL ═══════ -->
@@ -1727,18 +1633,6 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
     </div>
   </div>
 </div>
-<div class="skill-detail-overlay hidden" id="skillDetailModal">
-  <div class="skill-detail-box">
-    <div class="detail-header">
-      <span id="skillDetailTitle">Skill 详情</span>
-      <span style="cursor:pointer;font-size:16px;display:inline-flex;color:var(--c-text-secondary);" onclick="closeSkillDetail()"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
-    </div>
-    <div class="detail-body" id="skillDetailBody"></div>
-    <div class="modal-actions" style="padding:12px 20px;border-top:1px solid var(--c-border-light);margin-top:0;">
-      <button class="btn-confirm" style="background:var(--c-primary);" onclick="closeSkillDetail();openEditSkill(SKILL_DETAIL_ID)">编辑技能</button>
-    </div>
-  </div>
-</div>
 <div class="doc-overlay hidden" id="docModal">
   <div class="doc-box">
     <div class="doc-header">
@@ -1746,47 +1640,6 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
       <span style="cursor:pointer;font-size:16px;display:inline-flex;color:var(--c-text-secondary);" onclick="closeDocModal()"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
     </div>
     <div class="doc-body" id="docBody"></div>
-  </div>
-</div>
-
-<!-- ═══════ KNOWLEDGE: 上传文件 ═══════ -->
-<div class="modal-overlay hidden" id="kbUploadOverlay">
-  <div class="modal-box" style="max-width:560px;">
-    <h3>上传文件到「<span id="kbUpKbName"></span>」</h3>
-    <div class="kb-file-drop" id="kbFileDrop" onclick="document.getElementById('kbFileInput').click()">
-      <div class="kb-file-drop-big">点击选择 或 拖拽文件到此处</div>
-      <div style="font-size:12px;margin-top:4px;">支持 txt / md / xlsx / pdf / docx，可多选</div>
-    </div>
-    <input type="file" id="kbFileInput" multiple accept=".txt,.md,.xlsx,.pdf,.docx" class="hidden">
-    <div class="kb-upload-list" id="kbUploadList"></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="kbCloseUpload()">关闭</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════ KNOWLEDGE: 新建知识库 ═══════ -->
-<div class="modal-overlay hidden" id="kbCreateOverlay">
-  <div class="modal-box">
-    <h3>新建知识库</h3>
-    <div class="kb-field"><label>名称 *</label><input id="kbNewName" placeholder="例如：运维知识库-告警案例"></div>
-    <div class="kb-field"><label>描述</label><textarea id="kbNewDesc" placeholder="说明这个知识库的领域与用途"></textarea></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="kbCloseCreate()">取消</button>
-      <button class="btn-confirm" style="background:var(--c-primary);" onclick="kbSubmitCreate()">创建</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════ KNOWLEDGE: 绑定智能体 ═══════ -->
-<div class="modal-overlay hidden" id="kbBindOverlay">
-  <div class="modal-box">
-    <h3>绑定智能体到「<span id="kbBindKbName"></span>」</h3>
-    <div id="kbBindEmpList"></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="kbCloseBind()">取消</button>
-      <button class="btn-confirm" style="background:var(--c-primary);" onclick="kbSubmitBind()">保存绑定</button>
-    </div>
   </div>
 </div>
 
@@ -1803,62 +1656,6 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeCreateEmp()">取消</button>
       <button class="btn-confirm" style="background:var(--c-primary);" onclick="doCreateEmployee()">确认创建</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════ CREATE/EDIT SKILL MODAL ═══════ -->
-<div class="modal-overlay hidden" id="createSkillModal">
-  <div class="modal-box" style="max-width:680px;">
-    <h3 style="display:flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg><span id="skillModalTitle">创建技能</span></h3>
-    <div style="display:flex;flex-direction:column;gap:14px;margin:16px 0;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> 技能名称</label><input id="skillFormName" type="text" placeholder="如：采购清单比对" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"></div>
-        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">分类</label><select id="skillFormCategory" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="custom">自定义技能</option><option value="official">官方推荐</option><option value="market">技能市场</option></select></div>
-      </div>
-      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">简短描述</label><input id="skillFormDesc" type="text" placeholder="一句话描述该技能的功能..." style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;"></div>
-      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">执行流程 / Prompt 说明</label><textarea id="skillFormFlow" placeholder="描述技能的执行流程、约束与目标..." style="width:100%;padding:10px 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;min-height:70px;resize:vertical;"></textarea></div>
-      <div>
-        <label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">绑定工具 <span style="color:var(--c-text-time);font-weight:400;">（可多选，技能执行时按所选工具调度）</span></label>
-        <div id="skillFormTools" style="max-height:200px;overflow-y:auto;border:1px solid var(--c-border-light);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px;"></div>
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeCreateSkill()">取消</button>
-      <button class="btn-confirm" style="background:var(--c-primary);" onclick="doCreateSkill()">确认保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- 添加技能弹窗 -->
-<div class="modal-overlay hidden" id="addSkillModal">
-  <div class="modal-box" style="max-width:520px;">
-    <h3 style="display:flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg>添加技能</h3>
-    <p style="font-size:13px;color:var(--c-text-secondary);margin:8px 0 16px;">从可用技能池中选择要绑定到该数字员工的技能</p>
-    <div id="addSkillList" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;"></div>
-    <div class="modal-actions" style="margin-top:20px;">
-      <button class="btn-cancel" onclick="closeAddSkill()">取消</button>
-      <button class="btn-confirm" style="background:var(--c-primary);" onclick="confirmAddSkill()">确认添加</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════ MCP SERVER MODAL ═══════ -->
-<div class="modal-overlay hidden" id="serverModal">
-  <div class="modal-box" style="max-width:560px;">
-    <h3 style="display:flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span id="serverModalTitle">添加 MCP Server</span></h3>
-    <div style="display:flex;flex-direction:column;gap:14px;margin:16px 0;">
-      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> Server 名称</label><input id="serverFormName" type="text" placeholder="如：MCP Hub / 本地 MCP Gateway" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"></div>
-      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> Base URL</label><input id="serverFormUrl" type="text" placeholder="如：http://127.0.0.1:9010 或 https://mcp-hub.example.com" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">类型</label><select id="serverFormType" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="local">本地</option><option value="remote">远程</option></select></div>
-        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">认证方式</label><select id="serverFormAuth" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="none">无</option><option value="bearer">Bearer Token</option><option value="basic">Basic Auth</option></select></div>
-      </div>
-      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">描述</label><input id="serverFormDesc" type="text" placeholder="该 Server 提供哪些工具能力..." style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;"></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeServerModal()">取消</button>
-      <button class="btn-confirm" style="background:var(--c-primary);" onclick="doSaveServer()">确认保存</button>
     </div>
   </div>
 </div>
@@ -1962,9 +1759,6 @@ function navigateTo(page) {
   }
   if (page === 'long-tasks') renderLongTasks();
   if (page === 'employees') { showEmpList(); renderEmployees(); }
-  if (page === 'skills') renderSkillsPage();
-  if (page === 'tools') renderToolsPage();
-  if (page === 'knowledge') kbLoad();
   if (page === 'todos') { S.showingTodoHistory = false; renderTodos(); }
 }
 
@@ -2789,72 +2583,101 @@ async function deleteEmpConversation(id) {
   } catch (e) { showToast('删除失败：' + e.message, true); }
 }
 
-function renderEmpSkillTab(emp) {
-  const skills = emp.skill_details || [];
-  document.getElementById('emp-tab-skill').innerHTML = `
+async function renderEmpSkillTab(emp) {
+  const bound = new Set(emp.skills || []);
+  const wrap = document.getElementById('emp-tab-skill');
+  wrap.innerHTML = `
     <div class="emp-detail-body">
       <div class="skill-mgr-bar">
-        <div class="skill-filter-tabs">
-          <button class="skill-filter-tab active">全部</button>
-        </div>
-        <button class="btn-primary" onclick="openAddSkill()">+ 添加技能</button>
+        <div class="skill-filter-tabs"><span class="skill-filter-tab active">全部</span></div>
+        <button class="btn-primary" onclick="saveEmpSkillBinding()">保存绑定</button>
       </div>
-      <div class="skill-mgr-cards">
-        ${skills.map(s => `
-          <div class="skill-mgr-card" onclick="showSkillDetail('${s.id}')">
-            <div class="card-top">
-              <h4>${s.name}</h4>
-              <label class="skill-switch" title="${s.enabled ? '停用技能' : '启用技能'}" onclick="event.stopPropagation()">
-                <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleEmpSkill('${s.id}')">
-                <span class="slider"></span>
-              </label>
-            </div>
-            <div class="card-eng">${s.id}</div>
-            <div class="card-desc">${s.desc || ''}</div>
-            <div class="card-update">
-              <span class="enabled-badge ${s.enabled ? '' : 'disabled'}">${icon(s.enabled ? 'check' : 'close')} ${s.enabled ? '已启用' : '已停用'}</span>
-              <span>分类：${s.category || '-'}</span>
-            </div>
-          </div>`).join('')}
-      </div>
+      <div class="emp-pool-hint">从后台能力池勾选已配置的技能，保存后该数字员工将拥有对应能力。</div>
+      <div class="skill-mgr-cards" id="empSkillPool"></div>
     </div>`;
-}
-
-async function toggleEmpSkill(id) {
-  const list = (S.empDetail && S.empDetail.skill_details) || [];
-  const skill = list.find(x => x.id === id);
-  if (!skill) return;
-  const enabled = !skill.enabled;
   try {
-    const r = await fetch('/api/skills/toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skill_id: id, enabled })
-    }).then(x => x.json());
-    if (!r.success) { showToast(r.error || '操作失败', true); return; }
-    skill.enabled = enabled;
-    renderEmpSkillTab(S.empDetail);
-    showToast(enabled ? '技能已启用' : '技能已停用');
-  } catch (e) { showToast('操作失败：' + e.message, true); }
+    const r = await fetch('/api/skills').then(x => x.json());
+    const skills = r.skills || [];
+    document.getElementById('empSkillPool').innerHTML = skills.length ? skills.map(s => `
+      <label class="skill-mgr-card emp-select-card">
+        <input type="checkbox" class="emp-skill-check" value="${s.id}" ${bound.has(s.id) ? 'checked' : ''}>
+        <div class="card-top">
+          <h4>${s.name}${s.category === 'custom' ? '<span class="tag" style="margin-left:6px;color:var(--c-primary);border-color:rgba(56,189,248,.4)">自定义</span>' : ''}</h4>
+          <span class="emp-check-badge">${icon('check')} 已勾选</span>
+        </div>
+        <div class="card-eng">${s.id}</div>
+        <div class="card-desc">${s.desc || ''}</div>
+        <div class="card-update"><span>分类：${s.category || '-'}</span></div>
+      </label>`).join('') : '<div class="todo-empty" style="grid-column:1/-1;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">后台能力池暂无技能，请到「后台管理 → 技能中心」配置</div>';
+  } catch (e) {
+    document.getElementById('empSkillPool').innerHTML = '<div class="todo-empty" style="grid-column:1/-1;color:var(--c-danger);">技能加载失败：' + e.message + '</div>';
+  }
 }
 
-function renderEmpMcpTab(emp) {
-  const tools = emp.mcp_detail || [];
-  document.getElementById('emp-tab-mcp').innerHTML = `
+async function saveEmpSkillBinding() {
+  const emp = S.empDetail;
+  if (!emp) return;
+  const ids = [...document.querySelectorAll('#empSkillPool .emp-skill-check:checked')].map(i => i.value);
+  try {
+    const r = await fetch('/api/employees/' + emp.id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skills: ids })
+    });
+    const res = await r.json();
+    if (!r.ok || res.error) { showToast(res.error || '保存失败', true); return; }
+    showToast('技能绑定已保存');
+    showEmpDetail(emp.id);
+  } catch (e) { showToast('保存失败：' + e.message, true); }
+}
+
+async function renderEmpMcpTab(emp) {
+  const bound = new Set(emp.mcp_tools || []);
+  const wrap = document.getElementById('emp-tab-mcp');
+  wrap.innerHTML = `
     <div class="emp-detail-body">
       <div class="mcp-header-row">
-        <div><span class="mcp-title">MCP工具服务</span><span class="mcp-count">共 ${tools.length} 个工具</span></div>
-        <div class="mcp-right"><input type="text" id="mcpToolSearch" placeholder="搜索工具..." oninput="filterEmpMcpTools(this.value)"></div>
+        <div><span class="mcp-title">MCP 工具服务</span><span class="mcp-count">从后台能力池勾选</span></div>
+        <div class="mcp-right">
+          <input type="text" id="mcpToolSearch" placeholder="搜索工具..." oninput="filterEmpMcpTools(this.value)">
+          <button class="btn-primary" onclick="saveEmpMcpBinding()">保存绑定</button>
+        </div>
       </div>
-      ${tools.map(t => `
-        <div class="tool-card-detail mcp-tool-row">
-          <div class="tool-info">
-            <span class="tool-id">${t.name}</span>
-            <span class="tool-desc-cn">${t.desc}</span>
-          </div>
-          <span class="tool-tag readonly">只读</span>
-        </div>`).join('')}
+      <div class="emp-pool-hint">从后台能力池勾选已配置的 MCP 工具，保存后该数字员工即可调用对应工具。</div>
+      <div id="empMcpPool" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>`;
+  try {
+    const r = await fetch('/api/mcp-tools').then(x => x.json());
+    const tools = r.tools || [];
+    document.getElementById('empMcpPool').innerHTML = tools.length ? tools.map(t => `
+      <label class="tool-card-detail mcp-tool-row emp-select-card">
+        <input type="checkbox" class="emp-mcp-check" value="${t.id}" ${bound.has(t.id) ? 'checked' : ''}>
+        <div class="tool-info">
+          <span class="tool-id">${t.name}</span>
+          <span class="tool-desc-cn">${t.desc || ''}</span>
+        </div>
+        <span class="tool-tag emp-check-badge">${icon('check')} 已勾选</span>
+      </label>`).join('') : '<div class="todo-empty" style="border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">后台能力池暂无 MCP 工具，请到「后台管理 → MCP 服务」配置</div>';
+  } catch (e) {
+    document.getElementById('empMcpPool').innerHTML = '<div class="todo-empty" style="color:var(--c-danger);">工具加载失败：' + e.message + '</div>';
+  }
+}
+
+async function saveEmpMcpBinding() {
+  const emp = S.empDetail;
+  if (!emp) return;
+  const ids = [...document.querySelectorAll('#empMcpPool .emp-mcp-check:checked')].map(i => i.value);
+  try {
+    const r = await fetch('/api/employees/' + emp.id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mcp_tools: ids })
+    });
+    const res = await r.json();
+    if (!r.ok || res.error) { showToast(res.error || '保存失败', true); return; }
+    showToast('工具绑定已保存');
+    showEmpDetail(emp.id);
+  } catch (e) { showToast('保存失败：' + e.message, true); }
 }
 
 function filterEmpMcpTools(val) {
@@ -2933,39 +2756,6 @@ async function deleteEmployee(id) {
   await fetch('/api/employees/' + id, { method: 'DELETE' });
   renderEmployees();
 }
-function openAddSkill() { document.getElementById('addSkillModal').classList.remove('hidden'); loadAddSkillList(); }
-function closeAddSkill() { document.getElementById('addSkillModal').classList.add('hidden'); }
-async function loadAddSkillList() {
-  const r = await fetch('/api/skills').then(x => x.json());
-  const all = r.skills || [];
-  // 预勾选员工已有技能
-  let current = [];
-  if (S.currentEmpId) {
-    try {
-      const er = await fetch('/api/employees/' + S.currentEmpId).then(x => x.json());
-      current = er.skills || [];
-    } catch (e) {}
-  }
-  document.getElementById('addSkillList').innerHTML = all.map(s => `
-    <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--c-border-light);border-radius:6px;cursor:pointer">
-      <input type="checkbox" value="${s.id}" ${current.includes(s.id) ? 'checked' : ''}> ${s.name} <span style="color:var(--c-text-time);font-size:12px;margin-left:auto">${s.desc || ''}</span>
-    </label>`).join('');
-}
-async function confirmAddSkill() {
-  const empId = S.currentEmpId;
-  if (!empId) { uiAlert({ title: '提示', message: '未选择员工', type: 'warning' }); return; }
-  const checked = [...document.querySelectorAll('#addSkillList input:checked')].map(i => i.value);
-  try {
-    await fetch('/api/employees/' + empId, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skills: checked })
-    });
-    closeAddSkill();
-    showEmpDetail(empId);
-  } catch (e) { uiAlert({ title: '保存失败', message: e.message, type: 'error' }); }
-}
-
 // ═══════════ TODOS (待办任务) ═══════════
 async function renderTodos() {
   try {
@@ -3167,249 +2957,6 @@ async function doCreateLongTask() {
     closeCreateLongTask();
     renderLongTasks();
   } catch (e) { uiAlert({ title: '创建失败', message: e.message, type: 'error' }); }
-}
-
-// ═══════════ SKILLS ═══════════
-async function renderSkillsPage() {
-  try {
-    const r = await fetch('/api/skills').then(x => x.json());
-    S.skills = r.skills || [];
-    const tab = S.currentSkillTab;
-    const list = S.skills.filter(s => s.category === tab);
-    const kw = (S.skillKeyword || '').toLowerCase();
-    const filtered = list.filter(s => !kw || (s.name || '').toLowerCase().includes(kw) || (s.desc || '').toLowerCase().includes(kw));
-    document.getElementById('skillCardGrid').innerHTML = filtered.map(s => `
-      <div class="skill-card" onclick="showSkillDetail('${s.id}')">
-        <div style="display:flex;align-items:center;justify-content:space-between;">
-          <div class="skill-name">${s.name}${s.id && s.id.startsWith('skill-c-') ? '<span class="tag" style="margin-left:6px;color:var(--c-primary);border-color:rgba(56,189,248,.4)">自定义</span>' : ''}</div>
-          <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
-            <button class="tb-btn" title="编辑" onclick="openEditSkill('${s.id}')" style="width:26px;height:26px;border-radius:6px;cursor:pointer;border:1px solid var(--c-border-light);background:transparent;color:var(--c-text-body);display:inline-flex;align-items:center;justify-content:center;">${icon('gear')}</button>
-            <button class="tb-btn" title="删除" onclick="deleteSkill('${s.id}')" style="width:26px;height:26px;border-radius:6px;cursor:pointer;border:1px solid var(--c-border-light);background:transparent;color:var(--c-danger);display:inline-flex;align-items:center;justify-content:center;">${icon('close')}</button>
-          </div>
-        </div>
-        <div class="skill-desc">${s.desc || ''}</div>
-        <div class="skill-tags">${(s.tags || []).map(t => `<span class="tag">${t}</span>`).join('')}</div>
-      </div>`).join('');
-  } catch (e) { console.error(e); }
-}
-
-function searchSkills(val) { S.skillKeyword = val; renderSkillsPage(); }
-function switchSkillTab(tab) {
-  S.currentSkillTab = tab;
-  document.querySelectorAll('#skillTabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  renderSkillsPage();
-}
-let SKILL_EDIT_ID = null; // 当前编辑中的技能 id，null 表示新建
-let SKILL_DETAIL_ID = null; // 当前查看详情的技能 id
-async function openCreateSkill() {
-  SKILL_EDIT_ID = null;
-  document.getElementById('skillModalTitle').textContent = '创建技能';
-  document.getElementById('skillFormName').value = '';
-  document.getElementById('skillFormDesc').value = '';
-  document.getElementById('skillFormFlow').value = '';
-  document.getElementById('skillFormCategory').value = S.currentSkillTab && S.currentSkillTab !== 'all' ? S.currentSkillTab : 'custom';
-  await loadSkillToolOptions([]);
-  document.getElementById('createSkillModal').classList.remove('hidden');
-}
-function closeCreateSkill() {
-  document.getElementById('createSkillModal').classList.add('hidden');
-  SKILL_EDIT_ID = null;
-}
-async function openEditSkill(id) {
-  SKILL_EDIT_ID = id;
-  document.getElementById('skillModalTitle').textContent = '编辑技能';
-  try {
-    const r = await fetch('/api/skills/' + id + '/detail').then(x => x.json());
-    document.getElementById('skillFormName').value = r.name || '';
-    document.getElementById('skillFormDesc').value = r.desc || '';
-    document.getElementById('skillFormFlow').value = r.flow || r.prompt || '';
-    document.getElementById('skillFormCategory').value = (['custom','official','market'].includes(r.category) ? r.category : 'custom');
-    const checked = (r.tools || []).map(t => t.id);
-    await loadSkillToolOptions(checked);
-    document.getElementById('createSkillModal').classList.remove('hidden');
-  } catch (e) { uiAlert({ title: '加载技能失败', message: e.message, type: 'error' }); }
-}
-async function loadSkillToolOptions(checkedIds) {
-  try {
-    const r = await fetch('/api/mcp-tools').then(x => x.json());
-    const tools = r.tools || [];
-    const checked = new Set(checkedIds || []);
-    document.getElementById('skillFormTools').innerHTML = tools.length ? tools.map(t => `
-      <label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--c-border-light);border-radius:6px;cursor:pointer;background:var(--c-main-bg);">
-        <input type="checkbox" value="${t.id}" ${checked.has(t.id) ? 'checked' : ''} style="accent-color:var(--c-primary);">
-        <span style="font-size:13px;font-weight:500;">${t.name}</span>
-        <span style="font-size:12px;color:var(--c-text-time);margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;">${t.desc || ''}</span>
-      </label>`).join('') : '<span style="color:var(--c-text-time);font-size:13px;padding:8px;">暂无可用工具，请先到「工具库」添加 MCP Server 并同步工具</span>';
-  } catch (e) {
-    document.getElementById('skillFormTools').innerHTML = '<span style="color:var(--c-danger);font-size:13px;">工具加载失败：' + e.message + '</span>';
-  }
-}
-async function doCreateSkill() {
-  const name = document.getElementById('skillFormName').value.trim();
-  if (!name) { uiAlert({ title: '提示', message: '请输入技能名称', type: 'warning' }); return; }
-  const payload = {
-    name,
-    desc: document.getElementById('skillFormDesc').value.trim(),
-    flow: document.getElementById('skillFormFlow').value.trim(),
-    category: document.getElementById('skillFormCategory').value,
-    tools: [...document.querySelectorAll('#skillFormTools input:checked')].map(i => i.value)
-  };
-  try {
-    const url = SKILL_EDIT_ID ? '/api/skills/' + SKILL_EDIT_ID : '/api/skills';
-    const method = SKILL_EDIT_ID ? 'PUT' : 'POST';
-    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const res = await r.json();
-    if (!r.ok || !res.success) { uiAlert({ title: '保存失败', message: (res.error || r.statusText), type: 'error' }); return; }
-    uiAlert({ title: '保存成功', message: '技能「' + name + '」已保存', type: 'success' });
-    closeCreateSkill();
-    renderSkillsPage();
-  } catch (e) { uiAlert({ title: '保存失败', message: e.message, type: 'error' }); }
-}
-async function deleteSkill(id) {
-  if (!await uiConfirm({ title: '删除技能', message: '确认删除该技能？删除后数字员工将不再拥有该技能。', danger: true })) return;
-  try {
-    const r = await fetch('/api/skills/' + id, { method: 'DELETE' });
-    const res = await r.json();
-    if (!r.ok || !res.success) { uiAlert({ title: '删除失败', message: (res.error || r.statusText), type: 'error' }); return; }
-    renderSkillsPage();
-  } catch (e) { uiAlert({ title: '删除失败', message: e.message, type: 'error' }); }
-}
-async function showSkillDetail(id) {
-  SKILL_DETAIL_ID = id;
-  const r = await fetch('/api/skills/' + id + '/detail').then(x => x.json());
-  document.getElementById('skillDetailTitle').textContent = r.name || 'Skill 详情';
-  document.getElementById('skillDetailBody').innerHTML = `
-    <p style="color:var(--c-text-secondary);margin-bottom:16px;line-height:1.6">${r.desc || ''}</p>
-    <div class="detail-section">
-      <div class="ds-title">基本信息</div>
-      <div class="detail-info-grid">
-        <span class="info-label">技能类型</span><span>${r.type || '-'}</span>
-        <span class="info-label">分类</span><span>${r.category || '-'}</span>
-        <span class="info-label">标签</span><span>${(r.tags || []).map(t => `<span class="tag">${t}</span>`).join('') || '-'}</span>
-      </div>
-    </div>
-    <div class="detail-section">
-      <div class="ds-title" style="display:flex;align-items:center;gap:6px;">${icon('gear')} 关联工具（${(r.tools || []).length}）</div>
-      ${(r.tools || []).map(t => `
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--c-border-light);border-radius:6px;margin-bottom:6px">
-          <span style="display:inline-flex;color:var(--c-primary);">${icon('wrench')}</span>
-          <span style="font-size:13px;font-weight:500">${t.name}</span>
-          <span style="font-size:12px;color:var(--c-text-secondary);margin-left:auto;text-align:right">${t.desc || ''}</span>
-        </div>`).join('') || '<span style="color:var(--c-text-secondary);font-size:13px">暂无关联工具</span>'}
-    </div>
-    <div class="detail-section">
-      <div class="ds-title" style="display:flex;align-items:center;gap:6px;">${icon('clipboard')} 执行流程</div>
-      <div style="font-size:13px;line-height:1.8;color:var(--c-text-body);white-space:pre-wrap;background:#0E1626;border:1px solid #1E2A44;border-radius:6px;padding:12px 16px">${r.flow || '暂无流程说明'}</div>
-    </div>`;
-  document.getElementById('skillDetailModal').classList.remove('hidden');
-}
-function closeSkillDetail() { document.getElementById('skillDetailModal').classList.add('hidden'); }
-
-// ═══════════ TOOLS (工具库 / MCP Server) ═══════════
-let SERVER_EDIT_ID = null;
-let S_TOOLS = { servers: [], tools: [] };
-async function renderToolsPage() {
-  try {
-    const [sr, tr] = await Promise.all([
-      fetch('/api/mcp-servers').then(x => x.json()),
-      fetch('/api/mcp-tools').then(x => x.json())
-    ]);
-    S_TOOLS.servers = sr.servers || [];
-    S_TOOLS.tools = tr.tools || [];
-    const kw = (document.getElementById('toolSearchInput')?.value || '').toLowerCase();
-    const filteredTools = S_TOOLS.tools.filter(t => !kw || (t.name || '').toLowerCase().includes(kw) || (t.desc || '').toLowerCase().includes(kw) || (t.server_name || '').toLowerCase().includes(kw));
-    const filteredServers = S_TOOLS.servers.filter(s => !kw || (s.name || '').toLowerCase().includes(kw) || (s.base_url || '').toLowerCase().includes(kw));
-    document.getElementById('serverCountTag').textContent = S_TOOLS.servers.length;
-    document.getElementById('toolCountTag').textContent = S_TOOLS.tools.length;
-    document.getElementById('serverCardGrid').innerHTML = filteredServers.length ? filteredServers.map(s => `
-      <div class="skill-card" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:default;">
-        <span style="display:inline-flex;color:${s.type === 'remote' ? 'var(--c-primary)' : 'var(--c-success)'};">${icon('link')}</span>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:14px;font-weight:600;color:var(--c-text-h1);display:flex;align-items:center;gap:8px;">
-            ${s.name}
-            <span class="tag" style="font-size:11px;">${s.type === 'remote' ? '远程' : '本地'}</span>
-            ${s.status === 'online' ? '<span class="tag" style="color:var(--c-success);border-color:rgba(52,211,153,.4);font-size:11px;">已连接</span>' : '<span class="tag" style="color:var(--c-text-time);font-size:11px;">未同步</span>'}
-          </div>
-          <div style="font-size:12px;color:var(--c-text-time);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.base_url || ''}${s.desc ? ' · ' + s.desc : ''}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
-          <span class="tag" title="已同步工具数">${s.tool_count || 0} 工具</span>
-          <button class="tb-btn" title="同步工具" onclick="syncServerTools('${s.id}')" style="width:28px;height:28px;border-radius:6px;cursor:pointer;border:1px solid var(--c-border-light);background:transparent;color:var(--c-primary);display:inline-flex;align-items:center;justify-content:center;">${icon('refresh')}</button>
-          <button class="tb-btn" title="编辑" onclick="openServerModal('${s.id}')" style="width:28px;height:28px;border-radius:6px;cursor:pointer;border:1px solid var(--c-border-light);background:transparent;color:var(--c-text-body);display:inline-flex;align-items:center;justify-content:center;">${icon('gear')}</button>
-          <button class="tb-btn" title="删除" onclick="deleteServer('${s.id}')" style="width:28px;height:28px;border-radius:6px;cursor:pointer;border:1px solid var(--c-border-light);background:transparent;color:var(--c-danger);display:inline-flex;align-items:center;justify-content:center;">${icon('close')}</button>
-        </div>
-      </div>`).join('') : '<div class="todo-empty" style="padding:24px;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);">暂无 MCP Server，点击右上角「+ 添加MCP Server」接入外部工具服务</div>';
-    document.getElementById('toolCardGrid').innerHTML = filteredTools.length ? filteredTools.map(t => `
-      <div class="skill-card" style="cursor:default;padding:14px 16px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-          <span style="display:inline-flex;color:var(--c-primary);">${icon('wrench')}</span>
-          <span style="font-size:14px;font-weight:600;color:var(--c-text-h1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.name}</span>
-        </div>
-        <div style="font-size:12px;color:var(--c-text-time);margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${t.desc || ''}</div>
-        <div class="skill-tags" style="margin-top:auto;">
-          <span class="tag" style="font-size:11px;">${t.method || 'POST'}</span>
-          <span class="tag" style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.path || '/'}</span>
-          <span class="tag" style="font-size:11px;color:var(--c-primary);border-color:rgba(56,189,248,.4);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.server_name || '未关联Server'}</span>
-        </div>
-      </div>`).join('') : '<div class="todo-empty" style="padding:24px;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);">暂无同步工具，请添加 MCP Server 后点击同步</div>';
-  } catch (e) { console.error(e); }
-}
-async function openServerModal(serverId) {
-  SERVER_EDIT_ID = serverId || null;
-  document.getElementById('serverModalTitle').textContent = serverId ? '编辑 MCP Server' : '添加 MCP Server';
-  const f = { name: '', url: '', type: 'local', auth: 'none', desc: '' };
-  if (serverId) {
-    const s = S_TOOLS.servers.find(x => x.id === serverId) || {};
-    f.name = s.name || ''; f.url = s.base_url || ''; f.type = s.type || 'local'; f.auth = s.auth || 'none'; f.desc = s.desc || '';
-  }
-  document.getElementById('serverFormName').value = f.name;
-  document.getElementById('serverFormUrl').value = f.url;
-  document.getElementById('serverFormType').value = f.type;
-  document.getElementById('serverFormAuth').value = f.auth;
-  document.getElementById('serverFormDesc').value = f.desc;
-  document.getElementById('serverModal').classList.remove('hidden');
-}
-function closeServerModal() { document.getElementById('serverModal').classList.add('hidden'); SERVER_EDIT_ID = null; }
-async function doSaveServer() {
-  const name = document.getElementById('serverFormName').value.trim();
-  const url = document.getElementById('serverFormUrl').value.trim();
-  if (!name) { uiAlert({ title: '提示', message: '请输入 Server 名称', type: 'warning' }); return; }
-  if (!url) { uiAlert({ title: '提示', message: '请输入 Base URL', type: 'warning' }); return; }
-  const payload = {
-    name,
-    base_url: url,
-    type: document.getElementById('serverFormType').value,
-    auth: document.getElementById('serverFormAuth').value,
-    desc: document.getElementById('serverFormDesc').value.trim()
-  };
-  try {
-    const url2 = SERVER_EDIT_ID ? '/api/mcp-servers/' + SERVER_EDIT_ID : '/api/mcp-servers';
-    const method = SERVER_EDIT_ID ? 'PUT' : 'POST';
-    const r = await fetch(url2, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const res = await r.json();
-    if (!r.ok || !res.success) { uiAlert({ title: '保存失败', message: (res.error || r.statusText), type: 'error' }); return; }
-    closeServerModal();
-    renderToolsPage();
-  } catch (e) { uiAlert({ title: '保存失败', message: e.message, type: 'error' }); }
-}
-async function syncServerTools(serverId) {
-  if (!await uiConfirm({ title: '同步工具', message: '将从该 Server 的 /tools 端点拉取并同步工具清单，是否继续？' })) return;
-  try {
-    const r = await fetch('/api/mcp-servers/' + serverId + '/sync', { method: 'POST' });
-    const res = await r.json();
-    if (!r.ok || !res.success) { uiAlert({ title: '同步失败', message: (res.error || r.statusText), type: 'error' }); return; }
-    uiAlert({ title: '同步完成', message: '同步完成，共发现 ' + (res.count || 0) + ' 个工具', type: 'success' });
-    renderToolsPage();
-  } catch (e) { uiAlert({ title: '同步失败', message: e.message, type: 'error' }); }
-}
-async function deleteServer(serverId) {
-  if (!await uiConfirm({ title: '删除 Server', message: '确认删除该 MCP Server？其下所有工具及技能绑定将一并删除。', danger: true })) return;
-  try {
-    const r = await fetch('/api/mcp-servers/' + serverId, { method: 'DELETE' });
-    const res = await r.json();
-    if (!r.ok || !res.success) { uiAlert({ title: '删除失败', message: (res.error || r.statusText), type: 'error' }); return; }
-    renderToolsPage();
-  } catch (e) { uiAlert({ title: '删除失败', message: e.message, type: 'error' }); }
 }
 
 // ═══════════ RIGHT PANEL ═══════════
@@ -3827,219 +3374,6 @@ document.addEventListener('keydown', e => {
 });
 
 init();
-
-// ═══════════ 知识库管理（内嵌） ═══════════
-let kbKBS = [], kbEMPS = [], kbCUR = null, kbCUR_PAGE = 0;
-const kbPAGE_SIZE = 20;
-let kbBIND_KB_ID = null;
-const kb$ = id => document.getElementById(id);
-
-async function kbApi(url, opts) {
-  const r = await fetch(url, opts);
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || r.statusText);
-  return j;
-}
-
-async function kbLoad() {
-  try {
-    const [b, e] = await Promise.all([kbApi('/api/knowledge/bases'), kbApi('/api/employees')]);
-    kbKBS = b.knowledge_bases || [];
-    kbEMPS = e.employees || [];
-    kbRenderList();
-  } catch (err) { showToast(err.message, true); }
-}
-
-function kbRenderList() {
-  kb$('kbKpiTotal').textContent = kbKBS.length;
-  kb$('kbKpiDocs').textContent = kbKBS.reduce((s, k) => s + (k.doc_count || 0), 0);
-  kb$('kbKpiChunks').textContent = kbKBS.reduce((s, k) => s + (k.chunk_count || 0), 0);
-  kb$('kbKpiEmps').textContent = new Set(kbKBS.flatMap(k => (k.employees || []).map(e => e.id))).size;
-  const grid = kb$('kbGrid');
-  if (!kbKBS.length) {
-    grid.innerHTML = '<div class="kb-empty" style="grid-column:1/-1;">还没有知识库。<br>点击右上角「新建知识库」，然后上传你的文档。</div>';
-    return;
-  }
-  grid.innerHTML = kbKBS.map(k => `
-    <div class="kb-card">
-      <div class="kb-name">📖 ${escapeHtml(k.name)}</div>
-      <div class="kb-desc">${escapeHtml(k.description || '暂无描述')}</div>
-      <div class="kb-stats">
-        <span class="kb-stat">文档<b>${k.doc_count || 0}</b></span>
-        <span class="kb-stat">切块<b>${k.chunk_count || 0}</b></span>
-      </div>
-      <div class="kb-emps">${(k.employees || []).map(e => `<span class="kb-badge">${escapeHtml(e.name)}</span>`).join('') || '<span class="kb-badge empty">未绑定智能体</span>'}</div>
-      <div class="kb-actions">
-        <button class="btn-primary" style="height:32px;padding:0 14px;font-size:12px;" onclick="kbOpenDetail('${k.id}')">管理</button>
-        <button class="card-btn" onclick="kbOpenBind('${k.id}')">绑定</button>
-        <button class="card-btn danger" onclick="kbDeleteBase('${k.id}')">删除</button>
-      </div>
-    </div>`).join('');
-}
-
-function kbOpenDetail(id) {
-  kbCUR = kbKBS.find(k => k.id === id);
-  if (!kbCUR) return;
-  kbCUR_PAGE = 0;
-  kb$('kbDName').textContent = '📖 ' + kbCUR.name;
-  kb$('kbDStats').textContent = `文档 ${kbCUR.doc_count || 0} · 切块 ${kbCUR.chunk_count || 0}`;
-  kb$('kbDStats').className = 'kb-badge';
-  kb$('kbDDesc').textContent = kbCUR.description || '暂无描述';
-  kb$('kbDEmps').innerHTML = (kbCUR.employees || []).map(e => `<span class="kb-badge">${escapeHtml(e.name)}</span>`).join('') || '<span class="kb-badge empty">未绑定智能体</span>';
-  kb$('kbListView').classList.add('hidden');
-  kb$('kbDetailView').classList.remove('hidden');
-  kbLoadChunks();
-}
-
-function kbShowList() {
-  kb$('kbDetailView').classList.add('hidden');
-  kb$('kbListView').classList.remove('hidden');
-  kbCUR = null;
-  kbRenderList();
-}
-
-async function kbLoadChunks() {
-  if (!kbCUR) return;
-  const w = kb$('kbChunkList');
-  w.innerHTML = '<div class="kb-empty">加载中...</div>';
-  try {
-    const j = await kbApi(`/api/knowledge/${kbCUR.id}/chunks?offset=${kbCUR_PAGE * kbPAGE_SIZE}&limit=${kbPAGE_SIZE}`);
-    const chunks = j.chunks || [];
-    const totalPages = Math.max(1, Math.ceil((j.total || chunks.length) / kbPAGE_SIZE));
-    if (!chunks.length) { w.innerHTML = '<div class="kb-empty">暂无切块，上传文档后将自动切块。</div>'; kb$('kbPager').innerHTML = ''; return; }
-    w.innerHTML = chunks.map(c => `<div class="kb-chunk-item">
-      <div class="kb-meta"><span>#${c.chunk_index || ''}</span><span style="color:var(--c-text-placeholder);">${escapeHtml(c.source || '')}</span><span style="margin-left:auto;">${c.chars || 0} 字符</span><button class="card-btn danger" style="height:24px;padding:0 8px;font-size:11px;" onclick="kbDeleteChunk('${c.id}')">删除</button></div>
-      <pre>${escapeHtml(c.content || '')}</pre></div>`).join('');
-    kb$('kbPager').innerHTML = `<button class="card-btn" ${kbCUR_PAGE === 0 ? 'disabled' : ''} onclick="kbGoPage(${kbCUR_PAGE - 1})">上一页</button><span>第 ${kbCUR_PAGE + 1} / ${totalPages} 页</span><button class="card-btn" ${kbCUR_PAGE + 1 >= totalPages ? 'disabled' : ''} onclick="kbGoPage(${kbCUR_PAGE + 1})">下一页</button>`;
-  } catch (err) { w.innerHTML = `<div class="kb-empty">加载失败：${escapeHtml(err.message)}</div>`; }
-}
-
-function kbGoPage(p) { kbCUR_PAGE = p; kbLoadChunks(); }
-
-async function kbDeleteChunk(chunkId) {
-  if (!await uiConfirm({ title: '删除切块', message: '确定删除该切块？', danger: true })) return;
-  try {
-    await kbApi(`/api/knowledge/chunks/${chunkId}`, { method: 'DELETE' });
-    showToast('切块已删除');
-    kbLoadChunks();
-  } catch (err) { showToast(err.message, true); }
-}
-
-async function kbRebuildIndex() {
-  if (!kbCUR) return;
-  if (!await uiConfirm({ title: '重建索引', message: `确定重建「${kbCUR.name}」的索引？` })) return;
-  try {
-    const j = await kbApi(`/api/knowledge/${kbCUR.id}/rebuild`, { method: 'POST' });
-    showToast(`重建完成：文档 ${j.result ? j.result.doc_count : '?'} / 切块 ${j.result ? j.result.chunk_count : '?'}`);
-    kbLoad();
-    kbOpenDetail(kbCUR.id);
-  } catch (err) { showToast(err.message, true); }
-}
-
-async function kbDeleteBase(id) {
-  const kb = (id ? kbKBS.find(k => k.id === id) : kbCUR) || {};
-  if (!await uiConfirm({ title: '删除知识库', message: `确定删除知识库「${kb.name || ''}」？其下所有文档与切块将一并删除。`, danger: true })) return;
-  try {
-    await kbApi(`/api/knowledge/bases/${kb.id}`, { method: 'DELETE' });
-    showToast('知识库已删除');
-    if (id) kbLoad();
-    else { kbShowList(); kbLoad(); }
-  } catch (err) { showToast(err.message, true); }
-}
-
-function kbOpenUpload() {
-  kb$('kbUpKbName').textContent = kbCUR.name;
-  kb$('kbUploadList').innerHTML = '';
-  kb$('kbFileInput').value = '';
-  kb$('kbFileDrop').classList.remove('drag');
-  kb$('kbUploadOverlay').classList.remove('hidden');
-}
-function kbCloseUpload() { kb$('kbUploadOverlay').classList.add('hidden'); }
-
-function kbSetupDrop() {
-  const drop = kb$('kbFileDrop');
-  const input = kb$('kbFileInput');
-  if (!drop) return;
-  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
-  drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
-  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag'); kbHandleFiles(e.dataTransfer.files); });
-  input.addEventListener('change', () => kbHandleFiles(input.files));
-}
-
-function kbHandleFiles(files) {
-  if (!kbCUR || !files || !files.length) return;
-  const list = kb$('kbUploadList');
-  Array.from(files).forEach(f => {
-    const el = document.createElement('div');
-    el.className = 'kb-upload-item';
-    el.innerHTML = `<span style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(f.name)}</span><div class="kb-bar"><i></i></div><span class="kb-st">0%</span>`;
-    list.appendChild(el);
-    const fd = new FormData();
-    fd.append('file', f);
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api/knowledge/${kbCUR.id}/upload`);
-    xhr.upload.onprogress = ev => {
-      if (ev.lengthComputable) {
-        const pct = Math.round(ev.loaded / ev.total * 100);
-        el.querySelector('.kb-bar i').style.width = pct + '%';
-        el.querySelector('.kb-st').textContent = pct + '%';
-      }
-    };
-    const finish = () => {
-      if (list.querySelectorAll('.kb-upload-item:not(.ok):not(.fail)').length === 0) {
-        setTimeout(() => { kbLoadChunks(); kbLoad(); }, 300);
-      }
-    };
-    xhr.onload = () => {
-      let msg = '';
-      try { msg = JSON.parse(xhr.responseText).error || ''; } catch (e) {}
-      if (xhr.status === 200) { el.classList.add('ok'); el.querySelector('.kb-st').textContent = '✓ 已上传'; }
-      else { el.classList.add('fail'); el.querySelector('.kb-st').textContent = '✗ ' + (msg || xhr.status); }
-      finish();
-    };
-    xhr.onerror = () => { el.classList.add('fail'); el.querySelector('.kb-st').textContent = '✗ 网络错误'; finish(); };
-    xhr.send(fd);
-  });
-}
-
-function kbOpenBind(id) {
-  kbBIND_KB_ID = id || (kbCUR && kbCUR.id);
-  const kb = kbKBS.find(k => k.id === kbBIND_KB_ID);
-  if (!kb) return;
-  kb$('kbBindKbName').textContent = kb.name;
-  const cur = new Set((kb.employees || []).map(e => e.id));
-  kb$('kbBindEmpList').innerHTML = kbEMPS.length ? kbEMPS.map(e => `
-    <label class="kb-bind-item"><input type="checkbox" value="${e.id}" ${cur.has(e.id) ? 'checked' : ''}><span class="kb-bind-name">${escapeHtml(e.name)}</span><span class="kb-bind-tag">${escapeHtml(e.role || '')}</span></label>`).join('') : '<div class="kb-empty">暂无智能体</div>';
-  kb$('kbBindOverlay').classList.remove('hidden');
-}
-function kbCloseBind() { kb$('kbBindOverlay').classList.add('hidden'); }
-
-async function kbSubmitBind() {
-  const ids = Array.from(kb$('kbBindEmpList').querySelectorAll('input:checked')).map(i => i.value);
-  try {
-    await kbApi(`/api/knowledge/${kbBIND_KB_ID}/bind`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employee_ids: ids }) });
-    showToast('绑定已保存');
-    kbCloseBind();
-    await kbLoad();
-    if (kbCUR) { const nk = kbKBS.find(k => k.id === kbCUR.id); if (nk) kbCUR = nk; }
-  } catch (err) { showToast(err.message, true); }
-}
-
-function kbOpenCreate() { kb$('kbCreateOverlay').classList.remove('hidden'); kb$('kbNewName').value = ''; kb$('kbNewDesc').value = ''; }
-function kbCloseCreate() { kb$('kbCreateOverlay').classList.add('hidden'); }
-
-async function kbSubmitCreate() {
-  const name = kb$('kbNewName').value.trim();
-  if (!name) { showToast('请输入知识库名称', true); return; }
-  try {
-    await kbApi('/api/knowledge/bases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: kb$('kbNewDesc').value.trim() }) });
-    showToast('知识库已创建');
-    kbCloseCreate();
-    kbLoad();
-  } catch (err) { showToast(err.message, true); }
-}
-
-kbSetupDrop();
 </script>
 </body>
 </html>

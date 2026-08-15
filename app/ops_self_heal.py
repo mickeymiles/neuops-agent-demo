@@ -14,7 +14,6 @@
 4. 失败升级飞书人工通知。
 5. 所有动作写入 incidents 审计日志。
 """
-import json
 import logging
 import os
 import socket
@@ -24,8 +23,7 @@ import time
 import uuid
 from datetime import datetime
 
-from . import db
-from . import feishu_notify
+from . import db, feishu_notify
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +278,7 @@ def _verify_alert_resolved(incident: dict) -> bool:
     if etype == "log" or "log_error" in rule_name:
         try:
             window = 5
-            n = db.ops_count_logs(minutes=window, level="error")
+            n = db.ops_count_logs(minutes=window, level="error", source_prefix="app:")
             return n < 10
         except Exception:  # noqa: BLE001
             return False

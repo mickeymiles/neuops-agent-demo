@@ -26,16 +26,19 @@ async def fetch_etl_jobs():
 
 """长期任务 CRUD 路由（对接 9006 ETL 服务）"""
 
-import httpx
 from datetime import datetime
 
+import httpx
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from .config import ETL_9006_BASE
 from .db import (
-    db_list_long_tasks, db_get_long_task,
-    db_create_long_task, db_update_long_task, db_delete_long_task,
+    db_create_long_task,
+    db_delete_long_task,
+    db_get_long_task,
+    db_list_long_tasks,
+    db_update_long_task,
 )
 
 router = APIRouter()
