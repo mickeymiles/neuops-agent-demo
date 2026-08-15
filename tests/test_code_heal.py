@@ -77,6 +77,8 @@ def test_missing_module_fixer():
 def test_run_code_heal_full_flow_recovered():
     """全流程：检测→修复→测试→发布→验证→recovered"""
     db.init_ops_db()
+    db.db_set_setting("code_heal_enabled", "1")
+    db.db_set_setting("self_heal_enabled", "1")
     with tempfile.TemporaryDirectory() as tmp:
         _make_repo(tmp)
         db.db_set_setting("app_code_repo", tmp)
@@ -108,6 +110,8 @@ def test_run_code_heal_full_flow_recovered():
 def test_run_code_heal_verify_fail_rollback():
     """验证失败 → 自动回滚 + manual"""
     db.init_ops_db()
+    db.db_set_setting("code_heal_enabled", "1")
+    db.db_set_setting("self_heal_enabled", "1")
     with tempfile.TemporaryDirectory() as tmp:
         _make_repo(tmp)
         db.db_set_setting("app_code_repo", tmp)
