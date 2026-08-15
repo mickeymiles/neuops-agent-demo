@@ -89,6 +89,15 @@ let SKILL_DETAIL_ID = null;
 
 let S_TOOLS = { servers: [], tools: [] };
 
+// 管理端全局状态（独立定义，不依赖 index.html 的 S）
+const S = {
+  employees: [],
+  empDetail: null,
+  skills: [],
+  currentSkillTab: 'market',
+  skillKeyword: '',
+};
+
 let kbKBS = [], kbEMPS = [], kbCUR = null, kbCUR_PAGE = 0;
 
 const kbPAGE_SIZE = 20;
@@ -227,100 +236,85 @@ async function deleteEmployee(id) {
 }
 
 async function renderEmpSkillTab(emp) {
+  emp = emp || window.__curEmp || S.empDetail;
+  if (!emp) return;
   const bound = new Set(emp.skills || []);
   const wrap = document.getElementById('emp-tab-skill');
   wrap.innerHTML = `
     <div class="emp-detail-body">
       <div class="skill-mgr-bar">
         <div class="skill-filter-tabs"><span class="skill-filter-tab active">全部</span></div>
-        <button class="btn-primary" onclick="saveEmpSkillBinding()">保存绑定</button>
       </div>
-      <div class="emp-pool-hint">从后台能力池勾选已配置的技能，保存后该数字员工将拥有对应能力。</div>
+      <div class="emp-pool-hint">数字员工通过「技能」获得能力：选择使用的技能后，其绑定的 MCP 工具将自动生效。点击技能卡片可查看详情。</div>
       <div class="skill-mgr-cards" id="empSkillPool"></div>
     </div>`;
   try {
     const r = await fetch('/api/skills').then(x => x.json());
     const skills = r.skills || [];
-    document.getElementById('empSkillPool').innerHTML = skills.length ? skills.map(s => `
-      <label class="skill-mgr-card emp-select-card">
-        <input type="checkbox" class="emp-skill-check" value="${s.id}" ${bound.has(s.id) ? 'checked' : ''}>
+    document.getElementById('empSkillPool').innerHTML = skills.length ? skills.map(s => {
+      const active = bound.has(s.id);
+      return `
+      <div class="skill-mgr-card emp-select-card" style="cursor:pointer;" onclick="showSkillDetail('${s.id}')">
         <div class="card-top">
           <h4>${s.name}${s.category === 'custom' ? '<span class="tag" style="margin-left:6px;color:var(--c-primary);border-color:rgba(56,189,248,.4)">自定义</span>' : ''}</h4>
-          <span class="emp-check-badge">${icon('check')} 已勾选</span>
+          <span class="emp-check-badge" style="${active ? 'color:var(--c-primary);border-color:rgba(56,189,248,.4);' : 'color:var(--c-text-time);'}">${active ? icon('check') + ' 使用中' : '未使用'}</span>
         </div>
         <div class="card-eng">${s.id}</div>
         <div class="card-desc">${s.desc || ''}</div>
-        <div class="card-update"><span>分类：${s.category || '-'}</span></div>
-      </label>`).join('') : '<div class="todo-empty" style="grid-column:1/-1;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">后台能力池暂无技能，请到「技能中心」配置</div>';
+        <div class="card-update" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>分类：${s.category || '-'}</span>
+          <button class="btn-outline" style="padding:4px 12px;font-size:12px;border-radius:6px;" onclick="event.stopPropagation();toggleEmpSkill('${s.id}')">${active ? '停用' : '使用'}</button>
+        </div>
+      </div>`;
+    }).join('') : '<div class="todo-empty" style="grid-column:1/-1;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">后台能力池暂无技能，请到「技能中心」配置</div>';
   } catch (e) {
     document.getElementById('empSkillPool').innerHTML = '<div class="todo-empty" style="grid-column:1/-1;color:var(--c-danger);">技能加载失败：' + e.message + '</div>';
   }
 }
 
-async function saveEmpSkillBinding() {
-  const emp = S.empDetail;
+async function toggleEmpSkill(skillId) {
+  const emp = window.__curEmp || S.empDetail;
   if (!emp) return;
-  const ids = [...document.querySelectorAll('#empSkillPool .emp-skill-check:checked')].map(i => i.value);
+  const cur = new Set(emp.skills || []);
+  const willUse = !cur.has(skillId);
+  if (willUse) cur.add(skillId); else cur.delete(skillId);
   try {
     const r = await fetch('/api/employees/' + emp.id, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skills: ids })
+      body: JSON.stringify({ skills: [...cur] })
     });
     const res = await r.json();
-    if (!r.ok || res.error) { showToast(res.error || '保存失败', true); return; }
-    showToast('技能绑定已保存');
+    if (!r.ok || res.error) { showToast(res.error || '操作失败', true); return; }
+    showToast(willUse ? '技能已启用，对应 MCP 工具已生效' : '技能已停用，对应 MCP 工具已移除');
     showEmpDetail(emp.id);
-  } catch (e) { showToast('保存失败：' + e.message, true); }
+  } catch (e) { showToast('操作失败：' + e.message, true); }
 }
 
 async function renderEmpMcpTab(emp) {
-  const bound = new Set(emp.mcp_tools || []);
+  emp = emp || window.__curEmp || S.empDetail;
+  if (!emp) return;
+  const tools = emp.mcp_detail || [];
   const wrap = document.getElementById('emp-tab-mcp');
   wrap.innerHTML = `
     <div class="emp-detail-body">
       <div class="mcp-header-row">
-        <div><span class="mcp-title">MCP 工具服务</span><span class="mcp-count">从后台能力池勾选</span></div>
+        <div><span class="mcp-title">MCP 工具服务</span><span class="mcp-count">由已启用技能自动推导 · 只读</span></div>
         <div class="mcp-right">
           <input type="text" id="mcpToolSearch" placeholder="搜索工具..." oninput="filterEmpMcpTools(this.value)">
-          <button class="btn-primary" onclick="saveEmpMcpBinding()">保存绑定</button>
         </div>
       </div>
-      <div class="emp-pool-hint">从后台能力池勾选已配置的 MCP 工具，保存后该数字员工即可调用对应工具。</div>
+      <div class="emp-pool-hint">该数字员工启用的技能共绑定以下 MCP 工具。工具能力由「技能」决定，如需调整请到「技能」页使用/停用对应技能。</div>
       <div id="empMcpPool" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>`;
-  try {
-    const r = await fetch('/api/mcp-tools').then(x => x.json());
-    const tools = r.tools || [];
-    document.getElementById('empMcpPool').innerHTML = tools.length ? tools.map(t => `
-      <label class="tool-card-detail mcp-tool-row emp-select-card">
-        <input type="checkbox" class="emp-mcp-check" value="${t.id}" ${bound.has(t.id) ? 'checked' : ''}>
+  document.getElementById('empMcpPool').innerHTML = tools.length ? tools.map(t => `
+      <div class="tool-card-detail mcp-tool-row" style="display:flex;align-items:center;gap:10px;">
         <div class="tool-info">
           <span class="tool-id">${t.name}</span>
           <span class="tool-desc-cn">${t.desc || ''}</span>
         </div>
-        <span class="tool-tag emp-check-badge">${icon('check')} 已勾选</span>
-      </label>`).join('') : '<div class="todo-empty" style="border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">后台能力池暂无 MCP 工具，请到「MCP 服务」配置</div>';
-  } catch (e) {
-    document.getElementById('empMcpPool').innerHTML = '<div class="todo-empty" style="color:var(--c-danger);">工具加载失败：' + e.message + '</div>';
-  }
-}
-
-async function saveEmpMcpBinding() {
-  const emp = S.empDetail;
-  if (!emp) return;
-  const ids = [...document.querySelectorAll('#empMcpPool .emp-mcp-check:checked')].map(i => i.value);
-  try {
-    const r = await fetch('/api/employees/' + emp.id, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mcp_tools: ids })
-    });
-    const res = await r.json();
-    if (!r.ok || res.error) { showToast(res.error || '保存失败', true); return; }
-    showToast('工具绑定已保存');
-    showEmpDetail(emp.id);
-  } catch (e) { showToast('保存失败：' + e.message, true); }
+        <span class="tool-tag" style="margin-left:auto;color:var(--c-text-time);">来自技能</span>
+      </div>`).join('') : '<div class="todo-empty" style="border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">该数字员工暂无可用工具，请到「技能」页启用对应技能</div>';
 }
 
 function filterEmpMcpTools(val) {

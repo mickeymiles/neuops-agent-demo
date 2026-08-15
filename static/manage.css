@@ -1412,3 +1412,18 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
 .work-card-open { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--c-primary); }
 .work-card-open span { transition: transform .18s; }
 .work-card:hover .work-card-open span { transform: translateX(3px); }
+
+/* ═══════ 底部快捷按钮（参照监控管理 ops-foot-btn 风格） ═══════ */
+.nav-footer { flex-direction: column; align-items: stretch; gap: 8px; }
+.nav-footer .nav-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 14px; height: 36px; line-height: 36px;
+  border-radius: 9px; font-size: 12.5px;
+  color: #cbd5e1; background: rgba(79, 140, 255, 0.10);
+  border: 1px solid rgba(79, 140, 255, 0.20);
+  cursor: pointer; transition: all .18s; user-select: none; text-decoration: none;
+}
+.nav-footer .nav-item:hover {
+  background: rgba(79, 140, 255, 0.22); color: #38bdf8;
+  border-color: rgba(79, 140, 255, 0.45); transform: translateY(-1px);
+}

@@ -364,7 +364,7 @@ def ops_probe_status():
         "lastError": pm.last_error if pm else "",
         "lastReports": {k: {"ok": v.ok, "error": v.error,
                             "metrics": len(v.metrics), "entities": len(v.entities),
-                            "relations": len(v.relations)}
+                            "relations": len(v.relations), "logs": len(v.logs)}
                         for k, v in (pm.last_reports.items() if pm else {})},
     }
 
