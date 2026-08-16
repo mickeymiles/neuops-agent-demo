@@ -682,13 +682,13 @@ async function IT_fetchTopo() {
 }
 function IT_ensure3D() {
   const el = $("topo3dCanvas");
-  if (!el || !el.offsetParent) return;
+  if (!el) return;
   if (!IT_scene) IT_init3D();
   else IT_resize3D();
 }
 function IT_init3D() {
   const el = $("topo3dCanvas");
-  const w = el.clientWidth || 700, h = el.clientHeight || 520;
+  const w = el.clientWidth || el.offsetWidth || 700, h = el.clientHeight || el.offsetHeight || 520;
   IT_scene = new THREE.Scene();
   IT_scene.background = new THREE.Color(0x0a1226);
   IT_camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 2000);
@@ -723,8 +723,9 @@ function IT_init3D() {
 }
 function IT_resize3D() {
   const el = $("topo3dCanvas");
-  if (!IT_renderer || !el || !el.offsetParent) return;
-  const w = el.clientWidth || 700, h = el.clientHeight || 520;
+  if (!IT_renderer || !IT_camera || !el) return;
+  const w = el.clientWidth || el.offsetWidth || 700, h = el.clientHeight || el.offsetHeight || 520;
+  if (!w || !h) return;
   IT_camera.aspect = w / h;
   IT_camera.updateProjectionMatrix();
   IT_renderer.setSize(w, h);
@@ -737,10 +738,11 @@ function IT_animate() {
 }
 async function IT_renderTopo() {
   let topo;
-  try { topo = await IT_fetchTopo(); } catch (e) { console.error("IT_fetchTopo", e); return; }
-  if (!topo || !topo.nodes) return;
-  IT_ensure3D();
-  if (!IT_scene) return;
+  try { topo = await IT_fetchTopo(); } catch (e) { toast("3D拓扑数据加载失败: " + e.message, "err"); console.error("IT_fetchTopo", e); return; }
+  if (!topo || !topo.nodes) { toast("暂无拓扑数据", "warn"); return; }
+  try {
+    IT_ensure3D();
+    if (!IT_scene) { toast("3D引擎初始化失败，请刷新重试", "err"); return; }
   Object.values(IT_meshMap).forEach(o => IT_scene.remove(o));
   IT_meshMap = {};
   if (IT_edgeGroup) { IT_scene.remove(IT_edgeGroup); IT_edgeGroup = null; }
@@ -797,8 +799,9 @@ async function IT_renderTopo() {
     IT_labelGroup.add(sp);
   });
   IT_scene.add(IT_labelGroup);
-  IT_renderLegend(topo);
-  if (IT_controls) IT_controls.target.set(0, 2, 0);
+    IT_renderLegend(topo);
+    if (IT_controls) IT_controls.target.set(0, 2, 0);
+  } catch (e) { toast("3D渲染失败: " + e.message, "err"); console.error(e); }
 }
 function IT_makeLabel(text, meta) {
   const canvas = document.createElement("canvas");
@@ -1245,18 +1248,34 @@ function renderSubGraph(elId, graph) {
 let topoCache = null;
 let TOPO_view = "2d";       // 本体拓扑视图模式：2d 力导向 / 3d 结构
 function TOPO_switchView(m, btn) {
+  if (!btn) btn = Array.from(document.querySelectorAll("#page-topology .view-btn")).find(b => b.textContent.includes(m === "3d" ? "3D" : "2D"));
+  if (btn) {
+    document.querySelectorAll("#page-topology .view-btn").forEach(b => b.classList.toggle("active", b === btn));
+    btn.dataset.label = btn.textContent;
+    btn.textContent = "加载中…";
+    btn.disabled = true;
+  }
   TOPO_view = m;
-  if (btn) document.querySelectorAll("#page-topology .view-btn").forEach(b => b.classList.toggle("active", b === btn));
   const v2 = $("topoView2d"), v3 = $("topoView3d");
   if (!v2 || !v3) return;
   v2.style.display = m === "2d" ? "" : "none";
   v3.style.display = m === "3d" ? "" : "none";
+  const restore = () => document.querySelectorAll("#page-topology .view-btn").forEach(b => {
+    if (b.dataset.label) b.textContent = b.dataset.label;
+    b.disabled = false;
+  });
   if (m === "3d") {
     if (!IT_topoCache) IT_topoCache = topoCache;
-    if (topoCache) IT_renderTopo();
-    else loadTopology();
-  } else if (m === "2d" && topoCache) {
-    renderTopo(topoCache);
+    requestAnimationFrame(async () => {
+      try {
+        if (topoCache) await IT_renderTopo();
+        else await loadTopology();
+      } catch (e) { toast("3D拓扑加载失败: " + e.message, "err"); }
+      restore();
+    });
+  } else {
+    if (m === "2d" && topoCache) renderTopo(topoCache);
+    restore();
   }
 }
 async function loadTopology() {

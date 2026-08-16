@@ -314,6 +314,7 @@ fieldset.group legend { font-size: 13px; font-weight: 600; color: var(--accent2)
   border-radius: 8px; padding: 4px 12px; font-size: 12px; cursor: pointer; transition: all .15s;
 }
 .view-switch .view-btn.active { background: rgba(79, 140, 255, 0.15); border-color: var(--accent); color: var(--accent); }
+.view-switch .view-btn:disabled { opacity: 0.7; cursor: not-allowed; color: var(--text); }
 
 /* ═══════════════════════════════════════════════════════════
    门户侧边栏（/ops 一体化布局，复用 9007 深色风格）

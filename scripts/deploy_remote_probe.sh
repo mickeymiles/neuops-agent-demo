@@ -60,35 +60,49 @@ rsync -az --delete -e "$RSYNC_SSH" \
   "$TARGET:$DEPLOY_DIR/app/probe/"
 rsync -az -e "$RSYNC_SSH" --exclude='__pycache__' ./seed_data.py "$TARGET:$DEPLOY_DIR/"
 
-# 2. 远程安装运行依赖
+# 2. 远程安装运行依赖（缺 python3-venv 时用 apt 补齐并重建 venv，避免 venv 无 pip）
 $SSH_CMD "$TARGET" "bash -s" <<EOF
 set -euo pipefail
 if [ ! -x "$DEPLOY_DIR/venv/bin/python3" ]; then
-  python3 -m venv "$DEPLOY_DIR/venv"
+  python3 -m venv "$DEPLOY_DIR/venv" 2>/dev/null || {
+    echo "[i] 安装 python3-venv ..."
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq python3-venv
+    python3 -m venv "$DEPLOY_DIR/venv"
+  }
+fi
+if [ ! -x "$DEPLOY_DIR/venv/bin/pip" ]; then
+  "$DEPLOY_DIR/venv/bin/python3" -m ensurepip --upgrade 2>/dev/null || {
+    echo "[i] venv 缺 pip，重建 venv ..."
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq python3-venv
+    rm -rf "$DEPLOY_DIR/venv"
+    python3 -m venv "$DEPLOY_DIR/venv"
+  }
 fi
 "$DEPLOY_DIR/venv/bin/pip" install --quiet --upgrade pip
 "$DEPLOY_DIR/venv/bin/pip" install --quiet psutil
 EOF
 
-# 3. 注册 systemd 服务并启动
+# 3. 注册 systemd 服务并启动（unit 用 printf 生成，避免嵌套 heredoc）
 $SSH_CMD "$TARGET" "bash -s" <<EOF
 set -euo pipefail
-cat > /tmp/$SERVICE.service <<UNIT
-[Unit]
-Description=NeuOps Remote Probe (collect & report to monitor center)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=$DEPLOY_DIR
-ExecStart=$DEPLOY_DIR/venv/bin/python3 -m app.probe.cli --loop --interval $INTERVAL --report-http $CENTER_URL
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-UNIT
+printf '%s\n' \
+  '[Unit]' \
+  'Description=NeuOps Remote Probe (collect & report to monitor center)' \
+  'After=network-online.target' \
+  'Wants=network-online.target' \
+  '' \
+  '[Service]' \
+  'Type=simple' \
+  'WorkingDirectory=$DEPLOY_DIR' \
+  'ExecStart=$DEPLOY_DIR/venv/bin/python3 -m app.probe.cli --loop --interval $INTERVAL --report-http $CENTER_URL' \
+  'Restart=always' \
+  'RestartSec=10' \
+  '' \
+  '[Install]' \
+  'WantedBy=multi-user.target' \
+  > /tmp/$SERVICE.service
 sudo mv /tmp/$SERVICE.service /etc/systemd/system/$SERVICE.service
 sudo systemctl daemon-reload
 sudo systemctl enable $SERVICE

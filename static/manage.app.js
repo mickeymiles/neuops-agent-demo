@@ -1203,4 +1203,12 @@ function init() {
   renderWork();
   navigateTo('work');
 }
+
+// UI DIALOG：确定 / 取消 / 遮罩点击关闭
+document.getElementById('uiDialogOkBtn').addEventListener('click', () => closeUiDialog(true));
+document.getElementById('uiDialogCancelBtn').addEventListener('click', () => closeUiDialog(false));
+document.getElementById('uiDialogMask').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeUiDialog(uiDialogIsConfirm ? false : true);
+});
+
 document.addEventListener('DOMContentLoaded', init);

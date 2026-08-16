@@ -128,8 +128,15 @@ neuops-agent-demo/
 远程服务器告警不触发本机自愈动作，升级为人工事件。部署：
 
 ```bash
+# 免密 SSH（推荐）
 ./scripts/deploy_remote_probe.sh ubuntu@目标机IP
+
+# 账号密码（本机需装 sshpass，密码经 SSHPASS 环境变量传入，不出现在命令行）
+SSHPASS='你的密码' ./scripts/deploy_remote_probe.sh ubuntu@目标机IP
 ```
+
+脚本为幂等部署：目标机缺 `python3-venv` 时自动 apt 补齐并重建 venv；unit 文件由脚本内生成，
+已部署过的机器可重复执行以更新探针代码（`rsync --delete` 同步 + `systemctl restart`）。
 
 ### 2. 运维本体（ops_ontology）
 - 五类实体：server / database / network / container / middleware / application（六类采集实体）
