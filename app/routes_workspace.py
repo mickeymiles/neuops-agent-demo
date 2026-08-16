@@ -37,6 +37,7 @@ from .db import (
     db_share_conversation,
     db_sync_server_tools,
     db_update_conversation,
+    db_update_mcp_tool,
     db_upsert_mcp_server,
     db_upsert_skill,
     get_conversation_messages,
@@ -68,10 +69,10 @@ async def create_conversation():
 @router.get("/api/skills")
 async def get_skills():
     skills = db_list_skills()
-    # 返回兼容前端的字段（id/name/desc/category/tags/enabled）
+    # 返回兼容前端的字段（id/name/desc/category/tags/enabled/group）
     return JSONResponse({"skills": [
         {"id": s["id"], "name": s["name"], "desc": s["desc"], "category": s["category"],
-         "tags": s.get("tags", []), "enabled": s.get("enabled", True)}
+         "tags": s.get("tags", []), "enabled": s.get("enabled", True), "group": s.get("group", "")}
         for s in skills
     ]})
 
@@ -286,11 +287,11 @@ async def get_conv_messages(conv_id: str):
 
 @router.get("/api/skills/full")
 async def list_skills_full():
-    """返回技能完整信息（含分类、标签）"""
+    """返回技能完整信息（含分类、标签、分组）"""
     skills = db_list_skills()
     return JSONResponse({"skills": [
         {"id": s["id"], "name": s["name"], "desc": s["desc"], "category": s["category"],
-         "tags": s.get("tags", []), "enabled": s.get("enabled", True)}
+         "tags": s.get("tags", []), "enabled": s.get("enabled", True), "group": s.get("group", "")}
         for s in skills
     ]})
 
@@ -321,6 +322,7 @@ async def create_mcp_server(req: Request):
         "base_url": base_url,
         "type": body.get("type", "gateway"),
         "auth": json.dumps(body.get("auth", {}), ensure_ascii=False) if isinstance(body.get("auth"), (dict, list)) else (body.get("auth") or ""),
+        "group": body.get("group", ""),
         "status": "online",
         "last_sync": "",
     }
@@ -342,6 +344,7 @@ async def update_mcp_server(server_id: str, req: Request):
         "base_url": (body.get("base_url") or existing["base_url"]).strip().rstrip("/"),
         "type": body.get("type", existing.get("type", "gateway")),
         "auth": json.dumps(body.get("auth", {}), ensure_ascii=False) if isinstance(body.get("auth"), (dict, list)) else (body.get("auth") or existing.get("auth", "")),
+        "group": body.get("group", existing.get("group", "")),
         "status": body.get("status", existing.get("status", "online")),
         "last_sync": existing.get("last_sync", ""),
     }
@@ -384,6 +387,21 @@ async def get_mcp_tools(server_id: str = ""):
     return JSONResponse({"tools": tools})
 
 
+@router.put("/api/mcp-tools/{tool_id}")
+async def update_mcp_tool(tool_id: str, req: Request):
+    """更新 MCP 工具字段（当前用于单独调整业务分组 group）"""
+    body = await req.json()
+    fields = {}
+    for key in ("group", "name", "desc", "tag", "category"):
+        if key in body:
+            fields[key] = str(body[key] or "").strip()
+    if not fields:
+        return JSONResponse({"success": False, "error": "无可更新字段"}, status_code=400)
+    if not db_update_mcp_tool(tool_id, fields):
+        return JSONResponse({"success": False, "error": "工具不存在"}, status_code=404)
+    return JSONResponse({"success": True})
+
+
 # ═══════════════════════════════════════════
 # 技能 CRUD（创建 / 编辑 / 删除，支持绑定工具）
 # ═══════════════════════════════════════════
@@ -401,6 +419,7 @@ async def create_skill(req: Request):
         "name": name,
         "desc": body.get("desc", ""),
         "category": body.get("category", "自定义"),
+        "group": body.get("group", ""),
         "tags": body.get("tags", ["自定义"]),
         "enabled": True,
         "prompt": body.get("prompt", ""),
@@ -427,6 +446,7 @@ async def update_skill(skill_id: str, req: Request):
         "name": (body.get("name") or existing["name"]).strip(),
         "desc": body.get("desc", existing.get("desc", "")),
         "category": body.get("category", existing.get("category", "自定义")),
+        "group": body.get("group", existing.get("group", "")),
         "tags": body.get("tags", existing.get("tags", ["自定义"])),
         "enabled": body.get("enabled", existing.get("enabled", True)),
         "prompt": body.get("prompt", existing.get("prompt", "")),

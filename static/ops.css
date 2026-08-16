@@ -745,3 +745,8 @@ fieldset.group legend { font-size: 13px; font-weight: 600; color: var(--accent2)
   .it3d-canvas { min-height: 420px; }
   .it3d-detail { max-height: none; }
 }
+
+/* ═══════════ 扁平化线性图标（.o-ic） ═══════════ */
+.o-ic { display: inline-flex; align-items: center; justify-content: center; vertical-align: -0.18em; flex: none; line-height: 1; }
+.o-ic svg { width: 1em; height: 1em; }
+.ops-nav-item .o-ic svg, .ops-foot-btn .o-ic svg { width: 15px; height: 15px; }

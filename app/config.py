@@ -22,8 +22,14 @@ DEV_9006_ROOT = "/home/ubuntu/contract-compare"
 DEV_ALLOWED_SUBDIRS = ("backend", "frontend", "docs")
 
 # 9006 系统（业务系统 / ETL 任务）地址
-ETL_9006_BASE = "http://127.0.0.1:9006"
-BIZ_9006_BASE = "http://127.0.0.1:9006"
+# 后端内部调用地址（默认同机 127.0.0.1，部署时可用环境变量覆盖）
+ETL_9006_BASE = os.getenv("ETL_9006_BASE", "http://127.0.0.1:9006")
+BIZ_9006_BASE = os.getenv("BIZ_9006_BASE", "http://127.0.0.1:9006")
+# 前端外链公开地址（后台管理页面注入用）：
+# 默认指向生产服务器 122.51.98.98 的 9006 业务平台；
+# 本地开发可设 BIZ_9006_PUBLIC_BASE=http://127.0.0.1:9006 覆盖；
+# 置空则后端按浏览器访问主机自动推导（见 routes_manage.py）
+BIZ_9006_PUBLIC_BASE = os.getenv("BIZ_9006_PUBLIC_BASE", "http://122.51.98.98:9006")
 
 # DeepSeek 真实 LLM 调用层
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"

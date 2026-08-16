@@ -229,9 +229,17 @@ def init_config_db():
                     enabled INTEGER DEFAULT 1,
                     prompt TEXT DEFAULT '',
                     flow TEXT DEFAULT '',
-                    skill_type TEXT DEFAULT ''
+                    skill_type TEXT DEFAULT '',
+                    `group` TEXT DEFAULT ''
                 )
             """)
+            # 兼容旧库：为已存在的 skills 表补 group 列（业务分组）
+            try:
+                skill_cols = [r["name"] for r in conn.execute("PRAGMA table_info(skills)")]
+                if "group" not in skill_cols:
+                    conn.execute("ALTER TABLE skills ADD COLUMN `group` TEXT DEFAULT ''")
+            except Exception:
+                pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS mcp_tools (
                     id TEXT PRIMARY KEY,
@@ -244,10 +252,11 @@ def init_config_db():
                     server_id TEXT DEFAULT '',
                     method TEXT DEFAULT 'POST',
                     path TEXT DEFAULT '',
-                    params_schema TEXT DEFAULT '[]'
+                    params_schema TEXT DEFAULT '[]',
+                    `group` TEXT DEFAULT ''
                 )
             """)
-            # 兼容旧库：为已存在的 mcp_tools 表补 server_id / method / path / params_schema 列
+            # 兼容旧库：为已存在的 mcp_tools 表补 server_id / method / path / params_schema / group 列
             try:
                 tool_cols = [r["name"] for r in conn.execute("PRAGMA table_info(mcp_tools)")]
                 if "server_id" not in tool_cols:
@@ -258,6 +267,8 @@ def init_config_db():
                     conn.execute("ALTER TABLE mcp_tools ADD COLUMN path TEXT DEFAULT ''")
                 if "params_schema" not in tool_cols:
                     conn.execute("ALTER TABLE mcp_tools ADD COLUMN params_schema TEXT DEFAULT '[]'")
+                if "group" not in tool_cols:
+                    conn.execute("ALTER TABLE mcp_tools ADD COLUMN `group` TEXT DEFAULT ''")
             except Exception:
                 pass
             # MCP Server 表：9010 MCP 工具网关 + 可配置的外部 MCP Server（MCP Hub 等）
@@ -270,10 +281,11 @@ def init_config_db():
                     type TEXT DEFAULT 'gateway',
                     auth TEXT DEFAULT '',
                     status TEXT DEFAULT 'online',
-                    last_sync TEXT DEFAULT ''
+                    last_sync TEXT DEFAULT '',
+                    `group` TEXT DEFAULT ''
                 )
             """)
-            # 兼容旧库：为已存在的 mcp_servers 表补 type/auth/status/last_sync 列
+            # 兼容旧库：为已存在的 mcp_servers 表补 type/auth/status/last_sync/group 列
             try:
                 srv_cols = [r["name"] for r in conn.execute("PRAGMA table_info(mcp_servers)")]
                 if "type" not in srv_cols:
@@ -284,6 +296,8 @@ def init_config_db():
                     conn.execute("ALTER TABLE mcp_servers ADD COLUMN status TEXT DEFAULT 'online'")
                 if "last_sync" not in srv_cols:
                     conn.execute("ALTER TABLE mcp_servers ADD COLUMN last_sync TEXT DEFAULT ''")
+                if "group" not in srv_cols:
+                    conn.execute("ALTER TABLE mcp_servers ADD COLUMN `group` TEXT DEFAULT ''")
             except Exception:
                 pass
             conn.execute("""
@@ -882,13 +896,15 @@ def db_upsert_mcp_server(server: dict):
         conn = _get_conn()
         try:
             conn.execute(
-                "INSERT INTO mcp_servers (id, name, desc, base_url, type, auth, status, last_sync) "
-                "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                "INSERT INTO mcp_servers (id, name, desc, base_url, type, auth, status, last_sync, `group`) "
+                "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                 "name=excluded.name, desc=excluded.desc, base_url=excluded.base_url, "
-                "type=excluded.type, auth=excluded.auth, status=excluded.status, last_sync=excluded.last_sync",
+                "type=excluded.type, auth=excluded.auth, status=excluded.status, last_sync=excluded.last_sync, "
+                "`group`=excluded.`group`",
                 (server["id"], server["name"], server.get("desc", ""), server.get("base_url", ""),
                  server.get("type", "gateway"), server.get("auth", ""),
-                 server.get("status", "online"), server.get("last_sync", "")),
+                 server.get("status", "online"), server.get("last_sync", ""),
+                 server.get("group", "")),
             )
             conn.commit()
         finally:
@@ -923,6 +939,8 @@ def db_sync_server_tools(server_id: str, tools: list) -> int:
     with _db_lock:
         conn = _get_conn()
         try:
+            srv = conn.execute("SELECT `group` FROM mcp_servers WHERE id=?", (server_id,)).fetchone()
+            srv_group = (srv["group"] if srv else "") or ""
             for t in tools:
                 tid = t.get("id") or t.get("name")
                 if not tid:
@@ -945,13 +963,16 @@ def db_sync_server_tools(server_id: str, tools: list) -> int:
                 row = conn.execute("SELECT server_id FROM mcp_tools WHERE id=?", (tid,)).fetchone()
                 if row and row["server_id"] != server_id:
                     tid = f"{server_id}:{tid}"
+                # 注意：ON CONFLICT UPDATE 刻意不更新 `group`，
+                # 避免同步覆盖管理端手工设置的业务分组；仅新建工具继承 Server 分组
                 conn.execute(
-                    "INSERT INTO mcp_tools (id, name, desc, icon, tag, danger, category, server_id, method, path, params_schema) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                    "INSERT INTO mcp_tools (id, name, desc, icon, tag, danger, category, `group`, server_id, method, path, params_schema) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                     "name=excluded.name, desc=excluded.desc, server_id=excluded.server_id, "
                     "method=excluded.method, path=excluded.path, params_schema=excluded.params_schema",
                     (tid, t.get("name") or tid, t.get("desc", ""), t.get("icon", "🔧"),
                      t.get("tag", ""), 1 if t.get("danger") else 0, t.get("category", ""),
+                     srv_group,
                      server_id, t.get("method", "POST"), path,
                      json.dumps(params or [], ensure_ascii=False)),
                 )
@@ -1002,6 +1023,30 @@ def db_get_mcp_tool(tool_id: str):
             except Exception:
                 t["params_schema"] = []
             return t
+        finally:
+            conn.close()
+
+
+def db_update_mcp_tool(tool_id: str, fields: dict) -> bool:
+    """按需更新 MCP 工具字段（当前仅用于调整业务分组 group），返回是否命中记录"""
+    allowed = {"group", "name", "desc", "tag", "category"}
+    sets, params = [], []
+    for k, v in fields.items():
+        if k in allowed:
+            sets.append(f"`{k}`=?")
+            params.append(v)
+    if not sets:
+        return False
+    params.append(tool_id)
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                f"UPDATE mcp_tools SET {', '.join(sets)} WHERE id=?",
+                params,
+            )
+            conn.commit()
+            return cur.rowcount > 0
         finally:
             conn.close()
 
@@ -1137,15 +1182,16 @@ def db_upsert_skill(skill: dict, tools: list):
         conn = _get_conn()
         try:
             conn.execute(
-                "INSERT INTO skills (id, name, desc, category, tags, enabled, prompt, flow, skill_type) "
-                "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                "INSERT INTO skills (id, name, desc, category, tags, enabled, prompt, flow, skill_type, `group`) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                 "name=excluded.name, desc=excluded.desc, category=excluded.category, "
                 "tags=excluded.tags, enabled=excluded.enabled, prompt=excluded.prompt, "
-                "flow=excluded.flow, skill_type=excluded.skill_type",
+                "flow=excluded.flow, skill_type=excluded.skill_type, `group`=excluded.`group`",
                 (skill["id"], skill["name"], skill.get("desc", ""), skill.get("category", ""),
                  json.dumps(skill.get("tags", []), ensure_ascii=False),
                  1 if skill.get("enabled", True) else 0,
-                 skill.get("prompt", ""), skill.get("flow", ""), skill.get("skill_type", "")),
+                 skill.get("prompt", ""), skill.get("flow", ""), skill.get("skill_type", ""),
+                 skill.get("group", "")),
             )
             # 重建技能↔工具绑定
             conn.execute("DELETE FROM skill_mcp WHERE skill_id=?", (skill["id"],))

@@ -41,7 +41,8 @@ async def get_employee_full(emp_id: str):
     # MCP 工具详情（从 mcp_tools 表按关联的 mcp_id 取）
     all_tools = {t["id"]: t for t in db_list_mcp_tools()}
     emp_full["mcp_detail"] = [
-        {"id": mid, "name": all_tools[mid]["name"], "desc": all_tools[mid]["desc"]}
+        {"id": mid, "name": all_tools[mid]["name"], "desc": all_tools[mid]["desc"],
+         "group": all_tools[mid].get("group", "")}
         for mid in emp.get("mcp_tools", []) if mid in all_tools
     ]
     # 会话记录按员工类型区分（沿用 mock 会话数据；已删除的持久化标记后刷新不再返回）

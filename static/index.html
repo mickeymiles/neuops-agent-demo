@@ -986,6 +986,12 @@ body {
 .emp-select-card input:checked ~ .card-top .emp-check-badge svg,
 .tool-card-detail.emp-select-card input:checked ~ .tool-tag.emp-check-badge svg { display: inline-flex; }
 .emp-select-card .emp-check-badge svg { display: none; width: 13px; height: 13px; }
+.skill-switch { position: relative; display: inline-flex; width: 34px; height: 18px; cursor: pointer; flex-shrink: 0; }
+.skill-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.skill-switch .slider { position: absolute; inset: 0; border-radius: 999px; background: var(--c-border-light); border: 1px solid var(--c-border-light); transition: all 0.2s; }
+.skill-switch .slider::before { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #94A3B8; transition: all 0.2s; }
+.skill-switch input:checked + .slider { background: linear-gradient(135deg, #0EA5E9, #6366F1); border-color: transparent; }
+.skill-switch input:checked + .slider::before { transform: translateX(16px); background: #fff; }
 .emp-pool-hint {
   font-size: 12px; color: var(--c-text-time); margin: 4px 0 16px;
   padding: 8px 12px; border: 1px dashed rgba(148,163,184,.35); border-radius: 6px;
@@ -1526,9 +1532,6 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
       <div id="empListView" style="height:100%;display:flex;flex-direction:column;">
         <div class="page-header">
           <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><circle cx="9" cy="14" r="1.4"/><circle cx="15" cy="14" r="1.4"/><path d="M12 8V5M9 3h6"/><path d="M4 13H2M22 13h-2"/></svg>数字员工</h2>
-          <div class="header-right">
-            <button class="btn-primary" onclick="openCreateEmp()">+ 创建数字员工</button>
-          </div>
         </div>
         <div class="page-body" style="padding:24px 32px;">
           <div class="search-bar">
@@ -1608,6 +1611,15 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
       <button class="btn-cancel" onclick="cancelApproval()">取消</button>
       <button class="btn-confirm" onclick="confirmApproval()">确认执行</button>
     </div>
+  </div>
+</div>
+<div class="skill-detail-overlay hidden" id="skillDetailModal">
+  <div class="skill-detail-box">
+    <div class="detail-header">
+      <span id="skillDetailTitle" style="display:inline-flex;align-items:center;gap:8px;">技能详情</span>
+      <span style="cursor:pointer;font-size:16px;display:inline-flex;color:var(--c-text-secondary);" onclick="closeSkillDetail()"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+    </div>
+    <div class="detail-body" id="skillDetailBody"></div>
   </div>
 </div>
 <div class="doc-overlay hidden" id="docModal">
@@ -2549,6 +2561,18 @@ async function deleteEmpConversation(id) {
   } catch (e) { showToast('删除失败：' + e.message, true); }
 }
 
+// 按业务分组聚合：空分组统一归「未分组」，未分组区块排最后
+function groupByBizGroup(items, getGroup) {
+  const map = new Map();
+  (items || []).forEach(it => {
+    const g = (getGroup(it) || '').trim() || '未分组';
+    if (!map.has(g)) map.set(g, []);
+    map.get(g).push(it);
+  });
+  const order = [...map.keys()].sort((a, b) => (a === '未分组' ? 1 : 0) - (b === '未分组' ? 1 : 0));
+  return order.map(g => [g, map.get(g)]);
+}
+
 async function renderEmpSkillTab(emp) {
   emp = emp || window.__curEmp || S.empDetail;
   if (!emp) return;
@@ -2565,26 +2589,72 @@ async function renderEmpSkillTab(emp) {
   try {
     const r = await fetch('/api/skills').then(x => x.json());
     const skills = r.skills || [];
-    document.getElementById('empSkillPool').innerHTML = skills.length ? skills.map(s => {
-      const active = bound.has(s.id);
-      return `
-      <div class="skill-mgr-card emp-select-card" style="cursor:pointer;" onclick="showSkillDetail('${s.id}')">
-        <div class="card-top">
-          <h4>${s.name}${s.category === 'custom' ? '<span class="tag" style="margin-left:6px;color:var(--c-primary);border-color:rgba(56,189,248,.4)">自定义</span>' : ''}</h4>
-          <span class="emp-check-badge" style="${active ? 'color:var(--c-primary);border-color:rgba(56,189,248,.4);' : 'color:var(--c-text-time);'}">${active ? icon('check') + ' 使用中' : '未使用'}</span>
+    const groups = groupByBizGroup(skills, s => s.group);
+    document.getElementById('empSkillPool').innerHTML = groups.length ? groups.map(([g, items]) => `
+      <div style="width:100%;margin-bottom:18px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span style="font-size:14px;font-weight:600;color:var(--c-text-h1);">${g}</span>
+          <span class="tag" style="font-size:11px;">${items.length} 项</span>
         </div>
-        <div class="card-eng">${s.id}</div>
-        <div class="card-desc">${s.desc || ''}</div>
-        <div class="card-update" style="display:flex;align-items:center;justify-content:space-between;">
-          <span>分类：${s.category || '-'}</span>
-          <button class="btn-outline" style="padding:4px 12px;font-size:12px;border-radius:6px;" onclick="event.stopPropagation();toggleEmpSkill('${s.id}')">${active ? '停用' : '使用'}</button>
-        </div>
-      </div>`;
-    }).join('') : '<div class="todo-empty" style="grid-column:1/-1;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">后台能力池暂无技能，请到「后台管理 → 技能中心」配置</div>';
+        <div class="skill-mgr-cards">${items.map(s => {
+          const active = bound.has(s.id);
+          return `
+          <div class="skill-mgr-card emp-select-card" style="cursor:pointer;" onclick="showSkillDetail('${s.id}')">
+            <div class="card-top">
+              <h4>${s.name}${s.category === 'custom' ? '<span class="tag" style="margin-left:6px;color:var(--c-primary);border-color:rgba(56,189,248,.4)">自定义</span>' : ''}</h4>
+              <label class="skill-switch" title="${active ? '点击停用' : '点击使用'}" onclick="event.stopPropagation()">
+                <input type="checkbox" ${active ? 'checked' : ''} onchange="toggleEmpSkill('${s.id}')">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div class="card-eng">${s.id}</div>
+            <div class="card-desc">${s.desc || ''}</div>
+            <div class="card-update" style="display:flex;align-items:center;justify-content:space-between;">
+              <span>分类：${s.category || '-'}${s.group ? ' · 分组：' + s.group : ''}</span>
+              <span style="font-size:12px;color:${active ? 'var(--c-primary)' : 'var(--c-text-time)'};">${active ? '使用中' : '未使用'}</span>
+            </div>
+          </div>`;
+        }).join('')}</div>
+      </div>`).join('') : '<div class="todo-empty" style="grid-column:1/-1;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">后台能力池暂无技能，请到「后台管理 → 技能中心」配置</div>';
   } catch (e) {
     document.getElementById('empSkillPool').innerHTML = '<div class="todo-empty" style="grid-column:1/-1;color:var(--c-danger);">技能加载失败：' + e.message + '</div>';
   }
 }
+
+async function showSkillDetail(id) {
+  try {
+    const r = await fetch('/api/skills/' + id + '/detail').then(x => x.json());
+    if (r && r.error) throw new Error(r.error);
+    document.getElementById('skillDetailTitle').textContent = r.name || '技能详情';
+    document.getElementById('skillDetailBody').innerHTML = `
+      <p style="color:var(--c-text-secondary);margin-bottom:16px;line-height:1.6">${r.desc || ''}</p>
+      <div class="detail-section">
+        <div class="ds-title">基本信息</div>
+        <div class="detail-info-grid">
+          <span class="info-label">技能类型</span><span>${r.type || '-'}</span>
+          <span class="info-label">分类</span><span>${r.category || '-'}</span>
+          <span class="info-label">标签</span><span>${(r.tags || []).map(t => `<span class="tag">${t}</span>`).join('') || '-'}</span>
+        </div>
+      </div>
+      <div class="detail-section">
+        <div class="ds-title" style="display:flex;align-items:center;gap:6px;">${icon('gear')} 关联工具（${(r.tools || []).length}）</div>
+        ${(r.tools || []).map(t => `
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--c-border-light);border-radius:6px;margin-bottom:6px">
+            <span style="display:inline-flex;color:var(--c-primary);">${icon('wrench')}</span>
+            <span style="font-size:13px;font-weight:500">${t.name}</span>
+            <span style="font-size:12px;color:var(--c-text-secondary);margin-left:auto;text-align:right">${t.desc || ''}</span>
+          </div>`).join('') || '<span style="color:var(--c-text-secondary);font-size:13px">暂无关联工具</span>'}
+      </div>
+      <div class="detail-section">
+        <div class="ds-title" style="display:flex;align-items:center;gap:6px;">${icon('clipboard')} 执行流程</div>
+        <div style="font-size:13px;line-height:1.8;color:var(--c-text-body);white-space:pre-wrap;background:#0E1626;border:1px solid #1E2A44;border-radius:6px;padding:12px 16px">${r.flow || '暂无流程说明'}</div>
+      </div>`;
+    document.getElementById('skillDetailModal').classList.remove('hidden');
+  } catch (e) {
+    showToast('技能详情加载失败：' + (e.message || e), true);
+  }
+}
+function closeSkillDetail() { document.getElementById('skillDetailModal').classList.add('hidden'); }
 
 async function toggleEmpSkill(skillId) {
   const emp = window.__curEmp || S.empDetail;
@@ -2599,10 +2669,13 @@ async function toggleEmpSkill(skillId) {
       body: JSON.stringify({ skills: [...cur] })
     });
     const res = await r.json();
-    if (!r.ok || res.error) { showToast(res.error || '操作失败', true); return; }
+    if (!r.ok || res.error) { showToast(res.error || '操作失败', true); renderEmpSkillTab(emp); return; }
     showToast(willUse ? '技能已启用，对应 MCP 工具已生效' : '技能已停用，对应 MCP 工具已移除');
-    showEmpDetail(emp.id);
-  } catch (e) { showToast('操作失败：' + e.message, true); }
+    emp.skills = [...cur];
+    if (window.__curEmp && window.__curEmp !== emp) window.__curEmp.skills = [...cur];
+    if (S.empDetail && S.empDetail !== emp && S.empDetail !== window.__curEmp) S.empDetail.skills = [...cur];
+    renderEmpSkillTab(emp);
+  } catch (e) { showToast('操作失败：' + e.message, true); renderEmpSkillTab(emp); }
 }
 
 async function renderEmpMcpTab(emp) {
@@ -2621,13 +2694,21 @@ async function renderEmpMcpTab(emp) {
       <div class="emp-pool-hint">该数字员工启用的技能共绑定以下 MCP 工具。工具能力由「技能」决定，如需调整请到「技能」页使用/停用对应技能。</div>
       <div id="empMcpPool" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>`;
-  document.getElementById('empMcpPool').innerHTML = tools.length ? tools.map(t => `
-      <div class="tool-card-detail mcp-tool-row" style="display:flex;align-items:center;gap:10px;">
-        <div class="tool-info">
-          <span class="tool-id">${t.name}</span>
-          <span class="tool-desc-cn">${t.desc || ''}</span>
+  const groups = groupByBizGroup(tools, t => t.group);
+  document.getElementById('empMcpPool').innerHTML = groups.length ? groups.map(([g, items]) => `
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-size:14px;font-weight:600;color:var(--c-text-h1);">${g}</span>
+          <span class="tag" style="font-size:11px;">${items.length} 项</span>
         </div>
-        <span class="tool-tag" style="margin-left:auto;color:var(--c-text-time);">来自技能</span>
+        <div style="display:flex;flex-direction:column;gap:8px;">${items.map(t => `
+          <div class="tool-card-detail mcp-tool-row" style="display:flex;align-items:center;gap:10px;">
+            <div class="tool-info">
+              <span class="tool-id">${t.name}</span>
+              <span class="tool-desc-cn">${t.desc || ''}</span>
+            </div>
+            <span class="tool-tag" style="margin-left:auto;color:var(--c-text-time);">来自技能</span>
+          </div>`).join('')}</div>
       </div>`).join('') : '<div class="todo-empty" style="border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">该数字员工暂无可用工具，请到「技能」页启用对应技能</div>';
 }
 

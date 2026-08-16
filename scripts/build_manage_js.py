@@ -138,23 +138,81 @@ function navigateTo(page) {
   if (page === 'employees') renderEmployees('');
 }
 
-// 工作成果：9006 业务平台外链卡片墙
+// 工作成果：业务数据平台（9006 真实入口，单张大卡片 + 实时概要指标）
 function renderWork() {
   const grid = document.getElementById('workCardGrid');
   if (!grid) return;
-  const links = [
-    { title: '业务数据平台', desc: '经营指标 / 报表中心 / 数据分析', icon: 'chart', url: BIZ_9006_BASE + '/' },
-    { title: '运维工单中心', desc: '工单流转 / 处置跟踪 / 服务台', icon: 'ticket', url: BIZ_9006_BASE + '/tickets' },
-    { title: '资产配置库', desc: 'CMDB 资产 / 配置项 / 变更记录', icon: 'server', url: BIZ_9006_BASE + '/cmdb' },
-    { title: '告警管理台', desc: '统一告警 / 通知策略 / 值班安排', icon: 'bell', url: BIZ_9006_BASE + '/alerts' },
-  ];
-  grid.innerHTML = links.map(l => `
-    <a class="work-card" href="${l.url}" target="_blank" rel="noopener">
-      <div class="work-card-icon">${icon(l.icon)}</div>
-      <div class="work-card-title">${escapeHtml(l.title)}</div>
-      <div class="work-card-desc">${escapeHtml(l.desc)}</div>
-      <div class="work-card-open">打开平台 <span>↗</span></div>
-    </a>`).join('');
+  const base = BIZ_9006_BASE;
+  grid.innerHTML = `
+    <a class="work-card work-card-hero" href="${base}/" target="_blank" rel="noopener">
+      <div class="work-hero-head">
+        <div class="work-card-icon">${icon('chart')}</div>
+        <div class="work-hero-titles">
+          <div class="work-card-title">业务数据平台</div>
+          <div class="work-card-desc">运营管理一站式工作台：合同比对 / 回款周期 / 资金占用 / 毛利分析</div>
+        </div>
+        <div class="work-card-open">打开平台 <span>↗</span></div>
+      </div>
+      <div class="work-metrics" id="workMetrics">
+        <div class="work-metrics-loading">正在连接业务平台获取概要数据…</div>
+      </div>
+    </a>`;
+  loadWorkMetrics(base);
+}
+
+function fmtWan(v) {
+  if (v === undefined || v === null || v === '' || v === '-') return '—';
+  const n = typeof v === 'string' ? parseFloat(String(v).replace(/[,¥元]/g, '')) : v;
+  if (!isFinite(n)) return String(v);
+  if (Math.abs(n) >= 10000) return (n / 10000).toFixed(2) + ' 万';
+  return n.toLocaleString('zh-CN');
+}
+
+function fmtNum(v) {
+  if (v === undefined || v === null || v === '' || v === '-') return '—';
+  const n = typeof v === 'string' ? parseFloat(String(v).replace(/[,¥元]/g, '')) : v;
+  if (!isFinite(n)) return String(v);
+  return n.toLocaleString('zh-CN');
+}
+
+async function loadWorkMetrics(base) {
+  const box = document.getElementById('workMetrics');
+  if (!box) return;
+  const get = async (u) => {
+    const r = await fetch(base + u);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  };
+  try {
+    const [contracts, gross, pay, fund] = await Promise.allSettled([
+      get('/api/contracts'),
+      get('/api/gross/metrics'),
+      get('/api/payment-cycle/metrics'),
+      get('/api/fund/metrics'),
+    ]);
+    const stats = contracts.status === 'fulfilled' ? contracts.value.stats || {} : {};
+    const grossSum = gross.status === 'fulfilled' ? gross.value.summary || {} : {};
+    const paySum = pay.status === 'fulfilled' && pay.value.data ? pay.value.data.summary || {} : {};
+    const fundSum = fund.status === 'fulfilled' && fund.value.data ? fund.value.data.summary || {} : {};
+    const items = [
+      { label: '合同总数', value: fmtNum(stats.total) + ' 个', icon: 'clipboard' },
+      { label: '合同总额', value: fmtWan(stats.total_amount), icon: 'chart' },
+      { label: '2026签单毛利率', value: grossSum['2026签单毛利率'] || '—', icon: 'activity' },
+      { label: '平均回款周期', value: paySum['平均回款周期'] || '—', icon: 'clock' },
+      { label: '当前资金占用', value: fmtWan(fundSum['当前资金占用总额']), icon: 'folder' },
+      { label: '净现金流', value: fmtWan(fundSum['净现金流总额']), icon: 'doc' },
+    ];
+    const ok = items.some(i => i.value !== '—' && i.label !== '…');
+    if (!ok) throw new Error('no data');
+    box.innerHTML = items.map(i => `
+      <div class="work-metric">
+        <div class="work-metric-ic">${icon(i.icon)}</div>
+        <div class="work-metric-val">${escapeHtml(i.value)}</div>
+        <div class="work-metric-label">${escapeHtml(i.label)}</div>
+      </div>`).join('');
+  } catch (e) {
+    box.innerHTML = `<div class="work-metrics-err">概要数据暂不可用，点击卡片直接进入平台</div>`;
+  }
 }
 
 // 数字员工详情（manage 版：技能 / MCP / 设置 三个 tab，无会话）

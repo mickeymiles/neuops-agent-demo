@@ -25,10 +25,10 @@
         <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg></span>知识库
       </div>
       <div class="nav-item" data-page="tools" onclick="navigateTo('tools')">
-        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>MCP 服务与工具
+        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>工具中心（MCP）
       </div>
       <div class="nav-item" data-page="skills" onclick="navigateTo('skills')">
-        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg></span>技能中心
+        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg></span>技能中心（SKILLS）
       </div>
       <div class="nav-section-gap"></div>
       <div class="nav-section-header">数字员工</div>
@@ -110,22 +110,22 @@
     <!-- ═══════ PAGE: TOOLS ═══════ -->
     <div id="page-tools" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
       <div class="page-header">
-        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>MCP 服务与工具</h2>
+        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>工具中心（MCP）</h2>
         <div class="header-right">
           <button class="btn-primary" onclick="openServerModal()">+ 添加MCP Server</button>
         </div>
       </div>
-      <div class="page-body" style="padding:24px 32px;overflow-y:auto;">
-        <div class="search-bar" style="margin-bottom:16px;">
-          <input type="text" id="toolSearchInput" placeholder="搜索工具名称 / MCP Server..." oninput="renderToolsPage()">
-        </div>
-        <div class="tools-section">
-          <div class="tools-section-title" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px;font-weight:600;color:var(--c-text-body);">MCP Server <span class="tag" id="serverCountTag" style="margin-left:4px;">0</span></div>
-          <div id="serverCardGrid" style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;"></div>
-        </div>
-        <div class="tools-section">
-          <div class="tools-section-title" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:14px;font-weight:600;color:var(--c-text-body);">已同步工具 <span class="tag" id="toolCountTag" style="margin-left:4px;">0</span></div>
-          <div class="card-grid" id="toolCardGrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));"></div>
+      <div class="page-body" style="padding:24px 32px;overflow:auto;">
+        <div class="tools-layout">
+          <aside class="tools-tree" id="toolTreePanel"></aside>
+          <div class="tools-content">
+            <div class="tools-content-head">
+              <div class="search-bar" style="margin:0;width:100%;">
+                <input type="text" id="toolSearchInput" placeholder="搜索工具名称 / 所属 Server..." oninput="renderToolCards()">
+              </div>
+            </div>
+            <div id="toolCardGrid"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -133,7 +133,7 @@
     <!-- ═══════ PAGE: SKILLS ═══════ -->
     <div id="page-skills" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
       <div class="page-header">
-        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg>技能中心</h2>
+        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg>技能中心（SKILLS）</h2>
         <div class="header-right">
           <button class="btn-primary" onclick="openCreateSkill()">+ 导入Skill</button>
         </div>
@@ -144,7 +144,6 @@
         </div>
         <div class="tabs" id="skillTabs">
           <button class="tab-btn active" data-tab="market" onclick="switchSkillTab('market')">技能市场</button>
-          <button class="tab-btn" data-tab="official" onclick="switchSkillTab('official')">官方推荐</button>
           <button class="tab-btn" data-tab="custom" onclick="switchSkillTab('custom')">自定义技能</button>
         </div>
         <div class="skill-card-grid" id="skillCardGrid"></div>
@@ -247,9 +246,10 @@
   <div class="modal-box" style="max-width:680px;">
     <h3 style="display:flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg><span id="skillModalTitle">创建技能</span></h3>
     <div style="display:flex;flex-direction:column;gap:14px;margin:16px 0;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
         <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> 技能名称</label><input id="skillFormName" type="text" placeholder="如：采购清单比对" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"></div>
-        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">分类</label><select id="skillFormCategory" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="custom">自定义技能</option><option value="official">官方推荐</option><option value="market">技能市场</option></select></div>
+        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">分类</label><select id="skillFormCategory" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="custom">自定义技能</option><option value="market">技能市场</option></select></div>
+        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">分组</label><input id="skillFormGroup" list="skillGroupOptions" placeholder="如：告警 / 查数 / 变更" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"><datalist id="skillGroupOptions"></datalist></div>
       </div>
       <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">简短描述</label><input id="skillFormDesc" type="text" placeholder="一句话描述该技能的功能..." style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;"></div>
       <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">执行流程 / Prompt 说明</label><textarea id="skillFormFlow" placeholder="描述技能的执行流程、约束与目标..." style="width:100%;padding:10px 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;min-height:70px;resize:vertical;"></textarea></div>
@@ -286,15 +286,46 @@
     <div style="display:flex;flex-direction:column;gap:14px;margin:16px 0;">
       <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> Server 名称</label><input id="serverFormName" type="text" placeholder="如：MCP Hub / 本地 MCP Gateway" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"></div>
       <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;"><span style="color:var(--c-danger);">*</span> Base URL</label><input id="serverFormUrl" type="text" placeholder="如：http://127.0.0.1:9010 或 https://mcp-hub.example.com" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
         <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">类型</label><select id="serverFormType" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="local">本地</option><option value="remote">远程</option></select></div>
         <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">认证方式</label><select id="serverFormAuth" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);"><option value="none">无</option><option value="bearer">Bearer Token</option><option value="basic">Basic Auth</option></select></div>
+        <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">分组</label><input id="serverFormGroup" list="serverGroupOptions" placeholder="如：告警 / 查数 / 变更" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"><datalist id="serverGroupOptions"></datalist></div>
       </div>
       <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">描述</label><input id="serverFormDesc" type="text" placeholder="该 Server 提供哪些工具能力..." style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;"></div>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeServerModal()">取消</button>
       <button class="btn-confirm" style="background:var(--c-primary);" onclick="doSaveServer()">确认保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 工具详情 -->
+<div class="skill-detail-overlay hidden" id="toolDetailModal">
+  <div class="skill-detail-box" style="max-width:720px;">
+    <div class="detail-header">
+      <span id="toolDetailTitle">工具详情</span>
+      <span style="cursor:pointer;font-size:16px;display:inline-flex;color:var(--c-text-secondary);" onclick="closeToolDetail()"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+    </div>
+    <div class="detail-body" id="toolDetailBody"></div>
+    <div class="modal-actions" style="padding:12px 20px;border-top:1px solid var(--c-border-light);margin-top:0;">
+      <button class="btn-cancel" onclick="closeToolDetail()">关闭</button>
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="editToolGroup(TOOL_DETAIL_ID);closeToolDetail()">调整分组</button>
+    </div>
+  </div>
+</div>
+
+<!-- 工具分组调整 -->
+<div class="modal-overlay hidden" id="toolGroupModal">
+  <div class="modal-box" style="max-width:440px;">
+    <h3 style="display:flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>调整工具分组</h3>
+    <div style="display:flex;flex-direction:column;gap:14px;margin:16px 0;">
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">工具</label><div id="toolGroupToolName" style="font-size:14px;font-weight:600;color:var(--c-text-h1);"></div></div>
+      <div><label style="font-size:13px;color:var(--c-text-body);display:block;margin-bottom:4px;">分组 <span style="color:var(--c-text-time);font-weight:400;">（留空归入"未分组"）</span></label><input id="toolGroupInput" list="toolGroupOptions" placeholder="选择已有分组或输入新分组" style="width:100%;height:40px;padding:0 12px;border:1px solid var(--c-border-light);border-radius:8px;font-size:14px;outline:none;background:var(--c-main-bg);color:var(--c-text-body);"><datalist id="toolGroupOptions"></datalist></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeToolGroupModal()">取消</button>
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="doSaveToolGroup()">确认保存</button>
     </div>
   </div>
 </div>
