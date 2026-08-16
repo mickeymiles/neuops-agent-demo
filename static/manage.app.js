@@ -1129,10 +1129,7 @@ function renderWork() {
   const grid = document.getElementById('workCardGrid');
   if (!grid) return;
   const links = [
-    { title: '业务数据平台', desc: '经营指标 / 报表中心 / 数据分析', icon: 'chart', url: BIZ_9006_BASE + '/' },
-    { title: '运维工单中心', desc: '工单流转 / 处置跟踪 / 服务台', icon: 'ticket', url: BIZ_9006_BASE + '/tickets' },
-    { title: '资产配置库', desc: 'CMDB 资产 / 配置项 / 变更记录', icon: 'server', url: BIZ_9006_BASE + '/cmdb' },
-    { title: '告警管理台', desc: '统一告警 / 通知策略 / 值班安排', icon: 'bell', url: BIZ_9006_BASE + '/alerts' },
+    { title: '经营业务平台', desc: '合同比对 / 经营指标 / 明细探查', icon: 'chart', url: BIZ_9006_BASE + '/' },
   ];
   grid.innerHTML = links.map(l => `
     <a class="work-card" href="${l.url}" target="_blank" rel="noopener">
