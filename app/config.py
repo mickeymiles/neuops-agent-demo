@@ -35,6 +35,22 @@ BIZ_9006_PUBLIC_BASE = os.getenv("BIZ_9006_PUBLIC_BASE", "http://122.51.98.98:90
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 DEEPSEEK_MODEL = "deepseek-v4-pro"
 
+# ═══════════════════════════════════════════
+# DSH 内核引擎（DeepSeek Harness）配置
+# ═══════════════════════════════════════════
+# 聊天引擎分发：legacy（默认，现有手写 Agent 循环）| dsh（DeepSeek Harness 内核）
+AGENT_ENGINE = os.getenv("AGENT_ENGINE", "legacy")
+# dsh CLI 路径：留空则依次尝试 PATH 中的 dsh / ~/.npm/_npx/*/node_modules/.bin/dsh
+DSH_BIN = os.getenv("DSH_BIN", "")
+# dsh profile（headless = 一次性任务执行，不监听端口）
+DSH_PROFILE = os.getenv("DSH_PROFILE", "headless")
+# 单任务执行超时（秒）
+DSH_TIMEOUT = float(os.getenv("DSH_TIMEOUT", "300"))
+# 拼进任务的最近历史条数（每轮 = 1 user + 1 assistant，共 2 条）
+DSH_MAX_HISTORY = int(os.getenv("DSH_MAX_HISTORY", "6"))
+# DSH 数据目录（含 profiles / .credentials.yaml）
+DSH_HOME = os.getenv("DSH_HOME", os.path.expanduser("~/.dsh"))
+
 # DeepSeek 成本估算单价（元 / 百万 tokens）
 COST_INPUT_PER_M = 2.0
 COST_OUTPUT_PER_M = 3.0

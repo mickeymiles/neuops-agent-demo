@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     selected_skill: str = "" # skill id when mode=skill
     enabled_skills: list = []
     approved_action: Optional[str] = None  # 审批确认后携带
+    engine: str = ""         # "" = 用 config.AGENT_ENGINE；可选 "legacy" | "dsh"
 
 # ────────────────────────────────────────────
 # Mock MCP Tool Handlers

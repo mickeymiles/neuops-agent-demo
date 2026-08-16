@@ -76,6 +76,9 @@ def init_session_db():
             conv_cols = [r["name"] for r in conn.execute("PRAGMA table_info(conversations)")]
             if "project_id" not in conv_cols:
                 conn.execute("ALTER TABLE conversations ADD COLUMN project_id TEXT DEFAULT ''")
+            # DSH 内核引擎观测字段（P3）：会话使用的引擎 + DSH session id
+            _ensure_column(conn, "conversations", "engine", "TEXT DEFAULT 'legacy'")
+            _ensure_column(conn, "conversations", "dsh_session_id", "TEXT DEFAULT ''")
             if "pinned" not in conv_cols:
                 conn.execute("ALTER TABLE conversations ADD COLUMN pinned INTEGER DEFAULT 0")
             if "share_id" not in conv_cols:
@@ -304,9 +307,17 @@ def init_config_db():
                 CREATE TABLE IF NOT EXISTS employee_skills (
                     employee_id TEXT NOT NULL,
                     skill_id TEXT NOT NULL,
+                    enabled INTEGER DEFAULT 1,
                     PRIMARY KEY (employee_id, skill_id)
                 )
             """)
+            # 兼容旧库：补充 enabled 列（停用技能保留关联但不参与 MCP 工具推导）
+            try:
+                _es_cols = [c[1] for c in conn.execute("PRAGMA table_info(employee_skills)").fetchall()]
+                if "enabled" not in _es_cols:
+                    conn.execute("ALTER TABLE employee_skills ADD COLUMN enabled INTEGER DEFAULT 1")
+            except Exception:
+                pass
             # 知识库实体表（RAG 元数据；向量本体存 ChromaDB）
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS knowledge_bases (
@@ -430,7 +441,9 @@ def save_user_message(conv_id: str, content: str) -> None:
             conn.close()
 
 
-def save_agent_message(conv_id: str, thought: str, tools: list, conclusion: str, route: dict) -> None:
+def save_agent_message(conv_id: str, thought: str, tools: list, conclusion: str, route: dict,
+                       engine: str = None, dsh_session_id: str = None) -> None:
+    """保存 agent 消息；engine / dsh_session_id 用于更新会话的引擎观测字段（P3）"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _db_lock:
         conn = _get_conn()
@@ -441,6 +454,17 @@ def save_agent_message(conv_id: str, thought: str, tools: list, conclusion: str,
                 (conv_id, thought, json.dumps(tools, ensure_ascii=False), conclusion,
                  json.dumps(route, ensure_ascii=False) if route else "", now),
             )
+            if engine is not None or dsh_session_id is not None:
+                sets = ["updated_at=?"]
+                vals = [now]
+                if engine is not None:
+                    sets.append("engine=?")
+                    vals.append(engine)
+                if dsh_session_id is not None:
+                    sets.append("dsh_session_id=?")
+                    vals.append(dsh_session_id)
+                vals.append(conv_id)
+                conn.execute(f"UPDATE conversations SET {', '.join(sets)} WHERE id=?", vals)
             conn.commit()
         finally:
             conn.close()
@@ -1064,12 +1088,15 @@ def db_list_employees() -> list:
             for r in rows:
                 e = dict(r)
                 e["enabled"] = bool(e.get("enabled", 1))
-                e["skills"] = [x["skill_id"] for x in conn.execute(
-                    "SELECT skill_id FROM employee_skills WHERE employee_id=?", (e["id"],)).fetchall()]
+                skill_rows = conn.execute(
+                    "SELECT skill_id, enabled FROM employee_skills WHERE employee_id=?",
+                    (e["id"],)).fetchall()
+                e["skills"] = [x["skill_id"] for x in skill_rows]
+                e["skill_states"] = {x["skill_id"]: bool(x["enabled"]) for x in skill_rows}
                 e["mcp_tools"] = sorted({x["mcp_id"] for x in conn.execute(
                     "SELECT sm.mcp_id FROM skill_mcp sm "
                     "JOIN employee_skills es ON es.skill_id = sm.skill_id "
-                    "WHERE es.employee_id=?", (e["id"],)).fetchall()})
+                    "WHERE es.employee_id=? AND es.enabled=1", (e["id"],)).fetchall()})
                 result.append(e)
             return result
         finally:
@@ -1085,12 +1112,15 @@ def db_get_employee(emp_id: str):
                 return None
             e = dict(r)
             e["enabled"] = bool(e.get("enabled", 1))
-            e["skills"] = [x["skill_id"] for x in conn.execute(
-                "SELECT skill_id FROM employee_skills WHERE employee_id=?", (emp_id,)).fetchall()]
+            skill_rows = conn.execute(
+                "SELECT skill_id, enabled FROM employee_skills WHERE employee_id=?",
+                (emp_id,)).fetchall()
+            e["skills"] = [x["skill_id"] for x in skill_rows]
+            e["skill_states"] = {x["skill_id"]: bool(x["enabled"]) for x in skill_rows}
             e["mcp_tools"] = sorted({x["mcp_id"] for x in conn.execute(
                 "SELECT sm.mcp_id FROM skill_mcp sm "
                 "JOIN employee_skills es ON es.skill_id = sm.skill_id "
-                "WHERE es.employee_id=?", (emp_id,)).fetchall()})
+                "WHERE es.employee_id=? AND es.enabled=1", (emp_id,)).fetchall()})
             return e
         finally:
             conn.close()
@@ -1111,11 +1141,17 @@ def db_upsert_employee(emp: dict):
                  emp.get("rag_kb", ""), emp.get("prompt", ""), emp.get("model", ""),
                  1 if emp.get("enabled", True) else 0),
             )
-            # 重建关联
+            # 重建关联（元素可为字符串 id，或 {"id":.., "enabled":..}；缺省启停看 skill_states）
             conn.execute("DELETE FROM employee_skills WHERE employee_id=?", (emp["id"],))
+            states = emp.get("skill_states") or {}
             for sid in emp.get("skills", []):
-                conn.execute("INSERT OR IGNORE INTO employee_skills (employee_id, skill_id) VALUES (?,?)",
-                             (emp["id"], sid))
+                if isinstance(sid, dict):
+                    sid, st = sid.get("id"), sid.get("enabled", True)
+                else:
+                    st = states.get(sid, True)
+                conn.execute(
+                    "INSERT OR IGNORE INTO employee_skills (employee_id, skill_id, enabled) VALUES (?,?,?)",
+                    (emp["id"], sid, 1 if st else 0))
             conn.commit()
         finally:
             conn.close()
@@ -1127,6 +1163,49 @@ def db_delete_employee(emp_id: str):
         try:
             conn.execute("DELETE FROM employee_skills WHERE employee_id=?", (emp_id,))
             conn.execute("DELETE FROM employees WHERE id=?", (emp_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def db_set_employee_skill_enabled(emp_id: str, skill_id: str, enabled: bool):
+    """启/停用员工关联技能：保留关联，仅切换生效状态"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO employee_skills (employee_id, skill_id, enabled) VALUES (?,?,?) "
+                "ON CONFLICT(employee_id, skill_id) DO UPDATE SET enabled=excluded.enabled",
+                (emp_id, skill_id, 1 if enabled else 0))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def db_link_employee_skills(emp_id: str, skill_ids: list):
+    """为员工批量关联技能（已存在则忽略，默认启用）"""
+    if not skill_ids:
+        return
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            for sid in skill_ids:
+                conn.execute(
+                    "INSERT INTO employee_skills (employee_id, skill_id, enabled) VALUES (?,?,1) "
+                    "ON CONFLICT(employee_id, skill_id) DO NOTHING",
+                    (emp_id, sid))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def db_unlink_employee_skill(emp_id: str, skill_id: str):
+    """解除员工技能关联：彻底移除"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            conn.execute("DELETE FROM employee_skills WHERE employee_id=? AND skill_id=?",
+                         (emp_id, skill_id))
             conn.commit()
         finally:
             conn.close()

@@ -13,7 +13,8 @@ import httpx
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from .config import BIZ_9006_BASE, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+from .config import AGENT_ENGINE, BIZ_9006_BASE, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+from .dsh_engine import dsh_agent_run
 from .db import (
     _COST_INPUT_PER_M,
     _COST_OUTPUT_PER_M,
@@ -1256,7 +1257,20 @@ async def chat(req: ChatRequest):
         tools = []
         conclusion = ""
         route = None
-        async for chunk in mock_agent_run(req.query, req.mode, req.selected_skill, req.approved_action, history=history, conversation_id=conv_id):
+        dsh_session_id = ""
+        # 引擎分发：req.engine 优先，其次 config.AGENT_ENGINE（默认 legacy）
+        engine = (req.engine or AGENT_ENGINE or "legacy").lower()
+        if engine == "dsh":
+            gen = dsh_agent_run(
+                req.query,
+                history=history,
+                conversation_id=conv_id,
+                mode=req.mode,
+                selected_skill=req.selected_skill,
+            )
+        else:
+            gen = mock_agent_run(req.query, req.mode, req.selected_skill, req.approved_action, history=history, conversation_id=conv_id)
+        async for chunk in gen:
             yield chunk
             # 解析 SSE chunk 收集 agent 消息内容
             evt, data = _parse_sse_chunk(chunk)
@@ -1273,8 +1287,14 @@ async def chat(req: ChatRequest):
                 conclusion = data.get("content", "")
             elif evt == "route" and isinstance(data, dict):
                 route = data
-        # 流结束后持久化 agent 消息
-        save_agent_message(conv_id, "\n".join(thoughts), tools, conclusion, route)
+            elif evt == "message_end" and isinstance(data, dict):
+                dsh_session_id = data.get("dsh_session_id", "") or ""
+        # 流结束后持久化 agent 消息（DSH 引擎附带 engine/dsh_session_id 观测字段）
+        save_agent_message(
+            conv_id, "\n".join(thoughts), tools, conclusion, route,
+            engine=engine if engine == "dsh" else None,
+            dsh_session_id=dsh_session_id or None,
+        )
 
     return StreamingResponse(
         stream_with_persist(),
