@@ -99,6 +99,14 @@ APP_NEUOPS_NAME = "neuops-agent"
 APP_NEUOPS_BASE = f"http://127.0.0.1:{PORT}"
 APP_NEUOPS_HEALTH_PATH = "/"
 
+# 探针应用发现：端口 → 应用名提示
+# 通用探测原则：探针动态发现本机监听端口并做 HTTP 探测，"有什么就监视什么"，
+# 仅在对应端口被监听时用此映射识别应用名（本机不存在则不登记，不产生误报）。
+APP_PORT_HINTS = {
+    9006: "contract-compare",
+    9007: "neuops-agent",
+}
+
 # 9006 系统数据库候选检测路径（服务器实证后按需调整）
 DB_9006_SQLITE_CANDIDATES = (
     "/home/ubuntu/contract-compare/backend/contract.db",

@@ -437,6 +437,35 @@
           <button data-status="all" onclick="AG_setAlertStatus('all',this)">全部</button>
         </div>
       </div>
+      <!-- 统计条 -->
+      <div class="alert-stats" id="ag-stats"></div>
+      <!-- 过滤栏 -->
+      <div class="alert-filter">
+        <select id="ag-f-severity" onchange="AG_loadAlerts()">
+          <option value="">全部等级</option>
+          <option value="critical">致命 critical</option>
+          <option value="warning">警告 warning</option>
+          <option value="info">提示 info</option>
+        </select>
+        <select id="ag-f-type" onchange="AG_loadAlerts()">
+          <option value="">全部类型</option>
+          <option value="prewarn">预警 prewarn</option>
+          <option value="fault">故障 fault</option>
+          <option value="perf">性能 perf</option>
+          <option value="availability">可用性 availability</option>
+          <option value="business">业务 business</option>
+        </select>
+        <select id="ag-f-hours" onchange="AG_loadAlerts()">
+          <option value="0">全部时间</option>
+          <option value="1">最近 1 小时</option>
+          <option value="6">最近 6 小时</option>
+          <option value="24">最近 24 小时</option>
+          <option value="72">最近 3 天</option>
+          <option value="168">最近 7 天</option>
+        </select>
+        <input id="ag-f-keyword" placeholder="搜索规则 / 内容 / 对象…" onkeydown="if(event.key==='Enter')AG_loadAlerts()">
+        <button class="btn primary" style="margin-left:auto" onclick="AG_loadAlerts()">🔍 查询</button>
+      </div>
       <div id="alertAggList"><div class="empty">加载中…</div></div>
     </div>
     <div class="grid grid-2" style="margin-bottom:14px">
@@ -2110,20 +2139,47 @@ function AG_renderTraceGantt(el, spans) {
 
 /* ═══════════════ 告警中心聚合（alerts + incidents） ═══════════════ */
 let AG_alertStatus = "firing";
+const AG_TYPE_LABEL = { prewarn: "预警", fault: "故障", perf: "性能", availability: "可用性", business: "业务" };
+function AG_typeBadge(t) {
+  const key = t || "unknown";
+  const map = { prewarn: "t-pre", fault: "t-fault", perf: "t-perf", availability: "t-avail", business: "t-biz" };
+  return `<span class="badge-type ${map[key] || "t-unknown"}">${AG_TYPE_LABEL[key] || key || "未知"}</span>`;
+}
 function AG_renderAlerts(list, status) {
   const sev = a => a.severity === "critical" ? "crit" : a.severity === "warning" ? "warn" : "ok";
+  const sevLabel = a => a.severity === "critical" ? "致命" : a.severity === "warning" ? "警告" : "提示";
   $("alertAggList").innerHTML = list.map(a => {
     const st = a.status === "firing" ? `<span class="badge crit">未恢复</span>` : `<span class="badge ok">已恢复</span>`;
-    return `<div class="agg-row">
-      <span class="badge ${sev(a)}">${esc(a.severity)}</span>
-      <span class="badge">${esc(a.rule_name)}</span>
-      <span class="agg-target">${esc(a.target_name) || "全局"}</span>
-      <span class="ellipsis muted" style="flex:1;max-width:360px">${esc(a.message)}</span>
+    const ack = a.acked ? `<span class="ack-tag">✓ 已确认</span>` : "";
+    return `<div class="agg-row" style="cursor:pointer" onclick="AG_openAlertDetail(${a.id})">
+      ${AG_typeBadge(a.type)}
+      <span class="agg-target"><span class="badge">${esc(a.rule_name)}</span>${ack}</span>
+      <span class="ellipsis muted" style="flex:1;max-width:300px">${esc(a.message)}</span>
+      <span class="badge ${sev(a)}">${esc(sevLabel(a))}</span>
       <span class="tnum">${AG_fmtNum(a.value)}</span>
       ${st}
       <span class="muted sm">${AG_fmtTime(a.created_at)}${a.resolved_at ? `<br/>恢复 ${AG_fmtTime(a.resolved_at)}` : ""}</span>
+      <button class="btn" style="padding:2px 10px" onclick="event.stopPropagation();AG_openAlertDetail(${a.id})">详情</button>
     </div>`;
   }).join("") || `<div class="empty">暂无告警</div>`;
+}
+function AG_renderAlertStats(stats) {
+  const el = $("ag-stats");
+  if (!el || !stats) return;
+  const byType = Object.keys(stats.by_type || {}).map(k => {
+    const c = { prewarn: "as-amber", fault: "as-red", perf: "as-cyan", availability: "as-purple" }[k] || "";
+    return `<span class="as-item ${c}">${AG_typeBadge(k)}<b>${stats.by_type[k]}</b></span>`;
+  }).join("");
+  el.innerHTML = `
+    <span class="as-item">告警总数 <b>${stats.total}</b></span>
+    <span class="as-item as-red">未恢复 <b>${stats.firing}</b></span>
+    <span class="as-item as-green">已恢复 <b>${stats.resolved}</b></span>
+    <span class="as-item as-amber">待确认 <b>${stats.unacked}</b></span>
+    <span class="as-item">等级分布 <b>${Object.keys(stats.by_severity || {}).map(s => {
+      const c = s === "critical" ? "as-red" : s === "warning" ? "as-amber" : "as-green";
+      return `<span class="${c}">${s} ${stats.by_severity[s]}</span>`;
+    }).join(" · ") || "—"}</b></span>
+    ${byType}`;
 }
 function AG_renderIncidentAgg(list) {
   $("incidentAggList").innerHTML = list.map(i => `
@@ -2139,16 +2195,135 @@ function AG_setAlertStatus(s, el) {
   document.querySelectorAll("#page-alerts .agent-seg button").forEach(b => b.classList.toggle("active", b.dataset.status === s));
   AG_loadAlerts();
 }
+function AG_alertFilterQuery() {
+  const q = new URLSearchParams();
+  q.set("status", AG_alertStatus);
+  q.set("limit", 200);
+  const sev = $("ag-f-severity").value, ty = $("ag-f-type").value, h = $("ag-f-hours").value, kw = $("ag-f-keyword").value.trim();
+  if (sev) q.set("severity", sev);
+  if (ty) q.set("type", ty);
+  if (h && h != "0") q.set("hours", h);
+  if (kw) q.set("keyword", kw);
+  return q.toString();
+}
 async function AG_loadAlerts() {
   try {
-    const [al, inc] = await Promise.all([
-      AG_api(`/api/monitor/alerts?status=${AG_alertStatus}&limit=100`),
+    const [al, st, inc] = await Promise.all([
+      AG_api(`/api/monitor/alerts?${AG_alertFilterQuery()}`),
+      AG_api(`/api/monitor/alerts/stats?hours=${$("ag-f-hours").value || "0"}`),
       fetch(API + "/incidents").then(d => d.json()),
     ]);
     AG_renderAlerts(al || [], AG_alertStatus);
+    AG_renderAlertStats(st);
     AG_renderIncidentAgg((inc && inc.incidents) || []);
     const cnt = $("cnt-incidents");
     if (cnt) cnt.textContent = (inc && inc.incidents || []).filter(i => i.state !== "recovered").length;
+  } catch (e) { console.error(e); }
+}
+function AG_renderTopo(el, topo) {
+  if (!window.echarts || !el) return;
+  if (!topo || !(topo.nodes || []).length) { el.innerHTML = `<div class="topo-empty">该告警暂无可视化关联拓扑</div>`; return; }
+  const nodes = (topo.nodes || []).map(n => ({
+    name: n.name || n.id,
+    id: n.id,
+    itemStyle: { color: n.status === "down" ? "#f87171" : n.status === "degraded" ? "#fbbf24" : n.status === "healthy" ? "#34d399" : "#4f8cff", borderColor: "#0b1220" },
+    symbolSize: n.id === topo.root ? 44 : 32,
+    label: { show: true, color: "#dbe4f5", fontSize: 11 },
+  }));
+  const edges = (topo.edges || []).map(e => ({ source: e.source, target: e.target }));
+  const chart = echarts.init(el);
+  chart.setOption({
+    backgroundColor: "transparent",
+    tooltip: { trigger: "item", backgroundColor: "#182338", borderColor: "#24324d", textStyle: { color: "#dbe4f5" } },
+    series: [{
+      type: "graph", layout: "force", roam: true, draggable: true,
+      data: nodes, edges,
+      force: { repulsion: 180, edgeLength: 90, gravity: .08 },
+      lineStyle: { color: "rgba(125,141,176,.5)", width: 1.2 },
+      emphasis: { focus: "adjacency", lineStyle: { width: 3 } },
+    }],
+  });
+}
+async function AG_openAlertDetail(id) {
+  $("drawer").classList.add("open");
+  $("drawerMask").style.display = "block";
+  $("dTitle").textContent = "告警详情";
+  $("dSub").innerHTML = "加载中…";
+  $("dBody").innerHTML = `<div class="empty">加载中…</div>`;
+  try {
+    const d = await AG_api(`/api/monitor/alerts/${id}`);
+    const a = d.alert;
+    const sev = a.severity === "critical" ? "crit" : a.severity === "warning" ? "warn" : "ok";
+    const sevLabel = a.severity === "critical" ? "致命" : a.severity === "warning" ? "警告" : "提示";
+    const st = a.status === "firing" ? `<span class="badge crit">未恢复</span>` : `<span class="badge ok">已恢复</span>`;
+    const ackBtn = a.status === "firing"
+      ? `<button class="btn primary" style="padding:4px 14px" onclick="AG_ackAlert(${a.id})">${a.acked ? "✓ 已确认，点击取消" : "⚡ 确认告警"}</button>`
+      : "";
+    $("dSub").innerHTML = `${AG_typeBadge(a.type)} ${esc(a.rule_name)} ${st} ${ackBtn}`;
+    const suggestions = (a.suggestion || []).map(s => `<li>${esc(s)}</li>`).join("");
+    const impact = (d.impact || []).map(i => {
+      const ic = i.type === "entity" ? "💠" : i.type === "related" ? "🔗" : "ℹ️";
+      return `<div class="dp-row"><span class="k">${ic}</span><span class="v">${esc(i.text)}</span></div>`;
+    }).join("") || `<div class="muted sm">暂无关联影响分析</div>`;
+    const timeline = (d.timeline || []).map(t => `
+      <div class="tl-item ${t.title === "告警恢复" ? "resolved" : t.title === "已确认" ? "acked" : ""}">
+        <div class="tl-title">${esc(t.title)}</div>
+        <div class="tl-desc">${esc(t.desc)}</div>
+        <div class="tl-ts">${AG_fmtTime(t.ts)}</div>
+      </div>`).join("");
+    const related = (d.related || []).map(r => {
+      const rsev = r.severity === "critical" ? "crit" : r.severity === "warning" ? "warn" : "ok";
+      const rst = r.status === "firing" ? `<span class="badge crit">未恢复</span>` : `<span class="badge ok">已恢复</span>`;
+      return `<div class="dp-list-item" style="cursor:pointer" onclick="AG_openAlertDetail(${r.id})">
+        <div class="t">${AG_typeBadge(r.type)}<span class="ellipsis" style="max-width:220px">${esc(r.rule_name)}</span>${rst}</div>
+        <div class="m">${esc(r.message)} · ${AG_fmtTime(r.created_at)}</div>
+      </div>`;
+    }).join("") || `<div class="muted sm">暂无相关告警</div>`;
+    const incidents = (d.incidents || []).map(inc => {
+      const ist = { detected: "检测中", healing: "自愈中", resolved: "已解决", failed: "失败" }[inc.state] || inc.state;
+      const isev = inc.state === "failed" ? "crit" : inc.state === "healing" ? "warn" : inc.state === "resolved" ? "ok" : "muted";
+      return `<div class="dp-list-item">
+        <div class="t"><span class="badge ${isev}">${esc(ist)}</span>${esc(inc.rule_name)}<span class="muted">${AG_fmtTime(inc.created_at)}</span></div>
+        <div class="m">${esc(inc.fix_action || inc.message || "")}</div>
+        <div class="m">${inc.fix_log ? "📜 " + esc(inc.fix_log) : ""}</div>
+      </div>`;
+    }).join("") || `<div class="muted sm">暂无自愈事件（该告警未触发代码级自愈）</div>`;
+    $("dBody").innerHTML = `
+      <div class="dp-block"><h4>📋 基本信息</h4>
+        <div class="dp-grid">
+          <div class="dp-row"><span class="k">告警 ID</span><span class="v tnum">${a.id}</span></div>
+          <div class="dp-row"><span class="k">告警类型</span><span class="v">${AG_typeBadge(a.type)}</span></div>
+          <div class="dp-row"><span class="k">等级</span><span class="v"><span class="badge ${sev}">${sevLabel}</span></span></div>
+          <div class="dp-row"><span class="k">状态</span><span class="v">${st}</span></div>
+          <div class="dp-row"><span class="k">关联对象</span><span class="v">${esc(a.entity_name || a.target_name || "全局")}</span></div>
+          <div class="dp-row"><span class="k">发生时间</span><span class="v">${AG_fmtTime(a.created_at)}</span></div>
+          ${a.resolved_at ? `<div class="dp-row"><span class="k">恢复时间</span><span class="v">${AG_fmtTime(a.resolved_at)}</span></div>` : ""}
+          <div class="dp-row"><span class="k">指标值</span><span class="v tnum">${AG_fmtNum(a.value)}</span></div>
+          ${a.acked ? `<div class="dp-row"><span class="k">确认人</span><span class="v">${esc(a.ack_by)} · ${AG_fmtTime(a.acked_at)}</span></div>` : ""}
+        </div>
+      </div>
+      <div class="dp-block"><h4>📢 告警内容</h4>
+        <div style="font-size:12.5px;color:var(--text);line-height:1.7">${esc(a.message || "—")}</div>
+      </div>
+      <div class="dp-block"><h4>🛠 处置建议</h4>
+        ${suggestions ? `<ul class="dp-steps">${suggestions}</ul>` : `<div class="muted sm">暂无建议</div>`}
+      </div>
+      <div class="dp-block"><h4>🔗 关联影响</h4>${impact}</div>
+      <div class="dp-block"><h4>🕸 关联拓扑</h4><div id="ag-alert-topo" class="topo-box"></div></div>
+      <div class="dp-block"><h4>🕘 时间线</h4><div class="dp-timeline">${timeline}</div></div>
+      <div class="dp-block"><h4>🔁 相关告警 (${(d.related || []).length})</h4>${related}</div>
+      <div class="dp-block"><h4>🤖 自愈事件 (${(d.incidents || []).length})</h4>${incidents}</div>`;
+    AG_renderTopo($("ag-alert-topo"), d.topology);
+    setTimeout(() => { const c = echarts.getInstanceByDom($("ag-alert-topo")); if (c) c.resize(); }, 80);
+  } catch (e) {
+    $("dBody").innerHTML = `<div class="empty">加载失败：${esc(e.message)}</div>`;
+  }
+}
+async function AG_ackAlert(id) {
+  try {
+    await AG_api(`/api/monitor/alerts/${id}/ack?by=ops`, { method: "POST" });
+    AG_openAlertDetail(id);
+    AG_loadAlerts();
   } catch (e) { console.error(e); }
 }
 

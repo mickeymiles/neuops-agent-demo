@@ -191,6 +191,21 @@ def init_session_db():
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_status ON alerts(status)")
+            # 告警中心增强（v2）：类型 / 实体 / 处置建议 / 关联影响 / 确认状态（幂等补列，兼容存量库）
+            for _col, _ddl in (
+                ("type", "TEXT DEFAULT ''"),
+                ("entity_type", "TEXT DEFAULT ''"),
+                ("entity_name", "TEXT DEFAULT ''"),
+                ("suggestion", "TEXT DEFAULT ''"),
+                ("impact", "TEXT DEFAULT ''"),
+                ("acked", "INTEGER DEFAULT 0"),
+                ("acked_at", "TEXT DEFAULT ''"),
+                ("ack_by", "TEXT DEFAULT ''"),
+            ):
+                _ensure_column(conn, "alerts", _col, _ddl)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_type ON alerts(type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_alert_entity ON alerts(entity_type, entity_name)")
+            _ensure_column(conn, "alert_rules", "type", "TEXT DEFAULT ''")
             conn.commit()
         finally:
             conn.close()

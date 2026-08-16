@@ -424,15 +424,210 @@ async def monitor_topology():
 
 
 @router.get("/api/monitor/alerts")
-async def monitor_alerts(status: str = "firing", limit: int = Query(100, ge=1, le=500)):
-    """告警中心：按状态筛选告警记录（firing 未恢复 / resolved 已恢复 / all 全部）"""
+async def monitor_alerts(
+    status: str = "firing",
+    severity: str = "",
+    type_: str = Query("", alias="type"),
+    keyword: str = "",
+    hours: int = Query(0, ge=0, le=720),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """告警中心列表：支持 状态 / 等级 / 类型 / 关键字 / 时间窗口 多维过滤"""
     if status not in ("firing", "resolved", "all"):
         status = "all"
-    if status == "all":
-        rows = _query_rows("SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?", (limit,))
-    else:
-        rows = _query_rows("SELECT * FROM alerts WHERE status=? ORDER BY created_at DESC LIMIT ?", (status, limit))
+    conds, args = [], []
+    # type 过滤按 COALESCE 规则兜底，兼容存量 type 为空的告警
+    type_expr = "COALESCE(NULLIF(a.type, ''), COALESCE(r.type, 'fault'))"
+    if status != "all":
+        conds.append("a.status=?")
+        args.append(status)
+    if severity:
+        conds.append("a.severity=?")
+        args.append(severity)
+    if type_:
+        conds.append(f"{type_expr}=?")
+        args.append(type_)
+    if keyword:
+        conds.append("(a.rule_name LIKE ? OR a.message LIKE ? OR a.target_name LIKE ? OR a.entity_name LIKE ?)")
+        kw = f"%{keyword}%"
+        args += [kw, kw, kw, kw]
+    if hours and hours > 0:
+        since = (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+        conds.append("a.created_at>=?")
+        args.append(since)
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
+    select = (f"SELECT a.*, {type_expr} AS type FROM alerts a "
+              "LEFT JOIN alert_rules r ON a.rule_id = r.id")
+    rows = _query_rows(f"{select} {where} ORDER BY a.created_at DESC LIMIT ?", args + [limit])
+    # 存量告警 suggestion 为空时按类型兜底
+    rule_types = {r["id"]: r["type"] for r in _query_rows("SELECT id, type FROM alert_rules WHERE type != ''")}
+    for a in rows:
+        try:
+            a["suggestion"] = json.loads(a.get("suggestion") or "[]")
+        except Exception:
+            a["suggestion"] = []
+        if not a["suggestion"]:
+            a["suggestion"] = SUGGESTIONS_FALLBACK.get(
+                a.get("type") or rule_types.get(a.get("rule_id") or "", "fault"), [])
     return JSONResponse({"ok": True, "data": rows})
+
+
+@router.get("/api/monitor/alerts/stats")
+async def monitor_alerts_stats(hours: int = Query(0, ge=0, le=720)):
+    """告警聚合统计：总量 / 未恢复 / 按类型分布 / 按等级分布 / 最近趋势（用于告警中心头部与筛选栏）"""
+    def _count(extra="", args=()):
+        row = _query_rows(f"SELECT COUNT(*) n FROM alerts {extra}", tuple(args))
+        return row[0]["n"] if row else 0
+
+    where_time, time_args = "", []
+    if hours and hours > 0:
+        since = (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+        where_time = "WHERE created_at>=?"
+        time_args = [since]
+    by_type = {}
+    for r in _query_rows(
+            f"SELECT type, COUNT(*) n FROM alerts {where_time} GROUP BY type", time_args):
+        by_type[r["type"] or "unknown"] = r["n"]
+    by_severity = {}
+    for r in _query_rows(
+            f"SELECT severity, COUNT(*) n FROM alerts {where_time} GROUP BY severity", time_args):
+        by_severity[r["severity"] or "warning"] = r["n"]
+    return JSONResponse({
+        "ok": True,
+        "data": {
+            "total": _count(where_time, time_args),
+            "firing": _count("WHERE status='firing'" + (" AND created_at>=?" if hours else ""),
+                             [since] if hours else []),
+            "resolved": _count("WHERE status='resolved'" + (" AND created_at>=?" if hours else ""),
+                               [since] if hours else []),
+            "unacked": _count("WHERE status='firing' AND acked=0"
+                              + (" AND created_at>=?" if hours else ""),
+                              [since] if hours else []),
+            "by_type": by_type,
+            "by_severity": by_severity,
+        },
+    })
+
+
+# 存量告警 suggestion 为空时的类型级兜底建议
+SUGGESTIONS_FALLBACK = {
+    "prewarn": ["分析趋势：对比近期窗口指标", "定位消耗源：找出主要贡献者", "提前干预：预算控制 / 上下文压缩",
+                "跟踪确认回归基线"],
+    "fault": ["定位故障源：查看最近错误日志与调用链", "逐跳排查：模型服务 / 工具 / 依赖服务状态",
+              "执行恢复动作或代码级自愈", "验证恢复并持续观察"],
+    "perf": ["定位瓶颈：查看时序指标与 TOP 进程", "扩容或限流：按需提升资源配额", "优化负载：调整调度策略",
+             "持续观测确认指标回落"],
+    "availability": ["检查服务进程与端口", "查看服务日志定位根因", "重启服务或拉起依赖验证恢复",
+                     "确认无级联影响"],
+    "business": ["核实业务影响范围", "定位业务链路异常环节", "按优先级安排修复", "复盘优化监控口径"],
+}
+
+
+def _alert_topo_entity_id(a: dict) -> str:
+    """由告警实体信息推导拓扑节点 ID（与统一探针实体 ID 对齐，找不到则返回空）"""
+    etype, ename = (a.get("entity_type") or ""), (a.get("entity_name") or "")
+    if not etype or not ename:
+        return ""
+    # 日志聚合实体为固定 ID
+    if etype == "log" or ename == "log":
+        return "log:aggregate"
+    # 探针实体 ID 统一为 "{type}-{name}" 前缀；disk 告警的 entity_name 存的是 "server"，
+    # 无法直接定位到主机，尝试用 message 里的主机名解析
+    if ename == "server" and etype == "server":
+        import re
+        m = re.search(r"([\w.-]+)\s+\[[^\]]+\]\s+磁盘", a.get("message") or "")
+        if m:
+            return f"server-{m.group(1)}"
+        return ""
+    if ename.startswith(f"{etype}-"):
+        return ename
+    return f"{etype}-{ename}"
+
+
+@router.get("/api/monitor/alerts/{alert_id}")
+async def monitor_alert_detail(alert_id: int):
+    """告警详情：基本信息 + 处置建议 + 关联影响 + 关联拓扑 + 时间线 + 相关告警 + 自愈事件"""
+    rows = _query_rows("SELECT * FROM alerts WHERE id=?", (alert_id,))
+    if not rows:
+        return JSONResponse({"ok": False, "error": "告警不存在"})
+    a = dict(rows[0])
+    # 存量告警 type 可能为空，按规则兜底推断
+    if not a.get("type"):
+        r = _query_rows("SELECT type FROM alert_rules WHERE id=?", (a.get("rule_id") or "",))
+        a["type"] = (r[0]["type"] if r and r[0]["type"] else "fault")
+    try:
+        a["suggestion"] = json.loads(a.get("suggestion") or "[]")
+    except Exception:
+        a["suggestion"] = []
+    # 处置建议（suggestion 为空时按类型回填默认建议）
+    if not a["suggestion"]:
+        a["suggestion"] = SUGGESTIONS_FALLBACK.get(a.get("type") or "fault", [])
+    # 关联影响：拓扑一跳子图 + 明细
+    topo = {"nodes": [], "edges": [], "summary": {"total": 0}}
+    impact = []
+    try:
+        from . import ops_ontology
+        eid = _alert_topo_entity_id(a)
+        if eid:
+            topo = ops_ontology.build_entity_graph(eid)
+            me = next((n for n in topo["nodes"] if n["id"] == eid), None)
+            others = [n for n in topo["nodes"] if n["id"] != eid]
+            if me:
+                impact.append({"type": "entity", "text": f"告警对象：{me.get('name', eid)}（{me.get('type', 'unknown')}）"})
+            for n in others[:6]:
+                impact.append({"type": "related",
+                               "text": f"关联实体：{n.get('name', n['id'])}（{n.get('type', 'unknown')}，"
+                                       f"状态 {n.get('status', 'unknown')}）"})
+        if not impact:
+            impact.append({"type": "info", "text": "暂未发现关联实体，建议人工确认影响范围"})
+    except Exception:
+        topo = {"nodes": [], "edges": [], "summary": {"total": 0}}
+        impact = [{"type": "info", "text": "暂未发现关联实体，建议人工确认影响范围"}]
+    # 时间线
+    val_str = f"，当前值 {a.get('value')}" if a.get("value") is not None else ""
+    timeline = [{"ts": a.get("created_at"), "title": "告警触发",
+                 "desc": f"{a.get('rule_name')} 触发{val_str}"}]
+    if a.get("acked"):
+        timeline.append({"ts": a.get("acked_at"), "title": "已确认",
+                         "desc": f"由 {a.get('ack_by') or '运维'} 确认处理中"})
+    if a.get("status") == "resolved":
+        timeline.append({"ts": a.get("resolved_at"), "title": "告警恢复",
+                         "desc": "指标回落至阈值以下，告警自动解除"})
+    # 相关告警：同规则 或 同实体
+    related = _query_rows(
+        "SELECT id, rule_name, severity, type, status, message, value, created_at FROM alerts "
+        "WHERE id != ? AND (rule_id = ? OR entity_name = ?) ORDER BY created_at DESC LIMIT 8",
+        (alert_id, a.get("rule_id") or "", a.get("entity_name") or ""))
+    for r in related:
+        r["suggestion"] = []
+    # 自愈事件
+    heal = _query_rows(
+        "SELECT id, rule_name, state, message, fix_action, fix_log, retry_count, created_at, updated_at, resolved_at "
+        "FROM incidents WHERE alert_id = ? ORDER BY created_at DESC LIMIT 5", (alert_id,))
+    return JSONResponse({"ok": True, "data": {
+        "alert": a, "impact": impact, "topology": topo,
+        "timeline": timeline, "related": related, "incidents": heal,
+    }})
+
+
+@router.post("/api/monitor/alerts/{alert_id}/ack")
+async def monitor_alert_ack(alert_id: int, by: str = "ops"):
+    """确认告警：标记 acked，防止告警风暴并记录确认人/时间"""
+    rows = _query_rows("SELECT id, acked FROM alerts WHERE id=?", (alert_id,))
+    if not rows:
+        return JSONResponse({"ok": False, "error": "告警不存在"})
+    new_acked = 0 if rows[0]["acked"] else 1
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            conn.execute(
+                "UPDATE alerts SET acked=?, acked_at=?, ack_by=? WHERE id=?",
+                (new_acked, now if new_acked else "", by if new_acked else "", alert_id))
+            conn.commit()
+        finally:
+            conn.close()
+    return JSONResponse({"ok": True, "data": {"id": alert_id, "acked": new_acked, "acked_at": now if new_acked else ""}})
 
 
 @router.get("/api/monitor/alert-rules")
