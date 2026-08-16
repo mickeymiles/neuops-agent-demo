@@ -761,6 +761,62 @@ body {
 .card-btn:hover { border-color: var(--c-primary); color: var(--c-primary); }
 .card-btn.danger:hover { border-color: var(--c-danger); color: var(--c-danger); background: rgba(239,68,68,0.15); }
 
+/* ═══════ EMPLOYEE CARD GRID（数字员工卡片） ═══════ */
+.emp-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.emp-card {
+  position: relative;
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--c-main-bg);
+  border: 1px solid var(--c-border-light);
+  border-radius: 10px;
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.emp-card:hover { border-color: var(--c-primary); box-shadow: 0 4px 16px rgba(14,165,233,0.1); transform: translateY(-1px); }
+.emp-card-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.emp-card-avatar {
+  width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
+  background: linear-gradient(135deg, #0EA5E9, #6366F1);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+}
+.emp-card-avatar .svg-icon { width: 22px; height: 22px; }
+.emp-card-head { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.emp-card-name { font-size: 15px; font-weight: 600; color: var(--c-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.emp-card-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.emp-card-id { font-size: 11px; color: var(--c-text-time); }
+.emp-card-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.emp-card-type {
+  font-size: 11px; color: var(--c-primary); background: var(--c-primary-light);
+  padding: 2px 8px; border-radius: 999px; font-weight: 500;
+}
+.emp-card-status {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 500;
+  border: 1px solid var(--c-border-light); color: var(--c-text-time);
+}
+.emp-card-status.on { color: var(--c-success); border-color: rgba(16,185,129,.45); background: rgba(16,185,129,.08); }
+.emp-card-desc {
+  font-size: 13px; color: var(--c-text-secondary); line-height: 1.55;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  min-height: 40px;
+}
+.emp-card-meta {
+  display: flex; align-items: center; gap: 14px;
+  font-size: 12px; color: var(--c-text-time);
+  border-top: 1px solid var(--c-border-light); padding-top: 12px;
+  margin-top: auto;
+}
+.emp-card-meta .meta-item { display: inline-flex; align-items: center; gap: 5px; }
+.emp-card-meta .meta-item .svg-icon { width: 13px; height: 13px; }
+.emp-card-empty {
+  grid-column: 1 / -1; text-align: center; color: var(--c-text-placeholder); font-size: 13px;
+  padding: 40px 20px; border: 1px dashed var(--c-border-light); border-radius: 8px;
+}
+
 /* ═══════ SEARCH BAR ═══════ */
 .search-bar { display: flex; gap: 10px; margin-bottom: 18px; align-items: center; }
 .search-bar input {
@@ -1537,10 +1593,7 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
           <div class="search-bar">
             <input type="text" placeholder="搜索数字员工..." oninput="renderEmployees(this.value)">
           </div>
-          <table class="data-table" id="empTable">
-            <thead><tr><th>ID</th><th>显示名称</th><th>描述</th><th>类型</th><th>创建时间</th><th>操作</th></tr></thead>
-            <tbody></tbody>
-          </table>
+          <div class="emp-card-grid" id="empCardGrid"></div>
         </div>
       </div>
       <div id="empDetailView" class="hidden" style="height:100%;display:flex;flex-direction:column;">
@@ -2450,20 +2503,38 @@ async function renderEmployees(keyword) {
   try {
     const r = await fetch('/api/employees').then(x => x.json());
     S.employees = r.employees || [];
-    const list = S.employees.filter(e => !kw || e.name.toLowerCase().includes(kw) || (e.desc || '').toLowerCase().includes(kw));
-    const tbody = document.querySelector('#empTable tbody');
-    tbody.innerHTML = list.map(e => `
-      <tr>
-        <td>${e.id}</td>
-        <td>${e.name}</td>
-        <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.desc || '-'}</td>
-        <td>${e.type || '-'}</td>
-        <td>${e.created || '-'}</td>
-        <td class="table-actions">
-          <button class="tb-btn" title="查看详情" onclick="showEmpDetail('${e.id}')">${icon('eye')}</button>
-        </td>
-      </tr>`).join('');
-  } catch (e) { console.error(e); }
+    const list = S.employees.filter(e => !kw || e.name.toLowerCase().includes(kw) || (e.desc || '').toLowerCase().includes(kw) || e.type.toLowerCase().includes(kw));
+    const grid = document.getElementById('empCardGrid');
+    if (!list.length) {
+      grid.innerHTML = '<div class="emp-card-empty">暂无数字员工</div>';
+      return;
+    }
+    grid.innerHTML = list.map(e => {
+      const enabled = e.enabled !== false;
+      return `
+      <div class="emp-card" onclick="showEmpDetail('${e.id}')">
+        <div class="emp-card-top">
+          <div class="emp-card-avatar">${icon('robot')}</div>
+          <div class="emp-card-head">
+            <div class="emp-card-name-row">
+              <span class="emp-card-name">${e.name}</span>
+              <span class="emp-card-id">${e.id}</span>
+            </div>
+            <div class="emp-card-badges">
+              <span class="emp-card-type">${e.type || '通用'}</span>
+              <span class="emp-card-status ${enabled ? 'on' : ''}">${enabled ? '已启用' : '未启用'}</span>
+            </div>
+          </div>
+        </div>
+        <div class="emp-card-desc">${e.desc || '暂无描述'}</div>
+        <div class="emp-card-meta">
+          <span class="meta-item">${icon('activity')}${(e.skills || []).length} 个技能</span>
+          <span class="meta-item">${icon('wrench')}${(e.mcp_tools || []).length} 个 MCP 工具</span>
+          <span class="meta-item">${icon('clock')}${e.created || '-'}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) { console.error(err); }
 }
 
 function showEmpList() {
