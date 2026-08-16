@@ -45,19 +45,19 @@ async def get_employee_full(emp_id: str):
          "group": all_tools[mid].get("group", "")}
         for mid in emp.get("mcp_tools", []) if mid in all_tools
     ]
-    # 会话记录按员工类型区分（沿用 mock 会话数据；已删除的持久化标记后刷新不再返回）
-    if "经营" in emp.get("type", ""):
-        mock_convs = [
+    # 会话记录按员工 id 映射真实业务（删除假员工后仅保留 9006 真实员工会话；已删除的持久化标记后刷新不再返回）
+    mock_convs_by_id = {
+        "emp-004": [
             {"id": "conv-c01", "title": "雷神设备采购比对（IDZB2607388A）", "start_time": "2026-08-05 14:10", "message_count": 4},
             {"id": "conv-c02", "title": "国药亿道教学设备比对（gyyd001）", "start_time": "2026-08-05 16:55", "message_count": 6},
             {"id": "conv-c03", "title": "药监局药品检查管理比对（IDZB2605434A）", "start_time": "2026-08-05 19:51", "message_count": 8},
-        ]
-    else:
-        mock_convs = [
-            {"id": "conv-001", "title": "订单服务延迟排查", "start_time": "2026-08-08 14:30", "message_count": 12},
-            {"id": "conv-002", "title": "支付服务告警分析", "start_time": "2026-08-08 11:20", "message_count": 8},
-            {"id": "conv-003", "title": "数据库连接池问题", "start_time": "2026-08-07 16:45", "message_count": 15},
-        ]
+        ],
+        "emp-005": [
+            {"id": "conv-r01", "title": "9006 合同比对结果导出优化", "start_time": "2026-08-13 10:20", "message_count": 5},
+            {"id": "conv-r02", "title": "9006 经营指标看板筛选调整", "start_time": "2026-08-14 15:40", "message_count": 7},
+        ],
+    }
+    mock_convs = mock_convs_by_id.get(emp_id, [])
     deleted_mock = set(db_get_deleted_mock_convs())
     emp_full["conversations"] = [c for c in mock_convs if c["id"] not in deleted_mock]
     return JSONResponse(emp_full)

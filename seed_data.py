@@ -23,15 +23,6 @@ SKILLS = [
 
 
 MOCK_EMPLOYEES = [
-    {"id": "emp-001", "name": "告警分析专家", "desc": "主攻告警根因分析，擅长关联变更、日志、指标进行多维度排障", "type": "告警分析", "created": "2026-08-01", "updated": "2026-08-08",
-     "skills": ["skill-1","skill-2"],
-     "rag_kb": "运维知识库-告警案例", "prompt": "你是一位资深告警分析专家，负责对告警进行多维度根因分析。", "model": "deepseek-v4"},
-    {"id": "emp-002", "name": "巡检报告专员", "desc": "每日自动巡检，生成结构化巡检报告，覆盖资源、告警、变更维度", "type": "定时巡检", "created": "2026-08-03", "updated": "2026-08-07",
-     "skills": ["skill-3"],
-     "rag_kb": "运维知识库-巡检规范", "prompt": "你是一位巡检专员，严格按照预设巡检项执行，输出结构化报告。", "model": "deepseek-v4"},
-    {"id": "emp-003", "name": "工单处置助手", "desc": "自动分析工单内容，匹配历史解决方案，完成标准化处置流程", "type": "工单处置", "created": "2026-08-05", "updated": "2026-08-08",
-     "skills": ["skill-6"],
-     "rag_kb": "运维知识库-工单案例", "prompt": "你是一位工单处置助手，快速分析工单并匹配合适的处置方案。", "model": "deepseek-v4"},
     {"id": "emp-004", "name": "经营业务专家", "desc": "专注采购合同比对、经营指标分析、合同明细探查等经营业务场景。对接9006经营分析系统：通过原子本体MCP查询原始合同/付款/收款明细，通过指标数据集MCP查询签单毛利率等定时ETL预计算指标，通过合同比对引擎分析供应商报价差异。", "type": "经营分析", "created": "2026-08-11", "updated": "2026-08-13",
      "skills": ["skill-10","skill-11","skill-12"],
      "rag_kb": "经营知识库-合同案例", "prompt": "你是一位经营业务分析专家，负责经营分析和顾问工作。你通过9006经营分析系统的三类能力服务用户：①合同比对——用户在9006上传合同基准Excel和供应商报价Excel后，查询比对结果、分析差异、识别高危异常项；②指标分析——通过指标数据集MCP读取定时ETL预计算的签单毛利率、回款毛利率等指标宽表，做同比/环比解读，不做原始聚合计算；③明细探查——通过原子本体MCP按合同编号或关键词查询原始合同、付款、收款明细。指标口径以9006定时任务计算为准，你只做解读，不自行重算。", "model": "deepseek-v4"},
@@ -41,31 +32,7 @@ MOCK_EMPLOYEES = [
 ]
 
 
-MOCK_LONG_TASKS = [
-    {"id": "lt-001", "name": "订单服务告警实时收敛", "status": "running", "description": "7×24小时持续监听告警流，自动降噪、合并、关联分析，产出风险事件",
-     "employee_id": "emp-001", "schedule": "实时流式", "update_time": "2026-08-08 14:35",
-     "executions": [
-         {"id": "exec-1", "time": "2026-08-08 14:30", "status": "success", "thread_id": "conv-23081430"},
-         {"id": "exec-2", "time": "2026-08-08 13:00", "status": "success", "thread_id": "conv-23081300"},
-         {"id": "exec-3", "time": "2026-08-08 11:30", "status": "success", "thread_id": "conv-23081130"},
-     ]},
-    {"id": "lt-002", "name": "支付集群每日巡检", "status": "running", "description": "每日08:00/20:00自动执行全维度巡检，生成结构化报告",
-     "employee_id": "emp-002", "schedule": "0 8,20 * * *", "update_time": "2026-08-08 08:12",
-     "executions": [
-         {"id": "exec-4", "time": "2026-08-08 08:00", "status": "success", "thread_id": "conv-24080800"},
-         {"id": "exec-5", "time": "2026-08-07 20:00", "status": "success", "thread_id": "conv-24072000"},
-     ]},
-    {"id": "lt-003", "name": "数据库慢查询持续监控", "status": "stopped", "description": "实时采集慢查询日志，超过阈值自动生成工单",
-     "employee_id": "emp-003", "schedule": "实时流式", "update_time": "2026-08-06 18:00",
-     "executions": [
-         {"id": "exec-6", "time": "2026-08-06 17:55", "status": "failed", "thread_id": "conv-24061755"},
-     ]},
-    {"id": "lt-004", "name": "安全漏洞周期扫描", "status": "running", "description": "每周一凌晨3:00自动扫描全量服务CVE漏洞",
-     "employee_id": "emp-001", "schedule": "0 3 * * 1", "update_time": "2026-08-04 03:15",
-     "executions": [
-         {"id": "exec-7", "time": "2026-08-04 03:00", "status": "success", "thread_id": "conv-24080300"},
-     ]},
-]
+MOCK_LONG_TASKS = []
 
 
 MOCK_TODOS = [

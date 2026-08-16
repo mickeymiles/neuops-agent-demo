@@ -2461,7 +2461,6 @@ async function renderEmployees(keyword) {
         <td>${e.created || '-'}</td>
         <td class="table-actions">
           <button class="tb-btn" title="查看详情" onclick="showEmpDetail('${e.id}')">${icon('eye')}</button>
-          <button class="tb-btn danger" title="删除" onclick="deleteEmployee('${e.id}')">${icon('trash')}</button>
         </td>
       </tr>`).join('');
   } catch (e) { console.error(e); }
@@ -2484,7 +2483,6 @@ async function showEmpDetail(id) {
     renderEmpConvTab(r);
     renderEmpSkillTab(r);
     renderEmpMcpTab(r);
-    renderEmpSettingsTab(r);
     switchEmpTab('conv');
   } catch (e) { console.error(e); }
 }
@@ -2492,9 +2490,8 @@ async function showEmpDetail(id) {
 function renderEmpDetailTop(emp) {
   const tabs = [
     { id: 'conv', label: '对话记录' },
-    { id: 'skill', label: '技能管理' },
+    { id: 'skill', label: '技能' },
     { id: 'mcp', label: 'MCP服务' },
-    { id: 'settings', label: '设置' },
   ];
   document.getElementById('empDetailTop').innerHTML = `
     <div class="back-area">
@@ -2507,8 +2504,8 @@ function renderEmpDetailTop(emp) {
 }
 
 function switchEmpTab(tab) {
-  document.querySelectorAll('.emp-detail-tab').forEach(b => b.classList.toggle('active', b.textContent === ({conv:'对话记录',skill:'技能管理',mcp:'MCP服务',settings:'设置'})[tab]));
-  ['conv', 'skill', 'mcp', 'settings'].forEach(t => {
+  document.querySelectorAll('.emp-detail-tab').forEach(b => b.classList.toggle('active', b.textContent === ({conv:'对话记录',skill:'技能',mcp:'MCP服务'})[tab]));
+  ['conv', 'skill', 'mcp'].forEach(t => {
     document.getElementById('emp-tab-' + t).classList.toggle('hidden', t !== tab);
   });
 }
@@ -2531,7 +2528,6 @@ function renderEmpConvTab(emp) {
               <td>${c.message_count}</td>
               <td class="row-actions">
                 <button class="tb-btn" title="查看对话" onclick="viewConversation('${c.id}')">${icon('eye')}</button>
-                <button class="tb-btn danger" title="删除会话" onclick="deleteEmpConversation('${c.id}')">${icon('trash')}</button>
               </td>
             </tr>`).join('')}
           </tbody>
@@ -2602,10 +2598,7 @@ async function renderEmpSkillTab(emp) {
           <div class="skill-mgr-card emp-select-card" style="cursor:pointer;" onclick="showSkillDetail('${s.id}')">
             <div class="card-top">
               <h4>${s.name}${s.category === 'custom' ? '<span class="tag" style="margin-left:6px;color:var(--c-primary);border-color:rgba(56,189,248,.4)">自定义</span>' : ''}</h4>
-              <label class="skill-switch" title="${active ? '点击停用' : '点击使用'}" onclick="event.stopPropagation()">
-                <input type="checkbox" ${active ? 'checked' : ''} onchange="toggleEmpSkill('${s.id}')">
-                <span class="slider"></span>
-              </label>
+              <span class="tag" style="color:${active ? 'var(--c-primary)' : 'var(--c-text-time)'};border-color:${active ? 'rgba(56,189,248,.4)' : 'var(--c-border-light)'};">${active ? '已启用' : '未启用'}</span>
             </div>
             <div class="card-eng">${s.id}</div>
             <div class="card-desc">${s.desc || ''}</div>
