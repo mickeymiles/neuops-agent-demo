@@ -338,6 +338,8 @@ function filterEmpMcpTools(val) {
 }
 
 function renderEmpSettingsTab(emp) {
+  emp = emp || window.__curEmp || S.empDetail;
+  if (!emp) return;
   document.getElementById('emp-tab-settings').innerHTML = `
     <div class="emp-detail-body">
       <div class="settings-layout">
@@ -1167,10 +1169,10 @@ function renderEmpDetailTop(emp) {
     <div class="emp-detail-bar">
       <span class="emp-back" onclick="showEmpList()">← 返回列表</span>
       <div class="emp-detail-title">
-        <span class="emp-avatar" style="background:linear-gradient(135deg,#4F8CFF,#22D3EE);">${escapeHtml((emp.display_name || emp.name || 'E')[0])}</span>
+        <span class="emp-avatar" style="background:linear-gradient(135deg,#4F8CFF,#22D3EE);">${escapeHtml((emp.name || 'E')[0])}</span>
         <div>
-          <div class="emp-detail-name">${escapeHtml(emp.display_name || emp.name || emp.emp_id)}</div>
-          <div class="emp-detail-meta">${escapeHtml(emp.emp_type || '通用')} · ${escapeHtml(emp.emp_id || '')}</div>
+          <div class="emp-detail-name">${escapeHtml(emp.name || emp.id || '')}</div>
+          <div class="emp-detail-meta">${escapeHtml(emp.type || '通用')}${emp.id ? ' · ' + escapeHtml(emp.id) : ''}</div>
         </div>
       </div>
       <div class="emp-detail-tabs">
