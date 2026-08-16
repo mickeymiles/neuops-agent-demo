@@ -817,6 +817,43 @@ body {
   padding: 40px 20px; border: 1px dashed var(--c-border-light); border-radius: 8px;
 }
 
+/* ═══════ EMP SKILL CARD（数字员工-技能卡片） ═══════ */
+.emp-skill-card {
+  background: var(--c-main-bg);
+  border: 1px solid var(--c-border-light);
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 10px;
+  flex: 1 1 calc(33.333% - 12px); min-width: 250px;
+  transition: all 0.15s;
+}
+.emp-skill-card:hover { border-color: var(--c-primary); box-shadow: 0 4px 16px rgba(14,165,233,0.1); transform: translateY(-1px); }
+.emp-skill-top { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.emp-skill-info { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
+.emp-skill-name { font-size: 14px; font-weight: 600; color: var(--c-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.emp-skill-desc {
+  font-size: 12px; color: var(--c-text-secondary); line-height: 1.55; cursor: pointer;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  min-height: 36px;
+}
+.emp-skill-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--c-text-time); }
+.emp-skill-actions { display: flex; gap: 8px; margin-top: 2px; }
+.skill-count { font-size: 12px; color: var(--c-text-time); }
+
+/* ═══════ ADD EMP SKILL MODAL ═══════ */
+.add-skill-list {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 380px; overflow-y: auto; margin: 14px 0;
+}
+.add-skill-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--c-border-light); border-radius: 8px; cursor: pointer;
+  transition: all 0.15s;
+}
+.add-skill-item:hover { border-color: var(--c-primary); background: var(--c-bg-hover); }
+.add-skill-item input[type="checkbox"] { margin-top: 3px; accent-color: var(--c-primary); width: 15px; height: 15px; flex-shrink: 0; cursor: pointer; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+
 /* ═══════ SEARCH BAR ═══════ */
 .search-bar { display: flex; gap: 10px; margin-bottom: 18px; align-items: center; }
 .search-bar input {
@@ -1682,6 +1719,19 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
       <span style="cursor:pointer;font-size:16px;display:inline-flex;color:var(--c-text-secondary);" onclick="closeDocModal()"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
     </div>
     <div class="doc-body" id="docBody"></div>
+  </div>
+</div>
+
+<!-- ═══════ ADD EMP SKILL MODAL ═══════ -->
+<div class="modal-overlay hidden" id="addEmpSkillModal">
+  <div class="modal-box" style="max-width:620px;">
+    <h3 style="display:flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>添加技能</h3>
+    <div style="font-size:12px;color:var(--c-text-time);margin-top:6px;">从技能池选择要关联到该数字员工的技能（未展示的技能即为已关联）。勾选后点击「确认添加」。</div>
+    <div class="add-skill-list" id="addEmpSkillList"></div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="closeAddEmpSkill()">取消</button>
+      <button class="btn-primary-filled" onclick="doAddEmpSkills()">确认添加</button>
+    </div>
   </div>
 </div>
 
@@ -2643,46 +2693,44 @@ function groupByBizGroup(items, getGroup) {
 async function renderEmpSkillTab(emp) {
   emp = emp || window.__curEmp || S.empDetail;
   if (!emp) return;
-  const bound = new Set(emp.skills || []);
+  const linked = emp.skill_details || [];
   const wrap = document.getElementById('emp-tab-skill');
   wrap.innerHTML = `
     <div class="emp-detail-body">
       <div class="skill-mgr-bar">
-        <div class="skill-filter-tabs"><span class="skill-filter-tab active">全部</span></div>
+        <div class="skill-filter-tabs"><span class="skill-filter-tab active">已关联技能</span><span class="skill-count">${linked.length} 项</span></div>
+        <button class="btn btn-primary-filled" style="height:32px;padding:0 14px;font-size:13px;margin-left:auto;" onclick="openAddEmpSkill()">${icon('plus')} 添加技能</button>
       </div>
-      <div class="emp-pool-hint">数字员工通过「技能」获得能力：选择使用的技能后，其绑定的 MCP 工具将自动生效。点击技能卡片可查看详情。</div>
-      <div class="skill-mgr-cards" id="empSkillPool"></div>
+      <div class="emp-pool-hint">仅展示该数字员工已关联的技能。点击卡片可查看详情；「停用」保留关联但不再推导 MCP 工具，「解除关联」彻底移除该技能。</div>
+      <div class="skill-mgr-cards" id="empSkillPool">${linked.length ? linked.map(s => empSkillCardHtml(s, emp)).join('') : '<div class="todo-empty" style="grid-column:1/-1;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">该数字员工暂无关联技能，点击右上角「添加技能」进行配置</div>'}</div>
     </div>`;
-  try {
-    const r = await fetch('/api/skills').then(x => x.json());
-    const skills = r.skills || [];
-    const groups = groupByBizGroup(skills, s => s.group);
-    document.getElementById('empSkillPool').innerHTML = groups.length ? groups.map(([g, items]) => `
-      <div style="width:100%;margin-bottom:18px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-          <span style="font-size:14px;font-weight:600;color:var(--c-text-h1);">${g}</span>
-          <span class="tag" style="font-size:11px;">${items.length} 项</span>
+}
+
+function empSkillCardHtml(s, emp) {
+  const enabled = s.enabled !== false;
+  const badge = enabled
+    ? '<span class="emp-card-status on">已启用</span>'
+    : '<span class="emp-card-status">已停用</span>';
+  return `
+    <div class="emp-skill-card">
+      <div class="emp-skill-top">
+        <div class="emp-skill-info" onclick="showSkillDetail('${s.id}')">
+          <span class="emp-skill-name">${s.name}</span>
+          ${s.category === 'custom' ? '<span class="tag" style="font-size:10px;color:var(--c-primary);border-color:rgba(56,189,248,.4);margin:0;">自定义</span>' : ''}
+          <span class="emp-card-id">${s.id}</span>
         </div>
-        <div class="skill-mgr-cards">${items.map(s => {
-          const active = bound.has(s.id);
-          return `
-          <div class="skill-mgr-card emp-select-card" style="cursor:pointer;" onclick="showSkillDetail('${s.id}')">
-            <div class="card-top">
-              <h4>${s.name}${s.category === 'custom' ? '<span class="tag" style="margin-left:6px;color:var(--c-primary);border-color:rgba(56,189,248,.4)">自定义</span>' : ''}</h4>
-              <span class="tag" style="color:${active ? 'var(--c-primary)' : 'var(--c-text-time)'};border-color:${active ? 'rgba(56,189,248,.4)' : 'var(--c-border-light)'};">${active ? '已启用' : '未启用'}</span>
-            </div>
-            <div class="card-eng">${s.id}</div>
-            <div class="card-desc">${s.desc || ''}</div>
-            <div class="card-update" style="display:flex;align-items:center;justify-content:space-between;">
-              <span>分类：${s.category || '-'}${s.group ? ' · 分组：' + s.group : ''}</span>
-              <span style="font-size:12px;color:${active ? 'var(--c-primary)' : 'var(--c-text-time)'};">${active ? '使用中' : '未使用'}</span>
-            </div>
-          </div>`;
-        }).join('')}</div>
-      </div>`).join('') : '<div class="todo-empty" style="grid-column:1/-1;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">后台能力池暂无技能，请到「后台管理 → 技能中心」配置</div>';
-  } catch (e) {
-    document.getElementById('empSkillPool').innerHTML = '<div class="todo-empty" style="grid-column:1/-1;color:var(--c-danger);">技能加载失败：' + e.message + '</div>';
-  }
+        ${badge}
+      </div>
+      <div class="emp-skill-desc" onclick="showSkillDetail('${s.id}')">${s.desc || '暂无描述'}</div>
+      <div class="emp-skill-meta">
+        <span>分类：${s.category || '-'}</span>
+        ${s.group ? `<span>分组：${s.group}</span>` : ''}
+      </div>
+      <div class="emp-skill-actions">
+        <button class="card-btn" onclick="toggleEmpSkillEnabled('${s.id}')">${enabled ? '停用' : '启用'}</button>
+        <button class="card-btn danger" onclick="unlinkEmpSkill('${s.id}')">解除关联</button>
+      </div>
+    </div>`;
 }
 
 async function showSkillDetail(id) {
@@ -2720,26 +2768,89 @@ async function showSkillDetail(id) {
 }
 function closeSkillDetail() { document.getElementById('skillDetailModal').classList.add('hidden'); }
 
-async function toggleEmpSkill(skillId) {
+async function toggleEmpSkillEnabled(skillId) {
   const emp = window.__curEmp || S.empDetail;
   if (!emp) return;
-  const cur = new Set(emp.skills || []);
-  const willUse = !cur.has(skillId);
-  if (willUse) cur.add(skillId); else cur.delete(skillId);
+  const curEnabled = (emp.skill_states || {})[skillId] !== false;
+  const nextEnabled = !curEnabled;
   try {
     const r = await fetch('/api/employees/' + emp.id, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skills: [...cur] })
-    });
-    const res = await r.json();
-    if (!r.ok || res.error) { showToast(res.error || '操作失败', true); renderEmpSkillTab(emp); return; }
-    showToast(willUse ? '技能已启用，对应 MCP 工具已生效' : '技能已停用，对应 MCP 工具已移除');
-    emp.skills = [...cur];
-    if (window.__curEmp && window.__curEmp !== emp) window.__curEmp.skills = [...cur];
-    if (S.empDetail && S.empDetail !== emp && S.empDetail !== window.__curEmp) S.empDetail.skills = [...cur];
-    renderEmpSkillTab(emp);
-  } catch (e) { showToast('操作失败：' + e.message, true); renderEmpSkillTab(emp); }
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skill_states: { [skillId]: nextEnabled } })
+    }).then(x => x.json());
+    if (r.error) return showToast(r.error, true);
+    showToast(nextEnabled ? '技能已启用，对应 MCP 工具已生效' : '技能已停用，对应 MCP 工具不再推导');
+    await refreshEmpSkillView(emp.id);
+  } catch (e) { showToast('操作失败：' + (e.message || e), true); }
+}
+
+async function unlinkEmpSkill(skillId) {
+  const emp = window.__curEmp || S.empDetail;
+  if (!emp) return;
+  const s = (emp.skill_details || []).find(x => x.id === skillId) || {};
+  if (!confirm(`确认解除技能「${s.name || skillId}」与数字员工「${emp.name}」的关联？解除后该技能不再对该员工生效。`)) return;
+  try {
+    const r = await fetch('/api/employees/' + emp.id, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unlink_skills: [skillId] })
+    }).then(x => x.json());
+    if (r.error) return showToast(r.error, true);
+    showToast('已解除关联');
+    await refreshEmpSkillView(emp.id);
+  } catch (e) { showToast('操作失败：' + (e.message || e), true); }
+}
+
+async function refreshEmpSkillView(empId) {
+  try {
+    const r = await fetch('/api/employees/' + empId + '/full').then(x => x.json());
+    if (r.error) return showToast(r.error, true);
+    S.empDetail = r;
+    if (window.__curEmp) Object.assign(window.__curEmp, r);
+    renderEmpSkillTab(r);
+    renderEmpMcpTab(r);
+  } catch (e) { showToast('刷新失败：' + (e.message || e), true); }
+}
+
+async function openAddEmpSkill() {
+  const emp = window.__curEmp || S.empDetail;
+  if (!emp) return;
+  const linked = new Set(emp.skills || []);
+  try {
+    const r = await fetch('/api/skills').then(x => x.json());
+    const pool = (r.skills || []).filter(s => !linked.has(s.id));
+    const list = document.getElementById('addEmpSkillList');
+    list.innerHTML = pool.length ? pool.map(s => `
+      <label class="add-skill-item">
+        <input type="checkbox" value="${s.id}">
+        <div style="min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:14px;font-weight:600;color:var(--c-text-h1);">${s.name}</span>
+            <span style="font-size:11px;color:var(--c-text-time);">${s.id}</span>
+          </div>
+          <div style="font-size:12px;color:var(--c-text-secondary);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.desc || '暂无描述'}</div>
+        </div>
+      </label>`).join('') : '<div style="text-align:center;color:var(--c-text-time);padding:24px;border:1px dashed var(--c-border-light);border-radius:8px;">技能池中已无未关联技能</div>';
+    document.getElementById('addEmpSkillModal').classList.remove('hidden');
+  } catch (e) { showToast('技能加载失败：' + (e.message || e), true); }
+}
+
+function closeAddEmpSkill() { document.getElementById('addEmpSkillModal').classList.add('hidden'); }
+
+async function doAddEmpSkills() {
+  const emp = window.__curEmp || S.empDetail;
+  if (!emp) return;
+  const ids = [...document.querySelectorAll('#addEmpSkillList input:checked')].map(x => x.value);
+  if (!ids.length) return showToast('请先勾选要添加的技能');
+  try {
+    const r = await fetch('/api/employees/' + emp.id, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link_skills: ids })
+    }).then(x => x.json());
+    if (r.error) return showToast(r.error, true);
+    closeAddEmpSkill();
+    showToast(`已关联 ${ids.length} 个技能`);
+    await refreshEmpSkillView(emp.id);
+  } catch (e) { showToast('操作失败：' + (e.message || e), true); }
 }
 
 async function renderEmpMcpTab(emp) {

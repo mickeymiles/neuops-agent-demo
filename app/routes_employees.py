@@ -9,9 +9,12 @@ from .db import (
     db_delete_employee,
     db_get_deleted_mock_convs,
     db_get_employee,
+    db_link_employee_skills,
     db_list_employees,
     db_list_mcp_tools,
     db_list_skills,
+    db_set_employee_skill_enabled,
+    db_unlink_employee_skill,
     db_upsert_employee,
 )
 
@@ -35,9 +38,15 @@ async def get_employee_full(emp_id: str):
     if not emp:
         return JSONResponse({"error": "数字员工不存在"}, status_code=404)
     emp_full = dict(emp)
-    # 技能详情（含 skill-mcp 关联的工具清单）
+    # 技能详情（含员工侧启停状态 enabled）
     all_skills = db_list_skills()
-    emp_full["skill_details"] = [s for s in all_skills if s["id"] in emp.get("skills", [])]
+    skill_states = emp.get("skill_states") or {}
+    emp_full["skill_details"] = []
+    for s in all_skills:
+        if s["id"] in emp.get("skills", []):
+            sd = dict(s)
+            sd["enabled"] = skill_states.get(s["id"], True)
+            emp_full["skill_details"].append(sd)
     # MCP 工具详情（从 mcp_tools 表按关联的 mcp_id 取）
     all_tools = {t["id"]: t for t in db_list_mcp_tools()}
     emp_full["mcp_detail"] = [
@@ -89,13 +98,32 @@ async def delete_employee(emp_id: str):
 
 @router.patch("/api/employees/{emp_id}")
 async def patch_employee(emp_id: str, data: dict):
-    """更新数字员工字段（skills数组等）"""
+    """更新数字员工字段。
+    技能关联专用字段（不参与全量重建）：
+    - skill_states: {skill_id: bool} 批量启/停用已关联技能
+    - link_skills: [skill_id] 批量新增关联（默认启用）
+    - unlink_skills: [skill_id] 批量解除关联
+    """
     emp = db_get_employee(emp_id)
     if not emp:
         return JSONResponse({"error": "数字员工不存在"}, status_code=404)
+    skill_states = data.pop("skill_states", None)
+    link_skills = data.pop("link_skills", None)
+    unlink_skills = data.pop("unlink_skills", None)
+    if isinstance(skill_states, dict):
+        for sid, st in skill_states.items():
+            db_set_employee_skill_enabled(emp_id, sid, bool(st))
+    if isinstance(link_skills, list):
+        db_link_employee_skills(emp_id, link_skills)
+    if isinstance(unlink_skills, list):
+        for sid in unlink_skills:
+            db_unlink_employee_skill(emp_id, sid)
+    # 若执行了技能关联操作，重新读取最新状态再合并其他字段，避免重建覆盖启停
+    if skill_states is not None or link_skills is not None or unlink_skills is not None:
+        emp = db_get_employee(emp_id)
     for key, val in data.items():
         emp[key] = val
     emp["updated"] = datetime.now().strftime("%Y-%m-%d")
     db_upsert_employee(emp)
-    return JSONResponse({"ok": True, "employee": emp})
+    return JSONResponse({"ok": True, "employee": db_get_employee(emp_id)})
 
