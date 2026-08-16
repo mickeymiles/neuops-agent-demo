@@ -1561,6 +1561,12 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
             <div class="rec-item" onclick="fillAndSend('分析当前未恢复的告警，聚合降噪并定位根因')">
               分析当前未恢复的告警，聚合降噪并定位根因
             </div>
+            <div class="rec-item" onclick="fillAndSend('@项目管理成本利润治理专家 检查所有项目的四算约束，找出越界风险项目并输出预警')">
+              @项目管理成本利润治理专家 检查所有项目的四算约束，找出越界风险项目并输出预警
+            </div>
+            <div class="rec-item" onclick="fillAndSend('@售前投标方案智能组装专家 为某银行一体化运维平台项目生成技术方案建议书')">
+              @售前投标方案智能组装专家 为某银行一体化运维平台项目生成技术方案建议书
+            </div>
             <div class="rec-item" onclick="fillAndSend('检索最近系统错误日志，定位异常原因')">
               检索最近系统错误日志，定位异常原因
             </div>
@@ -3302,7 +3308,12 @@ function openDocModal() {
       <tr><td>long_tasks</td><td>长任务队列（9007 自监控）</td></tr>
       <tr><td>query_contracts / get_comparison_results</td><td>合同比对（9006 经营）</td></tr>
       <tr><td>get_etl_metrics / query_ontology</td><td>经营指标 / 原始明细探查（9006）</td></tr>
-      <tr><td>list_project_files / edit_code_file</td><td>9006 平台代码研发（只读/改前备份）</td></tr>
+      <tr><td>list_project_files / read_code_file / search_code</td><td>9006 规则配置只读查看（生成变更方案，人工确认后生效）</td></tr>
+      <tr><td>pm_project_read / pm_task_read</td><td>项目四算与里程碑 / 两单一物工单任务（只读研判）</td></tr>
+      <tr><td>pm_workhour_read / pm_cost_calc</td><td>日报工时合规质检 / 人力成本折算（只读研判）</td></tr>
+      <tr><td>biz_metric_read</td><td>集团指标：人均效 / 元效 / 双按完成率（预计算只读）</td></tr>
+      <tr><td>kb_knowledge_read / bid_template_read</td><td>售前知识库检索 / 投标标准模板库（只读）</td></tr>
+      <tr><td>doc_export</td><td>投标文档结构化导出（Word/PPT 大纲，供人工下载）</td></tr>
     </table>
 
     <h3>八、标准业务演示流程</h3>

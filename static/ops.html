@@ -166,8 +166,7 @@
       <div class="head">
         <h3>🕸 一体化监控</h3>
         <div class="tabs">
-          <button class="tab active" data-it="topo" onclick="IT_switch('topo',this)">3D 结构拓扑</button>
-          <button class="tab" data-it="server" onclick="IT_switch('server',this)">服务器</button>
+          <button class="tab active" data-it="server" onclick="IT_switch('server',this)">服务器</button>
           <button class="tab" data-it="database" onclick="IT_switch('database',this)">数据库</button>
           <button class="tab" data-it="network" onclick="IT_switch('network',this)">网络</button>
           <button class="tab" data-it="container" onclick="IT_switch('container',this)">容器</button>
@@ -177,16 +176,6 @@
         </div>
       </div>
       <div class="body">
-        <div class="it-page" id="it-topo">
-          <div class="it3d-legend" id="it3dLegend"></div>
-          <div class="it3d-wrap">
-            <div class="it3d-canvas" id="it3dCanvas"></div>
-            <div class="it3d-detail" id="it3dDetail">
-              <h4>🔍 节点详情</h4>
-              <div class="muted">点击拓扑节点查看详情</div>
-            </div>
-          </div>
-        </div>
         <div class="it-page" id="it-server"></div>
         <div class="it-page" id="it-database"></div>
         <div class="it-page" id="it-network"></div>
@@ -252,13 +241,30 @@
     </div>
   </section>
 
-  <!-- ═══ 本体拓扑 Tab ═══ -->
+  <!-- ═══ 本体拓扑 Tab（2D / 3D 视图切换） ═══ -->
   <section class="tab-page" id="page-topology">
     <div class="card">
       <div class="card-head"><h3>🕸 运维本体拓扑（六类实体 × 三类关系）</h3>
-        <span class="tag">节点点击查看详情 · 力导向布局</span></div>
-      <div class="topo-legend" id="topoLegend"></div>
-      <div class="chart topo" id="chartTopo"></div>
+        <span class="tag" style="margin-left:auto">点击节点查看详情</span>
+        <div class="view-switch">
+          <button class="view-btn active" onclick="TOPO_switchView('2d',this)">2D 力导向</button>
+          <button class="view-btn" onclick="TOPO_switchView('3d',this)">3D 结构</button>
+        </div>
+      </div>
+      <div id="topoView2d">
+        <div class="topo-legend" id="topoLegend"></div>
+        <div class="chart topo" id="chartTopo"></div>
+      </div>
+      <div id="topoView3d" style="display:none">
+        <div class="it3d-legend" id="topo3dLegend"></div>
+        <div class="it3d-wrap">
+          <div class="it3d-canvas" id="topo3dCanvas"></div>
+          <div class="it3d-detail" id="topo3dDetail">
+            <h4>🔍 节点详情</h4>
+            <div class="muted">点击拓扑节点查看详情</div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -610,7 +616,7 @@ function stateTag(s) {
 }
 
 /* ═══════════════ Tab 切换 ═══════════════ */
-let IT_tab = "topo";        // 一体化监控内部 tab
+let IT_tab = "server";      // 一体化监控内部 tab
 let AG_tab = "overview";    // 智能体监控内部 tab
 let PC_tab = "status";      // 采控中心内部 tab
 
@@ -649,8 +655,7 @@ function IT_switch(t, btn) {
 }
 function IT_show(t) {
   document.querySelectorAll("#page-integrated .it-page").forEach(p => p.classList.toggle("active", p.id === "it-" + t));
-  if (t === "topo") IT_renderTopo();
-  else if (ENTITY_TABS.includes(t)) loadEntities(t);
+  if (ENTITY_TABS.includes(t)) loadEntities(t);
   else if (t === "logs") loadLogs();
 }
 function IT_move() {
@@ -676,13 +681,13 @@ async function IT_fetchTopo() {
   return IT_topoCache;
 }
 function IT_ensure3D() {
-  const el = $("it3dCanvas");
+  const el = $("topo3dCanvas");
   if (!el || !el.offsetParent) return;
   if (!IT_scene) IT_init3D();
   else IT_resize3D();
 }
 function IT_init3D() {
-  const el = $("it3dCanvas");
+  const el = $("topo3dCanvas");
   const w = el.clientWidth || 700, h = el.clientHeight || 520;
   IT_scene = new THREE.Scene();
   IT_scene.background = new THREE.Color(0x0a1226);
@@ -717,7 +722,7 @@ function IT_init3D() {
   IT_animate();
 }
 function IT_resize3D() {
-  const el = $("it3dCanvas");
+  const el = $("topo3dCanvas");
   if (!IT_renderer || !el || !el.offsetParent) return;
   const w = el.clientWidth || 700, h = el.clientHeight || 520;
   IT_camera.aspect = w / h;
@@ -727,7 +732,8 @@ function IT_resize3D() {
 function IT_animate() {
   requestAnimationFrame(IT_animate);
   if (IT_controls) IT_controls.update();
-  if (IT_renderer && IT_scene) IT_renderer.render(IT_scene, IT_camera);
+  const el = $("topo3dCanvas");
+  if (IT_renderer && IT_scene && el && el.offsetParent) IT_renderer.render(IT_scene, IT_camera);
 }
 async function IT_renderTopo() {
   let topo;
@@ -824,7 +830,7 @@ function IT_roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 function IT_renderLegend(topo) {
-  const el = $("it3dLegend");
+  const el = $("topo3dLegend");
   if (!el) return;
   const em = topo.entityMeta || {}, rm = topo.relationMeta || {}, sm = topo.statusMeta || {};
   const typeHtml = Object.entries(em).map(([k, v]) =>
@@ -840,7 +846,7 @@ function IT_renderLegend(topo) {
     </div>`;
 }
 async function IT_selectNode(id) {
-  const detail = $("it3dDetail");
+  const detail = $("topo3dDetail");
   if (!detail) return;
   detail.innerHTML = '<div class="muted">加载中…</div>';
   try {
@@ -1237,12 +1243,30 @@ function renderSubGraph(elId, graph) {
 
 /* ═══════════════ 拓扑 ═══════════════ */
 let topoCache = null;
+let TOPO_view = "2d";       // 本体拓扑视图模式：2d 力导向 / 3d 结构
+function TOPO_switchView(m, btn) {
+  TOPO_view = m;
+  if (btn) document.querySelectorAll("#page-topology .view-btn").forEach(b => b.classList.toggle("active", b === btn));
+  const v2 = $("topoView2d"), v3 = $("topoView3d");
+  if (!v2 || !v3) return;
+  v2.style.display = m === "2d" ? "" : "none";
+  v3.style.display = m === "3d" ? "" : "none";
+  if (m === "3d") {
+    if (!IT_topoCache) IT_topoCache = topoCache;
+    if (topoCache) IT_renderTopo();
+    else loadTopology();
+  } else if (m === "2d" && topoCache) {
+    renderTopo(topoCache);
+  }
+}
 async function loadTopology() {
   loading(true);
   try {
     const r = await fetch(API + "/topology").then(d => d.json());
     topoCache = r.topology;
-    renderTopo(r.topology);
+    IT_topoCache = r.topology;
+    if (TOPO_view === "2d") renderTopo(r.topology);
+    else IT_renderTopo();
   } catch (e) { toast("拓扑加载失败: " + e.message, "err"); }
   loading(false);
 }
@@ -1305,7 +1329,6 @@ function renderTopo(topo) {
         return `<b>${esc(n.fullName || n.name)}</b><br>类型: ${n.typeLabel}<br>状态: ${n.statusLabel}${lines ? "<br>" + lines : ""}`;
       }
     },
-    legend: { show: false },
     series: [{
       type: "graph", layout: "force", roam: true, draggable: true,
       data: nodes, links,
@@ -2322,8 +2345,7 @@ setInterval(() => {
 setInterval(() => {
   if (currentTab === "overview") loadOverview();
   else if (currentTab === "integrated") {
-    if (IT_tab === "topo") IT_renderTopo();
-    else if (ENTITY_TABS.includes(IT_tab)) loadEntities(IT_tab);
+    if (ENTITY_TABS.includes(IT_tab)) loadEntities(IT_tab);
     else if (IT_tab === "logs") loadLogs();
   } else if (currentTab === "agent-monitor") {
     if (AG_tab === "overview") AG_loadAgentOverview();

@@ -16,7 +16,7 @@ from app.alert_engine import _alert_engine_loop, seed_alert_rules
 from app.config import DB_PATH, PORT, STATIC_DIR
 from app.db import (
     init_config_db, init_ops_db, init_session_db, seed_config_db, seed_mock_conversations,
-    ensure_mcp_server_mapping,
+    ensure_mcp_server_mapping, sync_seed_employees,
 )
 from app import (
     agent_chat,
@@ -92,6 +92,7 @@ init_config_db()
 init_ops_db()
 seed_mock_conversations()
 seed_config_db()
+sync_seed_employees()
 ensure_mcp_server_mapping()
 seed_alert_rules()
 

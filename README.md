@@ -121,6 +121,16 @@ neuops-agent-demo/
 - 后台线程周期调度（默认 30s），支持手动采集与远程探针上报（CLI / HTTP ingest）
 - 实体自动注册、时序指标写入 SQLite、按天自动清理
 
+**远程探针（多服务器纳管）**：将 `app/probe` 部署到目标机，通过
+`--report-http http://监控中心:9007/api/ops/probe/ingest` 上报，与监控中心采用完全相同的六类采集逻辑。
+上报数据按主机名（scope）隔离存储：实体/关系只重建该主机自身的数据，本机与各远程机互不覆盖；
+指标自动参与既有告警规则（服务器 CPU/内存/磁盘/健康检查）；远程日志 source 带主机前缀避免与本机规则混用；
+远程服务器告警不触发本机自愈动作，升级为人工事件。部署：
+
+```bash
+./scripts/deploy_remote_probe.sh ubuntu@目标机IP
+```
+
 ### 2. 运维本体（ops_ontology）
 - 五类实体：server / database / network / container / middleware / application（六类采集实体）
 - 三类关系：依赖 / 部署 / 包含，生成拓扑图
@@ -227,7 +237,7 @@ pytest -q          # 34 项全绿
 | `CODE_HEAL_ENABLED` | `True` | 代码级自愈开关 |
 | `APP_9006_*` | `http://127.0.0.1:9006` | 9006 业务系统健康检查 |
 | `MIDDLEWARE_PROBES` | redis/mysql/pg/nginx/rabbitmq/kafka/es/mongo | 中间件探测候选 |
-| `PROBE_REPORT_URL` | `` | 远程探针上报地址（预留） |
+| `PROBE_REPORT_URL` | `` | 远程探针上报地址（CLI `--report-http` 直接指定，无需环境变量） |
 
 ---
 
@@ -258,4 +268,4 @@ pytest -q          # 34 项全绿
 - [ ] 自愈动作与 systemd 托管的适配（restart_9006 优先 `systemctl restart`，避免与守护进程冲突）
 - [ ] 清理服务器遗留的 `neuops-agent.service` 坏 unit（venv 路径失效，持续 auto-restart）
 - [ ] DeepSeek 真实 LLM 对话层联调与成本控制
-- [ ] 远程探针（PROBE_REPORT_URL）部署到目标机验证
+- [x] 远程探针（PROBE_REPORT_URL）部署到目标机验证（scope 隔离 + 日志上报 + 自愈防护已完成）

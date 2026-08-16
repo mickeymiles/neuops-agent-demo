@@ -141,7 +141,7 @@ class ProbeManager:
             payload["collectors"][name] = {
                 "ok": rpt.ok, "error": rpt.error,
                 "metrics": rpt.metrics, "entities": rpt.entities,
-                "relations": rpt.relations,
+                "relations": rpt.relations, "logs": rpt.logs,
             }
         return payload
 

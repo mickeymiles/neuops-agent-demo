@@ -829,6 +829,58 @@ def seed_config_db():
             conn.close()
 
 
+def sync_seed_employees():
+    """每次启动调用：将种子员工/技能官方定义幂等同步到库。
+
+    与 seed_config_db（仅首次导入，meta.config_seeded 标记后不再触碰）不同，
+    本函数始终覆盖种子 id 的官方定义，用于：
+    1) 新增员工/技能落库：emp-006/007、skill-20/21（本次 7 大数字员工实装）；
+    2) 修复官方定义已变更的种子实体：emp-005「必选+有限规则配置修改+人工确认」、
+       skill-13「9006规则配置辅助」等旧库残留定义；
+    3) 仅操作种子 id（MOCK_EMPLOYEES / SKILLS），不触碰用户自建实体；
+       保留既有 enabled 启停状态，不重置用户对种子员工的启停控制。
+    """
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            # 技能：INSERT OR REPLACE 覆盖官方最新定义（含 prompt/flow/skill_type/tags）
+            for s in SKILLS:
+                detail = SKILL_DETAILS.get(s["id"], {})
+                row = conn.execute("SELECT enabled FROM skills WHERE id=?", (s["id"],)).fetchone()
+                conn.execute(
+                    "INSERT OR REPLACE INTO skills (id, name, desc, category, tags, enabled, prompt, flow, skill_type) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (s["id"], s["name"], s["desc"], s["category"],
+                     json.dumps(s.get("tags", []), ensure_ascii=False),
+                     row["enabled"] if row else (1 if s.get("enabled") else 0),
+                     detail.get("prompt", ""), detail.get("flow", ""), detail.get("type", "")),
+                )
+                for mid in detail.get("tools", []):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO skill_mcp (skill_id, mcp_id) VALUES (?,?)",
+                        (s["id"], mid),
+                    )
+            # 员工：INSERT OR REPLACE 覆盖官方最新定义（保留 enabled 启停状态）
+            for e in MOCK_EMPLOYEES:
+                row = conn.execute("SELECT enabled FROM employees WHERE id=?", (e["id"],)).fetchone()
+                conn.execute(
+                    "INSERT OR REPLACE INTO employees (id, name, desc, type, created, updated, rag_kb, prompt, model, enabled) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (e["id"], e["name"], e.get("desc", ""), e.get("type", ""),
+                     e.get("created", ""), e.get("updated", ""),
+                     e.get("rag_kb", ""), e.get("prompt", ""), e.get("model", ""),
+                     row["enabled"] if row else 1),
+                )
+                for sid in e.get("skills", []):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO employee_skills (employee_id, skill_id) VALUES (?,?)",
+                        (e["id"], sid),
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+
+
 def ensure_mcp_server_mapping():
     """幂等回填 MCP Server 归属：每次启动调用。
     1) INSERT OR IGNORE 导入 mcp_servers 实体（MCP_SERVER_SEED）
@@ -1721,6 +1773,14 @@ def init_ops_db():
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_logs_ts ON ops_logs(ts)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_logs_src ON ops_logs(source, level)")
+
+            # 远程探针隔离列：scope 标识数据来源主机（空=监控中心本机，非空=远程探针主机名）
+            for _tbl in ("ops_entities", "ops_relations"):
+                _cols = {r[1] for r in conn.execute(f"PRAGMA table_info({_tbl})")}
+                if "scope" not in _cols:
+                    conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN scope TEXT NOT NULL DEFAULT ''")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_entities_scope ON ops_entities(scope)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_relations_scope ON ops_relations(scope)")
             conn.commit()
         finally:
             conn.close()
@@ -1924,19 +1984,22 @@ def ops_upsert_entity(entity_id: str, etype: str, name: str, status: str,
             conn.close()
 
 
-def ops_save_entities(ts: str, items):
-    """全量重建实体（本体实体是当前观测状态，每轮采集后重建反映真实环境）"""
+def ops_save_entities(ts: str, items, scope: str = ""):
+    """全量重建实体；按来源（scope）隔离：scope 为空重建本机（scope=''），非空重建对应远程探针"""
     with _db_lock:
         conn = _get_conn()
         try:
-            conn.execute("DELETE FROM ops_entities")
+            if scope:
+                conn.execute("DELETE FROM ops_entities WHERE scope = ?", (scope,))
+            else:
+                conn.execute("DELETE FROM ops_entities WHERE scope = ''")
             if items:
                 conn.executemany(
-                    "INSERT INTO ops_entities (id, type, name, status, metrics, attrs, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO ops_entities (id, type, name, status, metrics, attrs, updated_at, scope) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     [(it["id"], it["type"], it["name"], it.get("status", "unknown"),
                       json.dumps(it.get("metrics", {}), ensure_ascii=False),
-                      json.dumps(it.get("attrs", {}), ensure_ascii=False), ts)
+                      json.dumps(it.get("attrs", {}), ensure_ascii=False), ts, scope)
                      for it in items])
             conn.commit()
         finally:
@@ -1973,17 +2036,20 @@ def ops_get_entity(entity_id: str) -> dict:
 
 # ---- ops_relations 本体关系 ----
 
-def ops_save_relations(ts: str, items):
-    """全量重建关系（本体关系是当前状态而非历史，每轮采集后重建避免悬空边）"""
+def ops_save_relations(ts: str, items, scope: str = ""):
+    """全量重建关系；按来源（scope）隔离：scope 为空重建本机（scope=''），非空重建对应远程探针"""
     with _db_lock:
         conn = _get_conn()
         try:
-            conn.execute("DELETE FROM ops_relations")
+            if scope:
+                conn.execute("DELETE FROM ops_relations WHERE scope = ?", (scope,))
+            else:
+                conn.execute("DELETE FROM ops_relations WHERE scope = ''")
             if items:
                 conn.executemany(
-                    "INSERT INTO ops_relations (source, target, type, updated_at) "
-                    "VALUES (?, ?, ?, ?)",
-                    [(it[0], it[1], it[2], ts) for it in items])
+                    "INSERT INTO ops_relations (source, target, type, updated_at, scope) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    [(it[0], it[1], it[2], ts, scope) for it in items])
             conn.commit()
         finally:
             conn.close()

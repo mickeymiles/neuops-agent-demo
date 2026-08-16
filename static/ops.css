@@ -308,6 +308,12 @@ fieldset.group legend { font-size: 13px; font-weight: 600; color: var(--accent2)
 /* 拓扑图例说明 */
 .topo-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px 14px; font-size: 12px; }
 .topo-legend .tg { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.view-switch { display: flex; gap: 6px; margin-left: 10px; }
+.view-switch .view-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  border-radius: 8px; padding: 4px 12px; font-size: 12px; cursor: pointer; transition: all .15s;
+}
+.view-switch .view-btn.active { background: rgba(79, 140, 255, 0.15); border-color: var(--accent); color: var(--accent); }
 
 /* ═══════════════════════════════════════════════════════════
    门户侧边栏（/ops 一体化布局，复用 9007 深色风格）

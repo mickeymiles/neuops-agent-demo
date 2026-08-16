@@ -62,8 +62,17 @@ async def get_employee_full(emp_id: str):
             {"id": "conv-c03", "title": "药监局药品检查管理比对（IDZB2605434A）", "start_time": "2026-08-05 19:51", "message_count": 8},
         ],
         "emp-005": [
-            {"id": "conv-r01", "title": "9006 合同比对结果导出优化", "start_time": "2026-08-13 10:20", "message_count": 5},
-            {"id": "conv-r02", "title": "9006 经营指标看板筛选调整", "start_time": "2026-08-14 15:40", "message_count": 7},
+            {"id": "conv-r01", "title": "9006 价格比对规则关闭方案", "start_time": "2026-08-13 10:20", "message_count": 5},
+            {"id": "conv-r02", "title": "9006 合同数据排除规则新增", "start_time": "2026-08-14 15:40", "message_count": 7},
+        ],
+        "emp-006": [
+            {"id": "conv-p01", "title": "集团四算刚性约束监控预警", "start_time": "2026-08-15 09:10", "message_count": 6},
+            {"id": "conv-p02", "title": "8月日报工时合规整改清单", "start_time": "2026-08-15 17:30", "message_count": 9},
+            {"id": "conv-p03", "title": "7月集团指标双按完成率复盘", "start_time": "2026-08-16 10:05", "message_count": 5},
+        ],
+        "emp-007": [
+            {"id": "conv-b01", "title": "某银行一体化运维平台技术方案组装", "start_time": "2026-08-15 11:20", "message_count": 8},
+            {"id": "conv-b02", "title": "某政务云项目招标点对点应答", "start_time": "2026-08-16 09:40", "message_count": 7},
         ],
     }
     mock_convs = mock_convs_by_id.get(emp_id, [])

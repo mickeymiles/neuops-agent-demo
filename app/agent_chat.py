@@ -513,34 +513,31 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
         yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
         return
 
-    # ── 路由到业务平台编辑辅助专家 emp-005（合同比对 + 直接修改 9006 系统代码）──
+    # ── 路由到业务平台编辑辅助专家 emp-005（必选：合同比对 + 9006 有限规则配置修改方案，人工确认后生效）──
     if employee == "emp-005":
         yield sse_event("route", {"employee": "emp-005", "name": "业务平台编辑辅助专家", "reason": route_reason or "平台编辑/研发类任务"})
         yield sse_event("agent_thought", f"""✅ 意图识别完成：路由到【业务平台编辑辅助专家 emp-005】
 理由：{route_reason or '平台编辑/研发类任务'}""")
 
-        emp_system = ("你是「业务平台编辑辅助专家 emp-005」数字员工，负责辅助经营业务平台的解析比对与功能开发。"
+        emp_system = ("你是「业务平台编辑辅助专家 emp-005」数字员工（必选），负责辅助9006经营业务分析系统的文件解析比对与有限规则配置修改。"
                       "你有两类真实能力：\n"
-                      "【A. 合同比对（9006 真实数据）】query_contracts 查合同列表；get_comparison_results 查比对结果（match_type/是否异常/是否缺项）；"
+                      "【A. 合同比对（9006 真实数据，只读）】query_contracts 查合同列表；get_comparison_results 查比对结果（match_type/是否异常/是否缺项）；"
                       "get_contract_stats 查比对统计；export_report 导出比对报告。用户询问合同比对结果/差异分析时使用。\n"
-                      "【B. 平台代码研发（9006 真实代码）】以下工具直接读写 9006 项目（/home/ubuntu/contract-compare）的真实代码："
-                      "1. list_project_files：列出项目代码文件（backend后端/frontend前端/docs文档），先了解结构；"
-                      "2. search_code：按关键词搜索代码内容（query 必填，可加 file_glob 过滤文件名），定位相关逻辑所在文件与行；"
-                      "3. read_code_file：读取指定文件内容（带行号，path 相对路径，可用 offset/limit 分页）；"
-                      "4. write_new_file：新建文件（path 相对路径 + content 完整内容，仅当文件不存在时可用）；"
-                      "5. edit_code_file：局部替换修改（old_string 替换为 new_string，支持模糊匹配容忍空白差异，改前自动备份）；"
-                      "6. run_shell：执行白名单验证命令（git status/diff/log 查看改动、pytest 跑测试、ls 看目录）。\n"
-                      "工作方式：先判断用户需求属于合同比对还是平台开发；比对类直接查9006真实结果做差异分析；"
-                      "开发类先 list_project_files 了解结构 → search_code 定位相关逻辑 → read_code_file 读取相关文件理解现状 → 说明改造思路 → edit_code_file 修改（新建用 write_new_file）→ run_shell 验证（git diff 看改动、跑测试）→ 总结。"
-                      "要求：改动克制，只改必要之处，不重写整个文件；old_string 尽量与原文一致且唯一；"
-                      "改完输出改了什么文件、改了什么、为什么这么改，并跑 run_shell 验证改动结果。"
-                      "禁止：不越界访问项目目录之外的文件；不编造「已修改」——只有 edit_code_file 返回 success 才算真的改了。") \
+                      "【B. 9006 规则配置辅助（只读 + 生成变更方案）】list_project_files/search_code/read_code_file 三个工具只读查看 9006 项目"
+                      "（/home/ubuntu/contract-compare）中计算规则、排除规则、比对开关、过滤条件等规则配置的现状，"
+                      "理解业务口径后，生成规则配置变更方案（如：新增某类数据排除规则、关闭价格比对规则、调整参数匹配/过滤逻辑等），"
+                      "并输出变更前后配置对比与业务影响评估，供人工审核确认。\n"
+                      "工作方式：先判断用户需求属于合同比对还是规则配置辅助；比对类直接查9006真实结果做差异分析；"
+                      "规则配置类先 list_project_files 了解结构 → search_code 定位规则逻辑所在文件 → read_code_file 读取相关规则现状 → 说明当前口径 → 生成规则配置变更方案（含变更前后对比与业务影响）→ 提示需人工确认审批。\n"
+                      "红线（必须遵守）：① 严禁修改合同、付款等原始业务数据表；② 严禁直接修改9006代码——AI只产出规则配置变更方案；"
+                      "③ 所有规则配置变更必须人工确认审批后才可调用MCP写入规则配置生效；④ 不编造「已生效」——人工确认后配置才算真正变更。") \
                       + build_rag_context(query, "emp-005", conversation_id=conversation_id, employee_name="业务平台编辑辅助专家")
         messages = [{"role": "system", "content": emp_system}] + (history or []) + [{"role": "user", "content": query}]
         exec_ctx = {"conversation_id": conversation_id, "stage": "agent_exec",
                     "employee_id": "emp-005", "employee_name": "业务平台编辑辅助专家"}
         _BIZ_TOOLS_005 = ["query_contracts", "get_comparison_results", "get_contract_stats", "export_report"]
-        _EMP005_TOOLS = DEV_TOOLS + [
+        _READONLY_DEV_TOOLS_005 = [t for t in DEV_TOOLS if t["function"]["name"] in ("list_project_files", "search_code", "read_code_file")]
+        _EMP005_TOOLS = _READONLY_DEV_TOOLS_005 + [
             {"type": "function", "function": {"name": "query_contracts",
                                               "description": "查询9006合同比对系统的合同列表（真实数据）",
                                               "parameters": {"type": "object", "properties": {"keyword": {"type": "string", "description": "合同关键字"}}, "required": []}}},
@@ -596,7 +593,7 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
             else:
                 if content:
                     yield sse_event("agent_message", {"content": content, "actions": [
-                        {"id": "open_9006", "label": "🔗 打开9006系统验证改动", "type": "link", "url": "http://127.0.0.1:9006"}
+                        {"id": "open_9006", "label": "🔗 打开9006系统查看规则配置", "type": "link", "url": "http://127.0.0.1:9006"}
                     ]})
                 else:
                     yield sse_event("agent_message", {"content": """## ⚠️ 未生成有效结论
@@ -606,9 +603,9 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
         else:
             # 达到轮次上限但未收敛：追加一次"总结调用"，基于已收集的工具结果输出兜底结论
             yield sse_event("agent_thought", "⚠️ 已进行多轮工具调用，现根据已收集的结果生成最终结论...")
-            messages.append({"role": "user", "content": "你已通过多轮工具调用完成了大量代码修改与验证，但尚未输出最终结论。"
+            messages.append({"role": "user", "content": "你已通过多轮工具调用完成了9006规则配置现状梳理与变更方案分析，但尚未输出最终结论。"
                                                         "现在请不要再调用任何工具，直接基于以上所有工具返回的真实结果，"
-                                                        "用 Markdown 中文输出最终交付说明：改动了哪些文件、改了什么、是否已通过验证，以及需要注意的事项。"})
+                                                        "用 Markdown 中文输出最终交付说明：当前9006规则配置现状、建议的规则配置变更方案（含变更前后对比与业务影响评估）、必须人工确认审批后才可生效的提醒。"})
             try:
                 resp = await deepseek_chat(messages, tools=None, temperature=0.2, max_tokens=4000,
                                            model="deepseek-chat",
@@ -619,7 +616,7 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
                     fallback_content = resp["choices"][0]["message"].get("content", "")
                     if fallback_content:
                         yield sse_event("agent_message", {"content": fallback_content, "actions": [
-                            {"id": "open_9006", "label": "🔗 打开9006系统验证改动", "type": "link", "url": "http://127.0.0.1:9006"}
+                            {"id": "open_9006", "label": "🔗 打开9006系统查看规则配置", "type": "link", "url": "http://127.0.0.1:9006"}
                         ]})
                     else:
                         yield sse_event("agent_message", {"content": """## ⚠️ 工具调用轮次超限
@@ -644,6 +641,8 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
         "emp-001": ("运维巡检专家", "http://127.0.0.1:9007/ops"),
         "emp-002": ("告警根因分析专家", "http://127.0.0.1:9007/ops"),
         "emp-003": ("运维开发助手", "http://127.0.0.1:9007/ops"),
+        "emp-006": ("项目管理成本利润治理专家", "http://127.0.0.1:9007/ops"),
+        "emp-007": ("售前投标方案智能组装专家", "http://127.0.0.1:9007/ops"),
     }
     emp_name, emp_url = _emp_meta.get(employee, (employee, "http://127.0.0.1:9007"))
     async for ev in _run_employee_general_loop(employee, emp_name, query, history, conversation_id,

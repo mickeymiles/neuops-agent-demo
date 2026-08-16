@@ -4,11 +4,12 @@
 覆盖：总览 / 六类实体 / 本体拓扑 / 时序查询 / 告警规则 / 配置中心 /
 自愈事件 / 探针控制（手动采集、远程探针上报）
 """
+import socket
 import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 from . import db, ops_ontology
@@ -380,25 +381,54 @@ def ops_probe_run_now():
 
 
 @router.post("/probe/ingest")
-async def ops_probe_ingest(payload: dict = Body(...)):
-    """远程探针上报入口（预留）：独立探针进程通过 HTTP 上报采集结果"""
+async def ops_probe_ingest(request: Request, payload: dict = Body(...)):
+    """远程探针上报入口：独立探针进程通过 HTTP 上报采集结果（按主机名隔离，多探针共存）"""
     try:
         ts = payload.get("collected_at") or _now()
+        hostname = (payload.get("hostname") or "").strip() or "remote"
+        scope = hostname
+        remote_ip = ""
+        try:
+            remote_ip = request.client.host if request.client else ""
+        except Exception:  # noqa: BLE001
+            pass
         collectors = payload.get("collectors", {})
-        metrics, entities, relations = [], [], []
+        metrics, entities, relations, logs = [], [], [], []
         for _, cdata in collectors.items():
             if not cdata.get("ok"):
                 continue
-            metrics.extend(tuple(m) if isinstance(m, list) else m for m in cdata.get("metrics", []))
+            # metric 归一化：兼容 (etype, ename, metric, value) 与 (..., unit) 两种上报格式
+            for m in cdata.get("metrics", []):
+                m = tuple(m) if isinstance(m, list) else m
+                if len(m) == 4:
+                    m = (*m, "")
+                metrics.append(m)
             entities.extend(cdata.get("entities", []))
             relations.extend(tuple(r) if isinstance(r, list) else r for r in cdata.get("relations", []))
+            logs.extend(tuple(l) if isinstance(l, list) else l for l in cdata.get("logs", []))
+        # 与监控中心主机名冲突防御（罕见）：远程指标/实体加 @remote 后缀避免覆盖本机数据
+        if hostname and hostname == socket.gethostname():
+            metrics = [tuple((m[0], f"{m[1]}@remote", *m[2:])) for m in metrics]
+            for e in entities:
+                e["name"] = e["name"] + "@remote"
+        # 实体/关系 id 加来源主机前缀，保证多探针实体共存且互不覆盖
+        prefix = f"{scope}:"
+        entities = [{**e, "id": prefix + e["id"],
+                     "attrs": {**(e.get("attrs") or {}), "remote_host": hostname,
+                               **({"remote_ip": remote_ip} if remote_ip else {})}}
+                    for e in entities]
+        relations = [(prefix + r[0], prefix + r[1], *r[2:]) for r in relations]
         if metrics:
             db.ops_save_metrics(ts, metrics)
         if entities:
-            db.ops_save_entities(ts, entities)
+            db.ops_save_entities(ts, entities, scope=scope)
         if relations:
-            db.ops_save_relations(ts, relations)
+            db.ops_save_relations(ts, relations, scope=scope)
+        if logs:
+            # 远程日志 source 加主机前缀，避免与本机日志告警规则混用
+            db.ops_save_logs([(ts, f"{scope}:{s}", lv, msg) for s, lv, msg in logs])
         return {"ok": True, "entityCount": len(entities), "metricCount": len(metrics),
-                "probe": payload.get("probe", ""), "hostname": payload.get("hostname", "")}
+                "logCount": len(logs), "probe": payload.get("probe", ""),
+                "hostname": hostname, "scope": scope}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"ingest error: {e}")

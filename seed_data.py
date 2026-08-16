@@ -14,8 +14,12 @@ SKILLS = [
     {"id": "skill-10", "name": "采购清单比对", "desc": "对接9006合同比对系统，查询比对进度、分析差异、识别高危异常，输出评审建议", "category": "custom", "tags": ["合同","采购","比对","9006"], "enabled": True},
     {"id": "skill-11", "name": "经营指标分析", "desc": "对接9006指标数据集MCP，查询签单毛利率、回款毛利率等定时ETL预计算指标，输出经营分析报告", "category": "custom", "tags": ["经营","指标","毛利率","9006"], "enabled": True},
     {"id": "skill-12", "name": "合同明细探查", "desc": "对接9006原子本体MCP，按合同编号/关键词查询原始合同、付款、收款明细，输出探查结果", "category": "custom", "tags": ["合同","明细","查询","9006"], "enabled": True},
-    # ── 研发域（9006 业务平台代码）──
-    {"id": "skill-13", "name": "业务平台研发", "desc": "访问9006经营业务展示系统的代码（后端/前端文件），按用户需求修改平台代码实现功能调整、补充计算规则", "category": "custom", "tags": ["研发","代码","9006","平台"], "enabled": True},
+    # ── 研发域（9006 业务平台规则配置）──
+    {"id": "skill-13", "name": "9006规则配置辅助", "desc": "只读9006经营业务展示系统的计算规则、排除规则、比对开关、过滤条件等规则配置现状，生成规则配置变更方案（如新增排除规则、关闭价格比对规则）并输出影响评估，人工确认审批后生效，严禁修改原始业务数据表", "category": "custom", "tags": ["规则","配置","9006","平台"], "enabled": True},
+    # ── 项目管理域（两单一物/四算/集团考核，全部只读研判+预警）──
+    {"id": "skill-20", "name": "项目管理与成本利润治理", "desc": "承接两单一物体系：里程碑跟进与逾期预警、日报工时合规质检、四算刚性约束校验（概算≥预算≥核算≥决算）、集团指标监控（人均效/元效/双按完成率）、工时→成本→利润闭环联动，全部只读研判+预警", "category": "custom", "tags": ["项目","四算","工时","成本","集团考核"], "enabled": True},
+    # ── 售前投标域（知识库/模板，只生成不执行）──
+    {"id": "skill-21", "name": "售前投标方案智能组装", "desc": "基于内部知识库、历史方案与标准模板库智能匹配，自动生成技术方案建议书/招标点对点应答/售前汇报PPT大纲/运维实施方案，规避过期口径，统一售前输出质量，只生成不执行", "category": "custom", "tags": ["售前","投标","方案","知识库"], "enabled": True},
 ]
 
 
@@ -32,9 +36,15 @@ MOCK_EMPLOYEES = [
     {"id": "emp-004", "name": "经营业务分析专家", "desc": "专注采购合同比对、经营指标分析、合同明细探查等经营业务场景。对接9006经营分析系统：通过原子本体MCP查询原始合同/付款/收款明细，通过指标数据集MCP查询签单毛利率等定时ETL预计算指标，通过合同比对引擎分析供应商报价差异。", "type": "经营分析", "created": "2026-08-11", "updated": "2026-08-13",
      "skills": ["skill-10","skill-11","skill-12"],
      "rag_kb": "经营知识库-合同案例", "prompt": "你是一位经营业务分析专家，负责经营分析和顾问工作。你通过9006经营分析系统的三类能力服务用户：①合同比对——用户在9006上传合同基准Excel和供应商报价Excel后，查询比对结果、分析差异、识别高危异常项；②指标分析——通过指标数据集MCP读取定时ETL预计算的签单毛利率、回款毛利率等指标宽表，做同比/环比解读，不做原始聚合计算；③明细探查——通过原子本体MCP按合同编号或关键词查询原始合同、付款、收款明细。指标口径以9006定时任务计算为准，你只做解读，不自行重算。", "model": "deepseek-v4"},
-    {"id": "emp-005", "name": "业务平台编辑辅助专家", "desc": "辅助业务运营与平台研发：解析合同/报价清单、比对报价差异，按需求修改9006经营业务展示系统代码（后端/前端），补充平台计算规则，支持人工复核后发布。", "type": "平台编辑", "created": "2026-08-13", "updated": "2026-08-16",
+    {"id": "emp-005", "name": "业务平台编辑辅助专家", "desc": "必选数字员工。辅助业务运营与9006规则配置：解析合同/报价清单、比对报价差异，生成排除规则/比对开关/过滤条件类计算规则配置变更方案并评估业务影响，人工确认审批后生效；严禁修改合同、付款等原始业务数据表。", "type": "平台编辑", "created": "2026-08-13", "updated": "2026-08-16",
      "skills": ["skill-13","skill-10"],
-     "rag_kb": "研发知识库-9006代码", "prompt": "你是一位业务平台编辑辅助专家，负责辅助经营业务平台的内容解析与功能开发。你的能力：①附件解析——解析9006合同比对数据，提取合同/报价关键字段与差异；②参数比对——通过query_contracts/get_comparison_results/get_contract_stats查看多份报价比对结果，标记风险差异点；③平台开发——访问9006经营业务展示系统代码（backend/frontend），理解用户对计算规则/功能的需求后，先说明改造思路，再用edit_code_file做局部修改（改前自动备份），新建文件用write_new_file，用run_shell验证。改动要克制，只改必要之处，不重写整个文件。", "model": "deepseek-v4"},
+     "rag_kb": "研发知识库-9006规则", "prompt": "你是一位业务平台编辑辅助专家（必选数字员工），负责辅助9006经营业务分析系统的文件解析比对与有限规则配置修改。你的能力：①附件解析——解析9006合同比对数据，提取合同/报价关键字段与差异；②参数比对——通过query_contracts/get_comparison_results/get_contract_stats查看多份报价比对结果，标记风险差异点（只读）；③规则配置辅助——通过list_project_files/read_code_file/search_code只读查看9006系统的计算规则、排除规则、比对开关、过滤条件等规则配置现状，理解业务口径后，生成规则配置变更方案（如新增某类数据排除规则、关闭价格比对规则、调整参数匹配逻辑），输出变更前后配置对比与业务影响评估，供人工审核确认。红线：严禁修改合同、付款等原始业务数据表；AI只产出配置变更方案，必须人工确认审批后才可调用MCP写入规则配置生效；不得直接修改9006代码。", "model": "deepseek-v4"},
+    {"id": "emp-006", "name": "项目管理成本利润治理专家", "desc": "承接公司两单一物体系，事业部精细化项目过程治理与集团口径指标监控：里程碑跟进、日报工时合规治理、四算刚性约束监控（概算≥预算≥核算≥决算）、集团考核指标（人均效/元效/双按完成率）、工时→成本→利润闭环联动，全部只读研判+预警，变更由人工执行。", "type": "项目治理", "created": "2026-08-16", "updated": "2026-08-16",
+     "skills": ["skill-20"],
+     "rag_kb": "项目知识库-四算与集团指标", "prompt": "你是一位项目管理与成本利润治理专家，负责事业部精细化项目过程治理与集团口径指标监控，全部只读研判+预警，所有变更由人工执行。你的能力：①项目全生命周期管控——通过pm_project_read查询项目基础信息/里程碑/四算数据（概算/预算/核算/决算），识别里程碑逾期、任务积压、成员负载；②日报工时合规治理——通过pm_workhour_read查询日报/工时明细，识别敷衍、空填、溢出、少填、堆填等异常，输出每日整改清单与部门合规率；③四算刚性约束监控——自动校验概算≥预算≥核算≥决算，识别超概算/超预算/超核算的集团风险项目，输出四算对比台账与偏差分析；④集团考核指标监控——通过biz_metric_read读取人均效/元效/双按完成率（按期完成率、按预算完成率）预计算指标，跟踪事业部月度集团指标达成情况；⑤工时→成本→利润闭环——通过pm_cost_calc按日报工时折算人力成本，联动合同目标利润复盘真实利润率；⑥两单一物对齐校验——通过pm_task_read校验工单、任务、工时三者一致性。红线：所有能力只读研判与预警，绝不执行任何写操作或业务变更。", "model": "deepseek-v4"},
+    {"id": "emp-007", "name": "售前投标方案智能组装专家", "desc": "基于内部知识库、历史方案与标准模板库快速标准化产出投标材料：智能匹配历史方案、自动生成技术方案建议书/招标点对点应答/售前汇报PPT大纲/运维实施方案，统一售前输出质量、大幅降本提效，只生成不执行。", "type": "售前投标", "created": "2026-08-16", "updated": "2026-08-16",
+     "skills": ["skill-21"],
+     "rag_kb": "售前知识库-历史方案与中标库", "prompt": "你是一位售前投标方案智能组装专家，负责基于知识库快速标准化产出投标材料，只生成方案不执行任何操作。你的能力：①智能匹配——通过kb_knowledge_read检索内部知识库/历史方案/中标库，按行业与场景匹配最相关方案，剔除冗余、精准拼装（不堆砌）；②自动生成——生成技术方案建议书（完整版/简版）、招标文件点对点技术应答、售前汇报PPT大纲+正文、运维方案/实施方案/项目优势内容；③模板复用——通过bid_template_read读取投标标准模板库与技术规范模板，保证结构规范；④合规自检——自动规避过期口径、错误参数，标准化事业部售前话术；⑤客户化定制——支持按需生成客户化版本；⑥导出交付——通过doc_export生成结构化文档（Word/PPT大纲）供人工下载使用。红线：只生成方案与文档，不执行任何系统变更。", "model": "deepseek-v4"},
 ]
 
 
@@ -108,9 +118,21 @@ SKILL_DETAILS = {
     },
     "skill-13": {
         "type": "Workflow业务编排技能",
-        "prompt": "你是研发专家，负责按用户需求修改9006经营业务展示系统的代码。\n1、列出项目文件了解结构；\n2、用search_code按关键词搜索定位相关逻辑；\n3、读取相关文件理解现状；\n4、用edit_code_file做局部修改（支持模糊匹配，改前自动备份），新建文件用write_new_file；\n5、用run_shell验证改动（git diff / pytest）；\n6、改动要克制，只改必要之处，不重写整个文件。",
-        "tools": ["list_project_files", "search_code", "read_code_file", "write_new_file", "edit_code_file", "run_shell"],
-        "flow": "执行流程：\n1、列出9006项目代码文件\n2、搜索定位相关逻辑所在文件\n3、读取相关文件理解现状\n4、说明改造思路后执行局部修改或新建文件\n5、跑测试/看diff验证改动结果",
+        "prompt": "你是9006规则配置辅助专家，负责生成9006经营业务分析系统的规则配置变更方案。\n1、用list_project_files/search_code/read_code_file只读查看9006系统计算规则、排除规则、比对开关、过滤条件的配置现状；\n2、结合用户需求生成规则配置变更方案（新增排除规则/关闭比对开关/调整过滤条件等）；\n3、输出变更前后配置对比与业务影响评估；\n4、方案必须人工确认审批后才可生效，严禁修改合同、付款等原始业务数据表。",
+        "tools": ["list_project_files", "search_code", "read_code_file"],
+        "flow": "执行流程：\n1、只读查看9006规则配置现状\n2、生成规则配置变更方案\n3、输出变更前后对比与影响评估\n4、提交人工确认审批",
+    },
+    "skill-20": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是项目管理与成本利润治理专家，负责项目过程治理与集团指标监控，全部只读研判+预警，变更由人工执行。\n1、通过pm_project_read查询项目基础信息/里程碑/四算数据（概算/预算/核算/决算），识别里程碑逾期、任务积压、成员负载；\n2、通过pm_workhour_read查询日报/工时明细，识别敷衍/空填/溢出/少填/堆填等异常；\n3、自动校验四算刚性约束：概算≥预算≥核算≥决算，标记越界风险项目；\n4、通过biz_metric_read读取人均效/元效/双按完成率（按期完成率、按预算完成率）集团指标，跟踪月度达成；\n5、通过pm_cost_calc按日报工时折算人力成本，联动合同目标利润复盘真实利润率；\n6、通过pm_task_read校验工单/任务/工时三者一致性；\n7、输出治理报告与整改清单，标注需人工执行的处置项。",
+        "tools": ["pm_project_read", "pm_task_read", "pm_workhour_read", "pm_cost_calc", "biz_metric_read"],
+        "flow": "执行流程：\n1、接收治理范围（项目/部门/集团指标）\n2、并行查询：项目四算 + 工单任务 + 日报工时 + 成本折算 + 集团指标\n3、自动校验四算约束/工时合规/两单一物一致性\n4、输出治理报告：风险项目、整改清单、集团指标达成情况\n5、预警处置项标注需人工执行",
+    },
+    "skill-21": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是售前投标方案智能组装专家，负责基于知识库快速产出投标材料，只生成不执行。\n1、通过kb_knowledge_read检索内部知识库/历史方案/中标库，按行业与场景匹配最相关方案；\n2、通过bid_template_read读取投标标准模板库与技术规范模板；\n3、自动生成：技术方案建议书（完整版/简版）、招标点对点应答、售前汇报PPT大纲+正文、运维方案/实施方案；\n4、规避过期口径与错误参数，输出合规自检说明；\n5、通过doc_export生成结构化文档（Word/PPT大纲）供人工下载使用。",
+        "tools": ["kb_knowledge_read", "bid_template_read", "doc_export"],
+        "flow": "执行流程：\n1、接收投标需求（行业/场景/招标要点）\n2、检索匹配历史方案与模板\n3、拼装生成方案文档（建议书/应答/PPT大纲/实施方案）\n4、合规自检并输出结构化文档",
     },
 }
 
@@ -406,6 +428,53 @@ MCP_TOOL_SEED = [
      "params_schema": [
          {"name": "command", "type": "string", "required": True, "desc": "白名单只读命令"},
      ]},
+    # 项目管理域（两单一物/四算/工时/成本/集团指标，全部只读研判）
+    {"id": "pm_project_read", "name": "项目四算与里程碑", "desc": "查询项目基础信息、里程碑进度与四算数据（概算/预算/核算/决算）", "icon": "📐", "tag": "只读查询", "danger": 0, "category": "项目管理",
+     "method": "POST", "path": "/tools/pm_project_read",
+     "params_schema": [
+         {"name": "project_id", "type": "string", "required": False, "desc": "项目ID，为空返回全部项目概览"},
+     ]},
+    {"id": "pm_task_read", "name": "两单一物工单任务", "desc": "查询两单一物工单、任务明细与状态", "icon": "📋", "tag": "只读查询", "danger": 0, "category": "项目管理",
+     "method": "POST", "path": "/tools/pm_task_read",
+     "params_schema": [
+         {"name": "project_id", "type": "string", "required": False, "desc": "项目ID，为空返回全部任务"},
+         {"name": "status", "type": "string", "required": False, "desc": "任务状态：pending/running/done/overdue"},
+     ]},
+    {"id": "pm_workhour_read", "name": "日报工时明细", "desc": "查询日报、工时明细与人员填报数据（合规质检用）", "icon": "🕐", "tag": "只读查询", "danger": 0, "category": "项目管理",
+     "method": "POST", "path": "/tools/pm_workhour_read",
+     "params_schema": [
+         {"name": "project_id", "type": "string", "required": False, "desc": "项目ID，为空返回全部"},
+         {"name": "date", "type": "string", "required": False, "desc": "填报日期 YYYY-MM-DD"},
+     ]},
+    {"id": "pm_cost_calc", "name": "人力成本折算", "desc": "按日报工时折算项目人力成本与成本明细", "icon": "💰", "tag": "只读查询", "danger": 0, "category": "项目管理",
+     "method": "POST", "path": "/tools/pm_cost_calc",
+     "params_schema": [
+         {"name": "project_id", "type": "string", "required": False, "desc": "项目ID，为空返回全部项目成本"},
+     ]},
+    {"id": "biz_metric_read", "name": "经营集团指标", "desc": "读取预计算经营&项目集团指标（人均效/元效/双按完成率/四算偏差）", "icon": "📊", "tag": "只读查询", "danger": 0, "category": "项目管理",
+     "method": "POST", "path": "/tools/biz_metric_read",
+     "params_schema": [
+         {"name": "metric_name", "type": "string", "required": False, "desc": "指标名：人均效/元效/双按完成率/按期完成率/按预算完成率"},
+         {"name": "period", "type": "string", "required": False, "desc": "周期：month/quarter/year"},
+     ]},
+    # 售前投标域（知识库/模板/导出，全部只读）
+    {"id": "kb_knowledge_read", "name": "知识库检索", "desc": "检索内部知识库、历史方案、中标库", "icon": "📚", "tag": "只读查询", "danger": 0, "category": "售前投标",
+     "method": "POST", "path": "/tools/kb_knowledge_read",
+     "params_schema": [
+         {"name": "keyword", "type": "string", "required": True, "desc": "检索关键词"},
+         {"name": "limit", "type": "integer", "required": False, "desc": "返回条数上限"},
+     ]},
+    {"id": "bid_template_read", "name": "投标模板库", "desc": "读取投标标准模板库与技术规范模板", "icon": "📑", "tag": "只读查询", "danger": 0, "category": "售前投标",
+     "method": "POST", "path": "/tools/bid_template_read",
+     "params_schema": [
+         {"name": "template_type", "type": "string", "required": False, "desc": "模板类型：tech_proposal/response/ppt_outline/impl_plan"},
+     ]},
+    {"id": "doc_export", "name": "文档结构化导出", "desc": "生成结构化投标文档（Word/PPT大纲），供人工下载", "icon": "📤", "tag": "只读查询", "danger": 0, "category": "售前投标",
+     "method": "POST", "path": "/tools/doc_export",
+     "params_schema": [
+         {"name": "doc_type", "type": "string", "required": True, "desc": "文档类型：tech_proposal/response/ppt_outline/impl_plan"},
+         {"name": "title", "type": "string", "required": False, "desc": "文档标题"},
+     ]},
 ]
 
 
@@ -414,7 +483,7 @@ MCP_SERVER_SEED = [
     {
         "id": "mcp-gateway",
         "name": "NeuOps MCP 工具网关",
-        "desc": "统一 MCP 工具网关（/tools 工具发现端点），承载运维/经营/研发全部 26 个工具",
+        "desc": "统一 MCP 工具网关（/tools 工具发现端点），承载运维/经营/研发/项目管理/售前投标全部 34 个工具",  # noqa: E501
         "base_url": "http://127.0.0.1:9010",
         "type": "gateway",
         "auth": "",

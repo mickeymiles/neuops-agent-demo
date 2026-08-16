@@ -392,6 +392,15 @@ def process_incident(incident_id: str):
     # 代码级自愈需要 incident_id 定位事件
     entity_attrs["incident_id"] = incident_id
 
+    # 远程探针服务器故障：自愈动作只作用于监控中心本机，跳过并升级人工
+    if entity_attrs.get("remote_host"):
+        _log(incident_id, f"远程服务器 {entity_attrs.get('remote_host')} 故障，跳过本机自愈动作，升级人工")
+        db.incident_update(incident_id, state="manual",
+                           message="远程探针服务器故障，自愈动作不作用于远程主机，升级人工处理",
+                           updated_at=_now())
+        feishu_notify.notify_incident(db.incident_get(incident_id))
+        return
+
     ok, msg = _execute_action(incident_id, action, entity_name, entity_attrs)
 
     # 代码级自愈动作内部已完成 修复→测试→发布→验证→(回滚) 全流程并更新状态，直接采信

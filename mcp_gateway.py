@@ -22,6 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from mock_data import (
     MOCK_METRICS, MOCK_LOGS, MOCK_CMDB,
     MOCK_CHANGES, MOCK_ALARMS, MOCK_TODOS,
+    MOCK_PM_PROJECTS, MOCK_PM_TASKS, MOCK_PM_WORKHOURS, MOCK_PM_COSTS,
+    MOCK_BIZ_METRICS, MOCK_BID_KB, MOCK_BID_TEMPLATES,
     get_timestamps,
 )
 
@@ -682,6 +684,180 @@ async def run_shell(
         return tool_response("run_shell", False,
                              {"error": f"无法连接9006经营分析系统: {e}"})
     return tool_response("run_shell", True, data, source="9006", command=command)
+
+
+# ═══════════════════════════════════════════
+# 项目管理域工具（两单一物/四算/工时/成本，全部只读研判）
+# ═══════════════════════════════════════════
+
+@app.post("/tools/pm_project_read")
+@app.get("/tools/pm_project_read")
+async def pm_project_read(
+    project_id: str = Query(default=""),
+):
+    """查询项目基础信息、里程碑进度与四算数据（概算/预算/核算/决算）"""
+    projects = MOCK_PM_PROJECTS
+    if project_id:
+        projects = [p for p in projects if p["project_id"] == project_id]
+    if not projects:
+        return tool_response("pm_project_read", False,
+                             {"error": f"未找到项目 {project_id}"})
+    # 附带四算刚性约束校验结果（概算≥预算≥核算≥决算）
+    checked = []
+    for p in projects:
+        p = dict(p)
+        p["four_calc_check"] = _check_four_calc(p["four_calc"])
+        checked.append(p)
+    return tool_response("pm_project_read", True, {"projects": checked}, source="mock")
+
+
+def _check_four_calc(fc: dict) -> dict:
+    """校验四算刚性约束：概算 ≥ 预算 ≥ 核算 ≥ 决算（0 表示未发生，跳过比较）"""
+    issues = []
+    if fc["budget"] and fc["estimate"] and fc["budget"] > fc["estimate"]:
+        issues.append(f"预算({fc['budget']})超概算({fc['estimate']})")
+    if fc["accounting"] and fc["budget"] and fc["accounting"] > fc["budget"]:
+        issues.append(f"核算({fc['accounting']})超预算({fc['budget']})")
+    if fc["final"] and fc["accounting"] and fc["final"] > fc["accounting"]:
+        issues.append(f"决算({fc['final']})超核算({fc['accounting']})")
+    return {"ok": not issues, "issues": issues}
+
+
+@app.post("/tools/pm_task_read")
+@app.get("/tools/pm_task_read")
+async def pm_task_read(
+    project_id: str = Query(default=""),
+    status: str = Query(default=""),
+):
+    """查询两单一物工单、任务明细与状态"""
+    tasks = MOCK_PM_TASKS
+    if project_id:
+        tasks = [t for t in tasks if t["project_id"] == project_id]
+    if status:
+        tasks = [t for t in tasks if t["status"] == status]
+    return tool_response("pm_task_read", True, {"tasks": tasks}, source="mock")
+
+
+@app.post("/tools/pm_workhour_read")
+@app.get("/tools/pm_workhour_read")
+async def pm_workhour_read(
+    project_id: str = Query(default=""),
+    date: str = Query(default=""),
+):
+    """查询日报、工时明细与人员填报数据（含合规质检标记）"""
+    hours = MOCK_PM_WORKHOURS
+    if project_id:
+        hours = [h for h in hours if h["project_id"] == project_id]
+    if date:
+        hours = [h for h in hours if h["date"] == date]
+    # 合规率统计
+    total = len(hours)
+    ok_cnt = len([h for h in hours if h["status"] == "ok"])
+    abnormal = [h for h in hours if h["status"] != "ok"]
+    return tool_response("pm_workhour_read", True, {
+        "records": hours,
+        "compliance_rate": round(ok_cnt / total, 2) if total else 1.0,
+        "abnormal_records": abnormal,
+    }, source="mock")
+
+
+@app.post("/tools/pm_cost_calc")
+@app.get("/tools/pm_cost_calc")
+async def pm_cost_calc(
+    project_id: str = Query(default=""),
+):
+    """按日报工时折算项目人力成本与成本明细"""
+    costs = MOCK_PM_COSTS
+    if project_id:
+        costs = [c for c in costs if c["project_id"] == project_id]
+    if not costs:
+        return tool_response("pm_cost_calc", False,
+                             {"error": f"未找到项目 {project_id} 的成本数据"})
+    return tool_response("pm_cost_calc", True, {"costs": costs}, source="mock")
+
+
+@app.post("/tools/biz_metric_read")
+@app.get("/tools/biz_metric_read")
+async def biz_metric_read(
+    metric_name: str = Query(default=""),
+    period: str = Query(default=""),
+):
+    """读取预计算经营&项目集团指标（人均效/元效/双按完成率/四算偏差）"""
+    if metric_name and metric_name in MOCK_BIZ_METRICS:
+        metric = dict(MOCK_BIZ_METRICS[metric_name])
+        if period and metric.get("period") != period:
+            metric["note"] = metric.get("note", "") + f"（当前库内仅有 {metric.get('period')} 周期数据）"
+        return tool_response("biz_metric_read", True, {"metric": metric}, source="mock")
+    if not metric_name:
+        return tool_response("biz_metric_read", True, {"metrics": MOCK_BIZ_METRICS}, source="mock")
+    return tool_response("biz_metric_read", False,
+                         {"error": f"未找到指标 {metric_name}，可选：{list(MOCK_BIZ_METRICS.keys())}"})
+
+
+# ═══════════════════════════════════════════
+# 售前投标域工具（知识库/模板/导出，只生成不执行）
+# ═══════════════════════════════════════════
+
+@app.post("/tools/kb_knowledge_read")
+@app.get("/tools/kb_knowledge_read")
+async def kb_knowledge_read(
+    keyword: str = Query(default=""),
+    limit: int = Query(default=5),
+):
+    """检索内部知识库、历史方案、中标库"""
+    if not keyword:
+        return tool_response("kb_knowledge_read", False,
+                             {"error": "请提供 keyword 检索关键词"})
+    kw = keyword.lower()
+    hits = []
+    for doc in MOCK_BID_KB:
+        text = " ".join([doc["industry"], doc["scenario"], doc["title"], doc["summary"],
+                         " ".join(doc["keywords"]), doc["content"]])
+        if kw in text.lower():
+            hits.append(doc)
+    hits = hits[:limit]
+    return tool_response("kb_knowledge_read", True,
+                         {"keyword": keyword, "hits": hits, "hit_count": len(hits)},
+                         source="mock")
+
+
+@app.post("/tools/bid_template_read")
+@app.get("/tools/bid_template_read")
+async def bid_template_read(
+    template_type: str = Query(default=""),
+):
+    """读取投标标准模板库与技术规范模板"""
+    if template_type:
+        if template_type not in MOCK_BID_TEMPLATES:
+            return tool_response("bid_template_read", False,
+                                 {"error": f"未找到模板 {template_type}，可选：{list(MOCK_BID_TEMPLATES.keys())}"})
+        return tool_response("bid_template_read", True,
+                             {"template": MOCK_BID_TEMPLATES[template_type]}, source="mock")
+    return tool_response("bid_template_read", True, {"templates": MOCK_BID_TEMPLATES}, source="mock")
+
+
+@app.post("/tools/doc_export")
+@app.get("/tools/doc_export")
+async def doc_export(
+    doc_type: str = Query(default=""),
+    title: str = Query(default=""),
+):
+    """生成结构化投标文档（Word/PPT大纲），供人工下载"""
+    if not doc_type or doc_type not in MOCK_BID_TEMPLATES:
+        return tool_response("doc_export", False,
+                             {"error": f"doc_type 必填且需为 {list(MOCK_BID_TEMPLATES.keys())} 之一"})
+    tpl = MOCK_BID_TEMPLATES[doc_type]
+    doc_title = title or f"{tpl['name']}-{datetime.now().strftime('%Y%m%d')}"
+    sections = tpl["sections"]
+    return tool_response("doc_export", True, {
+        "doc_title": doc_title,
+        "doc_type": doc_type,
+        "format": "markdown_structure",
+        "template_version": tpl["version"],
+        "sections": sections,
+        "estimated_pages": max(6, len(sections) * 2),
+        "note": "已生成结构化文档大纲，供人工下载后编辑完善；本工具不做任何系统写入",
+    }, source="mock")
 
 
 # ═══════════════════════════════════════════
