@@ -255,7 +255,7 @@ async function renderEmpSkillTab(emp) {
           <span class="skill-filter-tab ${filter === 'disabled' ? 'active' : ''}" data-f="disabled" onclick="window.__empSkillFilter='disabled';renderEmpSkillTab()">未使用</span>
           <span class="skill-filter-tab ${filter === 'all' ? 'active' : ''}" data-f="all" onclick="window.__empSkillFilter='all';renderEmpSkillTab()">全部</span>
         </div>
-        <span class="skill-mgr-count">已使用 ${bound.size} / 共 ${(window.__empSkillAll || []).length} 个技能</span>
+        <span class="skill-mgr-count" id="empSkillCount">已使用 ${bound.size} / 共 ${(window.__empSkillAll || []).length} 个技能</span>
       </div>
       <div class="emp-pool-hint">数字员工通过「技能」获得能力：使用中技能绑定的 MCP 工具将自动生效。点击卡片查看技能详情，右上角开关启用/停用。</div>
       <div class="skill-mgr-cards" id="empSkillPool"></div>
@@ -264,6 +264,8 @@ async function renderEmpSkillTab(emp) {
     const r = await fetch('/api/skills').then(x => x.json());
     const skills = r.skills || [];
     window.__empSkillAll = skills;
+    const cnt = document.getElementById('empSkillCount');
+    if (cnt) cnt.textContent = `已使用 ${bound.size} / 共 ${skills.length} 个技能`;
     const list = skills.filter(s => filter === 'enabled' ? bound.has(s.id) : filter === 'disabled' ? !bound.has(s.id) : true);
     document.getElementById('empSkillPool').innerHTML = list.length ? list.map(s => {
       const active = bound.has(s.id);

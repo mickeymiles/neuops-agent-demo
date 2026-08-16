@@ -867,6 +867,23 @@ body {
 }
 .emp-detail-top .help-icon:hover { border-color: var(--c-primary); color: var(--c-primary); }
 
+/* 员工详情顶部标题条 */
+.emp-detail-bar { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: nowrap; }
+.emp-detail-bar .emp-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 14px; color: var(--c-text-secondary); cursor: pointer; margin-bottom: 12px;
+}
+.emp-detail-bar .emp-back:hover { color: var(--c-primary); }
+.emp-detail-title { display: flex; align-items: center; gap: 12px; }
+.emp-detail-title .emp-avatar {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+}
+.emp-detail-name { font-size: 20px; font-weight: 600; color: var(--c-text-h1); line-height: 1.4; }
+.emp-detail-meta { font-size: 13px; color: var(--c-text-secondary); margin-top: 2px; }
+
 /* Detail tabs */
 .emp-detail-tabs {
   display: flex; gap: 4px; flex-shrink: 0;
@@ -1306,6 +1323,13 @@ table td { border-color: #1E2A44; }
 .tb-btn:hover, .tool-chip:hover, .chip:hover { border-color: var(--c-primary); color: var(--c-primary); }
 .tb-btn.danger, .tb-btn.danger:hover { color: var(--c-danger); }
 .tb-btn.danger:hover { background: rgba(239,68,68,0.15); border-color: var(--c-danger); }
+/* 表格操作列按钮去掉边框，避免并排时出现粗分隔线 */
+.table-actions .tb-btn,
+.emp-table-wrap .row-actions .tb-btn {
+  border: none; background: transparent;
+}
+.table-actions .tb-btn:hover,
+.emp-table-wrap .row-actions .tb-btn:hover { background: var(--c-bg-hover); }
 .tb-input { background: #0E1626; border-color: #27334B; color: var(--c-text-body); }
 .qa-item, .skill-item, .todo-item, .emp-item, .task-item {
   background: #0E1626; border: 1px solid #1E2A44;
