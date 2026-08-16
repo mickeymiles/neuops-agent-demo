@@ -245,22 +245,30 @@ async function renderEmpSkillTab(emp) {
   emp = emp || window.__curEmp || S.empDetail;
   if (!emp) return;
   const bound = new Set(emp.skills || []);
+  const filter = window.__empSkillFilter || 'enabled';
   const wrap = document.getElementById('emp-tab-skill');
   wrap.innerHTML = `
     <div class="emp-detail-body">
       <div class="skill-mgr-bar">
-        <div class="skill-filter-tabs"><span class="skill-filter-tab active">全部</span></div>
+        <div class="skill-filter-tabs" id="empSkillFilterTabs">
+          <span class="skill-filter-tab ${filter === 'enabled' ? 'active' : ''}" data-f="enabled" onclick="window.__empSkillFilter='enabled';renderEmpSkillTab()">使用中</span>
+          <span class="skill-filter-tab ${filter === 'disabled' ? 'active' : ''}" data-f="disabled" onclick="window.__empSkillFilter='disabled';renderEmpSkillTab()">未使用</span>
+          <span class="skill-filter-tab ${filter === 'all' ? 'active' : ''}" data-f="all" onclick="window.__empSkillFilter='all';renderEmpSkillTab()">全部</span>
+        </div>
+        <span class="skill-mgr-count">已使用 ${bound.size} / 共 ${(window.__empSkillAll || []).length} 个技能</span>
       </div>
-      <div class="emp-pool-hint">数字员工通过「技能」获得能力：选择使用的技能后，其绑定的 MCP 工具将自动生效。点击技能卡片可查看详情。</div>
+      <div class="emp-pool-hint">数字员工通过「技能」获得能力：使用中技能绑定的 MCP 工具将自动生效。点击卡片查看技能详情，右上角开关启用/停用。</div>
       <div class="skill-mgr-cards" id="empSkillPool"></div>
     </div>`;
   try {
     const r = await fetch('/api/skills').then(x => x.json());
     const skills = r.skills || [];
-    document.getElementById('empSkillPool').innerHTML = skills.length ? skills.map(s => {
+    window.__empSkillAll = skills;
+    const list = skills.filter(s => filter === 'enabled' ? bound.has(s.id) : filter === 'disabled' ? !bound.has(s.id) : true);
+    document.getElementById('empSkillPool').innerHTML = list.length ? list.map(s => {
       const active = bound.has(s.id);
       return `
-      <div class="skill-mgr-card emp-select-card" style="cursor:pointer;" onclick="showSkillDetail('${s.id}')">
+      <div class="skill-mgr-card" onclick="showSkillDetail('${s.id}')">
         <div class="card-top">
           <h4>${s.name}${s.category === 'custom' ? '<span class="tag" style="margin-left:6px;color:var(--c-primary);border-color:rgba(56,189,248,.4)">自定义</span>' : ''}</h4>
           <label class="skill-switch" title="${active ? '点击停用' : '点击使用'}" onclick="event.stopPropagation()">
@@ -270,12 +278,12 @@ async function renderEmpSkillTab(emp) {
         </div>
         <div class="card-eng">${s.id}</div>
         <div class="card-desc">${s.desc || ''}</div>
-        <div class="card-update" style="display:flex;align-items:center;justify-content:space-between;">
+        <div class="card-update">
           <span>分类：${s.category || '-'}</span>
           <span style="font-size:12px;color:${active ? 'var(--c-primary)' : 'var(--c-text-time)'};">${active ? '使用中' : '未使用'}</span>
         </div>
       </div>`;
-    }).join('') : '<div class="todo-empty" style="grid-column:1/-1;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">后台能力池暂无技能，请到「技能中心」配置</div>';
+    }).join('') : '<div class="todo-empty" style="grid-column:1/-1;border:1px dashed var(--c-border-light);border-radius:8px;text-align:center;color:var(--c-text-time);padding:24px;">' + (filter === 'enabled' ? '暂未使用任何技能，切换到「未使用」为员工添加技能' : filter === 'disabled' ? '所有技能均已在用，可在「使用中」停用' : '后台能力池暂无技能，请到「技能中心」配置') + '</div>';
   } catch (e) {
     document.getElementById('empSkillPool').innerHTML = '<div class="todo-empty" style="grid-column:1/-1;color:var(--c-danger);">技能加载失败：' + e.message + '</div>';
   }

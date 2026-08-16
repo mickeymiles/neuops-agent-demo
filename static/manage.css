@@ -929,6 +929,7 @@ body {
 }
 .skill-filter-tab:hover { background: var(--c-bg-hover); }
 .skill-filter-tab.active { background: var(--c-active-bg); border-color: var(--c-primary); }
+.skill-mgr-count { margin-left: auto; font-size: 12px; color: var(--c-text-time); }
 .skill-mgr-bar input {
   flex: 1; height: 36px; padding: 0 14px; border: 1px solid var(--c-border-light);
   border-radius: 8px; font-size: 14px; outline: none; color: var(--c-text-body);
@@ -937,20 +938,21 @@ body {
 .skill-mgr-bar input:focus { border-color: var(--c-primary); }
 .skill-mgr-bar input::placeholder { color: var(--c-text-placeholder); }
 
-.skill-mgr-cards { display: flex; flex-wrap: wrap; gap: 16px; }
+.skill-mgr-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .skill-mgr-card {
   border: 1px solid var(--c-border-light); border-radius: 8px;
-  padding: 20px; width: 320px; background: var(--c-main-bg); flex-shrink: 0;
+  padding: 20px; background: var(--c-main-bg);
   cursor: pointer; transition: all 0.15s;
+  display: flex; flex-direction: column; height: 100%; box-sizing: border-box;
 }
 .skill-mgr-card:hover { border-color: var(--c-primary); box-shadow: 0 4px 14px rgba(14,165,233,0.12); transform: translateY(-1px); }
-.skill-mgr-card .card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.skill-mgr-card .card-top h4 { font-size: 15px; font-weight: 600; color: var(--c-text-body); }
+.skill-mgr-card .card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; gap: 10px; }
+.skill-mgr-card .card-top h4 { font-size: 15px; font-weight: 600; color: var(--c-text-body); line-height: 1.4; }
 .skill-mgr-card .card-top .enabled-badge { font-size: 12px; color: #00b42a; display: flex; align-items: center; gap: 4px; }
 .skill-mgr-card .card-top .enabled-badge.disabled { color: var(--c-text-time); }
 .skill-mgr-card .card-eng { font-size: 12px; color: var(--c-text-time); margin-bottom: 8px; }
-.skill-mgr-card .card-desc { font-size: 13px; color: var(--c-text-secondary); margin-bottom: 12px; }
-.skill-mgr-card .card-update { font-size: 12px; color: var(--c-text-time); display: flex; align-items: center; gap: 8px; }
+.skill-mgr-card .card-desc { font-size: 13px; color: var(--c-text-secondary); margin-bottom: 12px; flex: 1 1 auto; }
+.skill-mgr-card .card-update { font-size: 12px; color: var(--c-text-time); display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
 /* 技能启用/停用开关 */
 .skill-switch { position: relative; display: inline-flex; width: 34px; height: 18px; cursor: pointer; flex-shrink: 0; }
 .skill-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
