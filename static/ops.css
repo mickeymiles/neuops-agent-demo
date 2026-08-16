@@ -735,6 +735,17 @@ fieldset.group legend { font-size: 13px; font-weight: 600; color: var(--accent2)
   border-radius: 12px; min-height: 540px; overflow: hidden;
 }
 .it3d-canvas canvas { display: block; }
+.it3d-toolbar {
+  position: absolute; top: 12px; right: 12px; z-index: 5;
+  display: flex; gap: 6px;
+}
+.it3d-btn {
+  background: rgba(11, 18, 32, 0.82); border: 1px solid var(--border); color: var(--muted);
+  border-radius: 8px; padding: 4px 12px; font-size: 12px; cursor: pointer; transition: all .15s;
+  backdrop-filter: blur(4px);
+}
+.it3d-btn:hover { border-color: var(--accent); color: var(--accent); }
+.it3d-btn.active { background: rgba(79, 140, 255, 0.15); border-color: var(--accent); color: var(--accent); }
 .it3d-detail {
   background: rgba(11, 18, 32, 0.6); border: 1px solid var(--border); border-radius: 12px;
   padding: 16px; overflow-y: auto; max-height: 540px; font-size: 12.5px;

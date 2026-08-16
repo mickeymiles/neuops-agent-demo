@@ -258,7 +258,12 @@
       <div id="topoView3d" style="display:none">
         <div class="it3d-legend" id="topo3dLegend"></div>
         <div class="it3d-wrap">
-          <div class="it3d-canvas" id="topo3dCanvas"></div>
+          <div class="it3d-canvas" id="topo3dCanvas">
+            <div class="it3d-toolbar">
+              <button class="it3d-btn active" id="it3dRotateBtn" onclick="IT_toggleRotate(this)">⟳ 自动旋转</button>
+              <button class="it3d-btn" onclick="IT_resetView()">⌖ 重置视角</button>
+            </div>
+          </div>
           <div class="it3d-detail" id="topo3dDetail">
             <h4>🔍 节点详情</h4>
             <div class="muted">点击拓扑节点查看详情</div>
@@ -670,9 +675,15 @@ function IT_move() {
 /* ---- 3D 结构拓扑 ---- */
 let IT_topoCache = null;
 let IT_scene = null, IT_camera = null, IT_renderer = null, IT_controls = null;
-let IT_meshMap = {}, IT_edgeGroup = null, IT_labelGroup = null;
+let IT_meshMap = {}, IT_edgeGroup = null, IT_labelGroup = null, IT_plateGroup = null;
+// 业务分层：应用 → 数据/中间件 → 容器 → 服务器 → 网络（自顶向下）
 const IT_LAYERS = { application: 0, middleware: 1, database: 1, container: 2, server: 3, network: 4 };
-const IT_LAYER_Y = [6.5, 5, 3.5, 2, 0.5, -1.5];
+const IT_LAYER_Y = [7.2, 5.4, 3.6, 1.8, 0, -1.8];
+const IT_LAYER_NAMES = ["应用层", "数据·中间件层", "容器层", "服务器层", "网络层"];
+const IT_LAYER_COLORS = ["#fbbf24", "#34d399", "#a78bfa", "#4f8cff", "#22d3ee"];
+const IT_LAYER_PLATE = 0.15;      // 层平台厚度（尽量轻量）
+const IT_LAYER_DEPTH = 3.2;       // 层平台深度(Z)
+const IT_LAYER_GAP = 0.18;        // 实体底部与平台顶的间隙
 
 async function IT_fetchTopo() {
   if (IT_topoCache) return IT_topoCache;
@@ -692,8 +703,8 @@ function IT_init3D() {
   IT_scene = new THREE.Scene();
   IT_scene.background = new THREE.Color(0x0a1226);
   IT_camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 2000);
-  IT_camera.position.set(0, 5, 26);
-  IT_camera.lookAt(0, 2, 0);
+  IT_camera.position.set(0, 5, 36);
+  IT_camera.lookAt(0, 2.4, 0);
   IT_renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   IT_renderer.setSize(w, h);
   IT_renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -701,8 +712,14 @@ function IT_init3D() {
   IT_controls = new THREE.OrbitControls(IT_camera, IT_renderer.domElement);
   IT_controls.enableDamping = true;
   IT_controls.dampingFactor = 0.12;
-  IT_controls.minDistance = 8;
-  IT_controls.maxDistance = 60;
+  IT_controls.rotateSpeed = 0.9;
+  IT_controls.minDistance = 10;
+  IT_controls.maxDistance = 80;
+  // 360° 全景旋转：不限制上下极角，可绕任意方向查看
+  IT_controls.minPolarAngle = 0;
+  IT_controls.maxPolarAngle = Math.PI;
+  IT_controls.autoRotate = false;   // 默认关闭，点击"自动旋转"可开启
+  IT_controls.autoRotateSpeed = 1.6;
   IT_scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const d1 = new THREE.DirectionalLight(0xffffff, 0.85); d1.position.set(10, 20, 12); IT_scene.add(d1);
   const d2 = new THREE.DirectionalLight(0x4f8cff, 0.35); d2.position.set(-12, -8, -10); IT_scene.add(d2);
@@ -715,11 +732,27 @@ function IT_init3D() {
     mouse.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(mouse, IT_camera);
-    const hits = raycaster.intersectObjects(Object.values(IT_meshMap), false);
-    if (hits.length) IT_selectNode(hits[0].object.userData.nodeId);
+    const hits = raycaster.intersectObjects(Object.values(IT_meshMap), true);
+    if (hits.length && hits[0].object.userData.nodeId) IT_selectNode(hits[0].object.userData.nodeId);
   });
   window.addEventListener("resize", IT_resize3D);
   IT_animate();
+}
+function IT_toggleRotate(btn) {
+  if (!IT_controls) return;
+  IT_controls.autoRotate = !IT_controls.autoRotate;
+  if (btn) btn.classList.toggle("active", IT_controls.autoRotate);
+  toast(IT_controls.autoRotate ? "已开启自动旋转" : "已暂停自动旋转", "ok");
+}
+function IT_resetView() {
+  if (!IT_camera || !IT_controls) return;
+  // 重置为初始视角，同时清除阻尼残留，避免旋转偏移
+  IT_controls.reset();
+  IT_controls.autoRotate = false;
+  IT_controls.update();
+  const btn = $("it3dRotateBtn");
+  if (btn) btn.classList.toggle("active", false);
+  toast("已重置视角", "ok");
 }
 function IT_resize3D() {
   const el = $("topo3dCanvas");
@@ -747,6 +780,7 @@ async function IT_renderTopo() {
   IT_meshMap = {};
   if (IT_edgeGroup) { IT_scene.remove(IT_edgeGroup); IT_edgeGroup = null; }
   if (IT_labelGroup) { IT_scene.remove(IT_labelGroup); IT_labelGroup = null; }
+  if (IT_plateGroup) { IT_scene.remove(IT_plateGroup); IT_plateGroup = null; }
   const nodes = topo.nodes, edges = topo.edges || [];
   const em = topo.entityMeta || {}, sm = topo.statusMeta || {}, rm = topo.relationMeta || {};
   const byLayer = {};
@@ -754,54 +788,141 @@ async function IT_renderTopo() {
     const L = IT_LAYERS[n.type] !== undefined ? IT_LAYERS[n.type] : 5;
     (byLayer[L] = byLayer[L] || []).push(n);
   });
-  const pos = {};
+  // ① 按业务逻辑分层排布：实体底部紧贴所在层平台
+  const pos = {}, nodeSize = {}, nodeRadius = {}, plateLen = {};
   Object.keys(byLayer).forEach(Lk => {
     const arr = byLayer[Lk], y = IT_LAYER_Y[Number(Lk)];
-    const gap = Math.max(4, Math.min(9, 30 / Math.max(arr.length, 1)));
-    arr.forEach((n, i) => { pos[n.id] = new THREE.Vector3((i - (arr.length - 1) / 2) * gap, y, 0); });
+    const gap = Math.max(4.5, Math.min(11, 32 / Math.max(arr.length, 1)));
+    const span = Math.max(16, (arr.length - 1) * gap + 5);
+    plateLen[Lk] = span;
+    arr.forEach((n, i) => {
+      const size = IT_nodeSize(n.type);
+      nodeSize[n.id] = size;
+      nodeRadius[n.id] = IT_nodeRadius(n.type, size);
+      pos[n.id] = new THREE.Vector3((i - (arr.length - 1) / 2) * gap,
+        y + IT_LAYER_PLATE / 2 + IT_LAYER_GAP + IT_nodeHalf(n.type, size), 0);
+    });
   });
+  // ② 层平台（半透明楼板）+ 层名标签
+  IT_plateGroup = new THREE.Group();
+  Object.keys(byLayer).forEach(Lk => {
+    const y = IT_LAYER_Y[Number(Lk)], span = plateLen[Lk];
+    const c = IT_LAYER_COLORS[Number(Lk)] || "#4f8cff";
+    // 半透明楼板：只作为参照，降低存在感
+    const plate = new THREE.Mesh(
+      new THREE.BoxGeometry(span, IT_LAYER_PLATE, IT_LAYER_DEPTH),
+      new THREE.MeshPhongMaterial({ color: c, transparent: true, opacity: 0.06, depthWrite: false }));
+    plate.position.set(0, y, 0);
+    IT_plateGroup.add(plate);
+    // 层边缘细线框
+    const rim = new THREE.Mesh(
+      new THREE.BoxGeometry(span, 0.05, IT_LAYER_DEPTH),
+      new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.45 }));
+    rim.position.set(0, y + IT_LAYER_PLATE / 2, 0);
+    IT_plateGroup.add(rim);
+    // 层名标签放在平台中央上方，随 3D 旋转始终面向相机
+    const lbl = IT_makeLabel(IT_LAYER_NAMES[Number(Lk)] || ("层级 " + Lk), { bg: c });
+    lbl.scale.set(4.0, 0.85, 1);
+    lbl.position.set(0, y + IT_LAYER_PLATE / 2 + 0.55, 0);
+    IT_plateGroup.add(lbl);
+  });
+  IT_scene.add(IT_plateGroup);
+  // ③ 实体模型：按类型贴近真实外形（机箱/数据库桶/容器盒/棱柱/交换机圆盘/应用球体）
   nodes.forEach(n => {
     const meta = em[n.type] || {};
     const color = n.color || meta.color || "#4f8cff";
-    const size = n.type === "application" ? 0.75 : n.type === "server" ? 0.85 : 0.62;
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(size, 24, 24),
-      new THREE.MeshPhongMaterial({ color, emissive: new THREE.Color(color).multiplyScalar(0.18), shininess: 40 }));
-    mesh.position.copy(pos[n.id]);
-    mesh.userData.nodeId = n.id;
+    const size = nodeSize[n.id];
     const sColor = n.statusColor || (sm[n.status] && sm[n.status].color) || "#94a3b8";
-    const ring = new THREE.Mesh(new THREE.RingGeometry(size * 1.35, size * 1.6, 32),
+    const g = new THREE.Group();
+    g.position.copy(pos[n.id]);
+    g.userData.nodeId = n.id;
+    const mesh = new THREE.Mesh(IT_modelGeo(n.type, size),
+      new THREE.MeshPhongMaterial({ color, emissive: new THREE.Color(color).multiplyScalar(0.16), shininess: 45 }));
+    mesh.userData.nodeId = n.id;
+    g.add(mesh);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(size * 1.3, size * 1.55, 32),
       new THREE.MeshBasicMaterial({ color: sColor, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
     ring.rotation.x = -Math.PI / 2;
-    mesh.add(ring);
-    IT_scene.add(mesh);
-    IT_meshMap[n.id] = mesh;
+    ring.position.y = 0.05;
+    g.add(ring);
+    IT_scene.add(g);
+    IT_meshMap[n.id] = g;
   });
+  // ④ 关系连线：从模型表面出发（不穿过中心、不悬空）
   IT_edgeGroup = new THREE.Group();
   edges.forEach(e => {
     const a = pos[e.source], b = pos[e.target];
     if (!a || !b) return;
     const meta = rm[e.type] || {};
     const color = meta.color || "#64748b";
+    const dir = new THREE.Vector3().subVectors(b, a).normalize();
+    const p1 = a.clone().addScaledVector(dir, nodeRadius[e.source] + 0.2);
+    const p2 = b.clone().addScaledVector(dir, -(nodeRadius[e.target] + 0.2));
     IT_edgeGroup.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([a, b]),
-      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.65 })));
-    const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), new THREE.MeshBasicMaterial({ color }));
+      new THREE.BufferGeometry().setFromPoints([p1, p2]),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 })));
+    const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), new THREE.MeshBasicMaterial({ color }));
     dot.position.copy(mid);
     IT_edgeGroup.add(dot);
   });
   IT_scene.add(IT_edgeGroup);
+  // ⑤ 实体名称标签
   IT_labelGroup = new THREE.Group();
   nodes.forEach(n => {
     const sp = IT_makeLabel(n.name, { color: n.color });
     sp.position.copy(pos[n.id]);
-    sp.position.y += 1.35;
+    sp.position.y += nodeRadius[n.id] + 0.95;
+    sp.scale.set(2.4, 0.52, 1);
     IT_labelGroup.add(sp);
   });
   IT_scene.add(IT_labelGroup);
     IT_renderLegend(topo);
-    if (IT_controls) IT_controls.target.set(0, 2, 0);
+    if (IT_controls) { IT_controls.target.set(0, 2.2, 0); IT_controls.update(); }
   } catch (e) { toast("3D渲染失败: " + e.message, "err"); console.error(e); }
+}
+// 各实体类型的模型尺寸/外形（贴近真实实体）
+function IT_nodeSize(type) {
+  switch (type) {
+    case "server": return 0.95;        // 机箱
+    case "application": return 0.82;   // 应用
+    case "database": return 0.82;      // 数据库桶
+    case "network": return 0.80;       // 交换机圆盘
+    case "middleware": return 0.75;    // 中间件棱柱
+    case "container": return 0.72;     // 容器盒
+    default: return 0.68;
+  }
+}
+function IT_modelGeo(type, size) {
+  switch (type) {
+    case "server": return new THREE.BoxGeometry(size * 1.9, size * 1.5, size * 1.2);
+    case "database": return new THREE.CylinderGeometry(size * 0.85, size * 1.05, size * 1.7, 16);
+    case "container": return new THREE.BoxGeometry(size * 1.5, size * 1.5, size * 1.5);
+    case "middleware": return new THREE.CylinderGeometry(size, size, size * 1.3, 6);
+    case "network": return new THREE.CylinderGeometry(size * 1.15, size * 1.15, size * 0.45, 20);
+    default: return new THREE.SphereGeometry(size, 24, 24);
+  }
+}
+function IT_nodeHalf(type, size) {
+  switch (type) {
+    case "server": return size * 0.75;
+    case "database": return size * 0.85;
+    case "container": return size * 0.75;
+    case "middleware": return size * 0.65;
+    case "network": return size * 0.225;
+    default: return size;
+  }
+}
+function IT_nodeRadius(type, size) {
+  // 模型水平外接半径（连线贴近模型表面用）
+  switch (type) {
+    case "server": return size * 1.15;
+    case "database": return size * 1.15;
+    case "container": return size * 1.15;
+    case "middleware": return size * 1.15;
+    case "network": return size * 1.25;
+    default: return size * 1.05;
+  }
 }
 function IT_makeLabel(text, meta) {
   const canvas = document.createElement("canvas");
@@ -845,7 +966,7 @@ function IT_renderLegend(topo) {
   el.innerHTML = `<div class="legend-row">${typeHtml}</div>
     <div class="legend-row">${relHtml}</div>
     <div class="legend-row">${stHtml}
-      <span style="margin-left:auto;color:var(--muted)">🖱 拖拽旋转 · 滚轮缩放 · 点击节点查看详情</span>
+      <span style="margin-left:auto;color:var(--muted)">🖱 拖拽 360° 旋转 · 滚轮缩放 · 点击节点查看详情</span>
     </div>`;
 }
 async function IT_selectNode(id) {
