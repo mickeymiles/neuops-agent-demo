@@ -35,12 +35,6 @@ from .devtools import DEV_TOOLS, _tool_result_summary, execute_dev_tool
 from .knowledge import search_knowledge
 from .mcp_tools import (
     ChatRequest,
-    tool_get_business_metric,
-    tool_query_alarm_info,
-    tool_query_change_record,
-    tool_query_cmdb_topology,
-    tool_run_auto_job,
-    tool_search_service_log,
 )
 
 router = APIRouter()
@@ -49,90 +43,28 @@ router = APIRouter()
 async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_action: str = None, history: list = None, conversation_id: str = None):
     """模拟 Agent 执行过程，产生 SSE 事件流"""
     
-    # 如果是审批确认后的执行
+    # 审批确认后的执行：AI 只研判不擅自变更，写/高危操作一律转人工执行
     if approved_action:
-        yield sse_event("tool_call", tool_run_auto_job(approved_action, "order-service"))
-        yield sse_event("agent_thought", "执行用户审批确认的自动化作业...")
-        await asyncio.sleep(1.0)
+        yield sse_event("agent_thought", f"已收到对操作「{approved_action}」的人工确认意愿。按权限规范，AI 不具备自动执行权限，该变更已登记为待办，请运维人员手动执行。")
         yield sse_event("agent_message", {
-            "content": f"""## ✅ 自动化作业执行完成
+            "content": f"""## ⚠️ 变更待人工执行
 
 | 项目 | 详情 |
 |------|------|
-| 作业类型 | {approved_action} |
-| 目标服务 | order-service |
-| 执行状态 | **成功** |
-| 执行耗时 | 4.2s |
+| 变更操作 | {approved_action} |
+| 执行方式 | **人工执行**（AI 无自动执行权限） |
+| 状态 | 已登记待办，待运维确认 |
 
-**操作结果**：已成功执行 `{approved_action}`，服务容器已重新启动。建议观察 5 分钟确认业务指标恢复正常。
-
-> 如需进一步排查，可输入新指令继续对话。""",
-            "actions": []
+**说明**：按权限安全规范，AI 数字员工不自动执行任何写操作/高危变更。请运维人员登录对应系统（9006/9007）手动执行该操作，完成后可在对话中继续跟进。""",
+            "actions": [
+                {"id": "open_ops", "label": "🔗 打开运维平台人工执行", "type": "link", "url": "http://127.0.0.1:9007/ops"}
+            ]
         })
         yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
         return
 
     # ──── 定向技能模式 ────
-    if mode == "skill" and selected_skill == "skill-3":
-        # 集群巡检 Skill
-        yield sse_event("agent_thought", """任务分析：
-1. 用户请求生成巡检报告，已选择「业务集群巡检报告生成Skill」
-2. 按预设流程执行：采集资源指标 → 查询告警信息 → 检查服务健康 → 汇总生成报告
-3. 执行模式：定向技能模式，严格按Skill预设步骤执行""")
-        await asyncio.sleep(0.8)
-        
-        # 步骤1：查询业务指标
-        yield sse_event("tool_call", tool_get_business_metric("payment-service"))
-        yield sse_event("agent_thought", "步骤1/3：已采集 payment-service 业务指标数据，QPS正常、延迟稳定。")
-        await asyncio.sleep(0.6)
-        
-        # 步骤2：查询告警
-        yield sse_event("tool_call", tool_query_alarm_info("payment-service"))
-        yield sse_event("agent_thought", "步骤2/3：已获取 payment-service 近期告警，发现1条P2级告警（Redis连接异常）。")
-        await asyncio.sleep(0.6)
-        
-        # 步骤3：查询变更
-        yield sse_event("tool_call", tool_query_change_record("payment-service"))
-        yield sse_event("agent_thought", "步骤3/3：已拉取近期变更记录，无直接关联的高风险变更。正在汇总生成巡检报告...")
-        await asyncio.sleep(1.2)
-        
-        yield sse_event("agent_message", {
-            "content": """## 📊 支付集群今日巡检报告
-
-**巡检时间**：2026-08-07 14:45  
-**巡检范围**：payment-service 集群  
-**整体评级**：⚠️ 注意（1项需关注）
-
----
-
-### 一、资源指标概览
-
-| 指标 | 当前值 | 趋势 | 状态 |
-|------|--------|------|------|
-| QPS | 105 req/s | → 稳定 | ✅ 正常 |
-| P99延迟 | 42ms | → 稳定 | ✅ 正常 |
-| 错误率 | 0.11% | ↗ 微升 | ✅ 正常 |
-| CPU使用率 | 40% | → 稳定 | ✅ 正常 |
-
-### 二、告警信息
-
-| 时间 | 级别 | 标题 | 状态 |
-|------|------|------|------|
-| 2026-08-06 23:15 | P2-警告 | 支付服务错误率上升（与Redis连接异常相关） | ⚠️ 持续监控 |
-
-### 三、近期变更
-
-- 2026-08-06 22:00：安全组规则更新（prod-payment子网），已执行完毕
-
-### 四、巡检结论
-
-支付集群整体运行稳定，P2级Redis告警已恢复但建议持续观察24小时。无高风险变更在途。
-
-> 📌 建议：将Redis集群健康检查加入每日巡检项。""",
-            "actions": []
-        })
-        yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
-        return
+    # skill-3（运维脚本与日志排障）等技能均已改为自由路由/通用循环（build_employee_tools + execute_configured_tool 真实执行 9007/9006）
 
     # ──── 采购清单比对 Skill（真实调用9006合同比对系统）────
     if mode == "skill" and selected_skill == "skill-10":
@@ -492,15 +424,15 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
             yield sse_event("agent_thought", "💭 主智能体思考：" + rmsg["reasoning_content"])
 
     if employee == "emp-004":
-        yield sse_event("route", {"employee": "emp-004", "name": "经营业务专家", "reason": route_reason or "经营业务类任务"})
-        yield sse_event("agent_thought", f"""✅ 意图识别完成：路由到【经营业务专家 emp-004】
+        yield sse_event("route", {"employee": "emp-004", "name": "经营业务分析专家", "reason": route_reason or "经营业务类任务"})
+        yield sse_event("agent_thought", f"""✅ 意图识别完成：路由到【经营业务分析专家 emp-004】
 理由：{route_reason or '经营业务类任务'}""")
 
-        emp_system = build_employee_prompt("emp-004") + build_rag_context(query, "emp-004", conversation_id=conversation_id, employee_name="经营业务专家")
+        emp_system = build_employee_prompt("emp-004") + build_rag_context(query, "emp-004", conversation_id=conversation_id, employee_name="经营业务分析专家")
         messages = [{"role": "system", "content": emp_system}] + (history or []) + [{"role": "user", "content": query}]
         emp_tools = build_employee_tools("emp-004")
         exec_ctx = {"conversation_id": conversation_id, "stage": "agent_exec",
-                    "employee_id": "emp-004", "employee_name": "经营业务专家"}
+                    "employee_id": "emp-004", "employee_name": "经营业务分析专家"}
 
         for _round in range(15):
             resp = await deepseek_chat(messages, tools=emp_tools, temperature=0.2, max_tokens=8000, model="deepseek-chat",
@@ -557,7 +489,7 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
                 resp = await deepseek_chat(messages, tools=None, temperature=0.2, max_tokens=4000,
                                            model="deepseek-chat",
                                            trace_ctx={"conversation_id": conversation_id, "stage": "agent_exec_fallback",
-                                                      "employee_id": "emp-004", "employee_name": "经营业务专家"},
+                                                      "employee_id": "emp-004", "employee_name": "经营业务分析专家"},
                                            round_no=_round + 1)
                 if "error" not in resp:
                     fallback_content = resp["choices"][0]["message"].get("content", "")
@@ -581,31 +513,50 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
         yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
         return
 
-    # ── 路由到研发专家 emp-005（直接修改 9006 系统代码）──
+    # ── 路由到业务平台编辑辅助专家 emp-005（合同比对 + 直接修改 9006 系统代码）──
     if employee == "emp-005":
-        yield sse_event("route", {"employee": "emp-005", "name": "研发专家", "reason": route_reason or "系统研发类任务"})
-        yield sse_event("agent_thought", f"""✅ 意图识别完成：路由到【研发专家 emp-005】
-理由：{route_reason or '系统研发类任务'}""")
+        yield sse_event("route", {"employee": "emp-005", "name": "业务平台编辑辅助专家", "reason": route_reason or "平台编辑/研发类任务"})
+        yield sse_event("agent_thought", f"""✅ 意图识别完成：路由到【业务平台编辑辅助专家 emp-005】
+理由：{route_reason or '平台编辑/研发类任务'}""")
 
-        emp_system = ("你是「研发专家 emp-005」数字员工，负责按用户需求修改 9006 经营业务展示系统的代码。"
-                      "你有以下文件工具，直接读写 9006 项目（/home/ubuntu/contract-compare）的真实代码："
+        emp_system = ("你是「业务平台编辑辅助专家 emp-005」数字员工，负责辅助经营业务平台的解析比对与功能开发。"
+                      "你有两类真实能力：\n"
+                      "【A. 合同比对（9006 真实数据）】query_contracts 查合同列表；get_comparison_results 查比对结果（match_type/是否异常/是否缺项）；"
+                      "get_contract_stats 查比对统计；export_report 导出比对报告。用户询问合同比对结果/差异分析时使用。\n"
+                      "【B. 平台代码研发（9006 真实代码）】以下工具直接读写 9006 项目（/home/ubuntu/contract-compare）的真实代码："
                       "1. list_project_files：列出项目代码文件（backend后端/frontend前端/docs文档），先了解结构；"
                       "2. search_code：按关键词搜索代码内容（query 必填，可加 file_glob 过滤文件名），定位相关逻辑所在文件与行；"
                       "3. read_code_file：读取指定文件内容（带行号，path 相对路径，可用 offset/limit 分页）；"
                       "4. write_new_file：新建文件（path 相对路径 + content 完整内容，仅当文件不存在时可用）；"
                       "5. edit_code_file：局部替换修改（old_string 替换为 new_string，支持模糊匹配容忍空白差异，改前自动备份）；"
-                      "6. run_shell：执行白名单验证命令（git status/diff/log 查看改动、pytest 跑测试、ls 看目录）。"
-                      "工作方式：先 list_project_files 了解结构 → search_code 定位相关逻辑 → read_code_file 读取相关文件理解现状 → 说明你的改造思路 → edit_code_file 修改（新建用 write_new_file）→ run_shell 验证改动（git diff 看改动、跑测试）→ 总结。"
+                      "6. run_shell：执行白名单验证命令（git status/diff/log 查看改动、pytest 跑测试、ls 看目录）。\n"
+                      "工作方式：先判断用户需求属于合同比对还是平台开发；比对类直接查9006真实结果做差异分析；"
+                      "开发类先 list_project_files 了解结构 → search_code 定位相关逻辑 → read_code_file 读取相关文件理解现状 → 说明改造思路 → edit_code_file 修改（新建用 write_new_file）→ run_shell 验证（git diff 看改动、跑测试）→ 总结。"
                       "要求：改动克制，只改必要之处，不重写整个文件；old_string 尽量与原文一致且唯一；"
                       "改完输出改了什么文件、改了什么、为什么这么改，并跑 run_shell 验证改动结果。"
                       "禁止：不越界访问项目目录之外的文件；不编造「已修改」——只有 edit_code_file 返回 success 才算真的改了。") \
-                      + build_rag_context(query, "emp-005", conversation_id=conversation_id, employee_name="研发专家")
+                      + build_rag_context(query, "emp-005", conversation_id=conversation_id, employee_name="业务平台编辑辅助专家")
         messages = [{"role": "system", "content": emp_system}] + (history or []) + [{"role": "user", "content": query}]
         exec_ctx = {"conversation_id": conversation_id, "stage": "agent_exec",
-                    "employee_id": "emp-005", "employee_name": "研发专家"}
+                    "employee_id": "emp-005", "employee_name": "业务平台编辑辅助专家"}
+        _BIZ_TOOLS_005 = ["query_contracts", "get_comparison_results", "get_contract_stats", "export_report"]
+        _EMP005_TOOLS = DEV_TOOLS + [
+            {"type": "function", "function": {"name": "query_contracts",
+                                              "description": "查询9006合同比对系统的合同列表（真实数据）",
+                                              "parameters": {"type": "object", "properties": {"keyword": {"type": "string", "description": "合同关键字"}}, "required": []}}},
+            {"type": "function", "function": {"name": "get_comparison_results",
+                                              "description": "查询指定合同的比对结果明细（match_type/异常/缺项）",
+                                              "parameters": {"type": "object", "properties": {"contract_id": {"type": "string", "description": "合同ID"}, "page": {"type": "integer", "description": "页码"}}, "required": ["contract_id"]}}},
+            {"type": "function", "function": {"name": "get_contract_stats",
+                                              "description": "查询指定合同的比对统计（完全匹配/异常/待采购/供应商增项）",
+                                              "parameters": {"type": "object", "properties": {"contract_id": {"type": "string", "description": "合同ID"}}, "required": ["contract_id"]}}},
+            {"type": "function", "function": {"name": "export_report",
+                                              "description": "导出指定合同的比对报告",
+                                              "parameters": {"type": "object", "properties": {"contract_id": {"type": "string", "description": "合同ID"}}, "required": ["contract_id"]}}},
+        ]
 
         for _round in range(20):
-            resp = await deepseek_chat(messages, tools=DEV_TOOLS, temperature=0.2, max_tokens=8000, model="deepseek-chat",
+            resp = await deepseek_chat(messages, tools=_EMP005_TOOLS, temperature=0.2, max_tokens=8000, model="deepseek-chat",
                                        trace_ctx=exec_ctx, round_no=_round)
             if "error" in resp:
                 yield sse_event("agent_thought", "⚠️ emp-005 调用失败：" + str(resp["error"]))
@@ -629,7 +580,10 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
                     yield sse_event("tool_call", {"tool": fn, **fargs})
                     _t0 = time.time()
                     try:
-                        result = await execute_dev_tool(fn, fargs)
+                        if fn in _BIZ_TOOLS_005:
+                            result = await execute_configured_tool(fn, fargs)
+                        else:
+                            result = await execute_dev_tool(fn, fargs)
                         _record_tool_call(exec_ctx, _round, fn, fargs, result=result,
                                           latency_ms=(time.time() - _t0) * 1000)
                     except Exception as _e:
@@ -659,7 +613,7 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
                 resp = await deepseek_chat(messages, tools=None, temperature=0.2, max_tokens=4000,
                                            model="deepseek-chat",
                                            trace_ctx={"conversation_id": conversation_id, "stage": "agent_exec_fallback",
-                                                      "employee_id": "emp-005", "employee_name": "研发专家"},
+                                                      "employee_id": "emp-005", "employee_name": "业务平台编辑辅助专家"},
                                            round_no=_round + 1)
                 if "error" not in resp:
                     fallback_content = resp["choices"][0]["message"].get("content", "")
@@ -683,113 +637,19 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
         yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
         return
 
-    # ── 路由到运维助手 emp-001（保留原有运维排查流程）──
-    yield sse_event("route", {"employee": "emp-001", "name": "运维助手", "reason": route_reason or "运维类任务"})
-    yield sse_event("agent_thought", f"""✅ 意图识别完成：路由到【运维助手 emp-001】
-理由：{route_reason or '运维类任务'}""")
-    yield sse_event("agent_thought", """任务分解：
-1. 用户反馈订单服务延迟持续上涨，需要进行全链路排查
-2. 匹配可用Skill：服务故障根因分析Skill（skill-1）高度匹配
-3. 排查路径：业务指标 → 异常日志 → CMDB拓扑 → 近期变更 → 综合分析
-4. 已启用Skills：skill-1, skill-2, skill-3
-
-开始执行多维度排查...""")
-    await asyncio.sleep(1.0)
-
-    # 步骤1：查询业务指标
-    yield sse_event("tool_call", tool_get_business_metric("order-service"))
-    await asyncio.sleep(0.8)
-    yield sse_event("agent_thought", """步骤1完成：订单服务指标异常确认
-- P99延迟从 45ms → 420ms（30分钟内，增幅 833%）
-- 错误率从 0.1% → 4.8%
-- CPU使用率 92%，接近瓶颈
-→ 确认真实故障，非瞬时抖动，下一步排查日志定位异常原因""")
-    await asyncio.sleep(0.6)
-
-    # 步骤2：检索异常日志
-    yield sse_event("tool_call", tool_search_service_log("order-service", "ERROR"))
-    await asyncio.sleep(0.8)
-    yield sse_event("agent_thought", """步骤2完成：日志分析发现关键线索
-- 14:32:15 数据库连接超时（db-master:3306）
-- 14:32:18 连接池耗尽（active=150/150）
-- 14:32:22 熔断器打开（payment-service不可达）
-- 14:32:25 慢查询 8.2s
-→ 初步判断：数据库连接池是核心瓶颈，引发连锁故障""")
-    await asyncio.sleep(0.6)
-
-    # 步骤3：查询CMDB拓扑
-    yield sse_event("tool_call", tool_query_cmdb_topology("order-service"))
-    await asyncio.sleep(0.8)
-    yield sse_event("agent_thought", """步骤3完成：CMDB拓扑分析
-- order-service 依赖 payment-service, user-service, inventory-service
-- 下游 payment-service 同时出现Redis连接异常告警
-- 数据库 db-master.neuops.internal 为单点
-→ 依赖链路存在级联风险，需确认变更是否引入""")
-    await asyncio.sleep(0.6)
-
-    # 步骤4：查询近期变更
-    yield sse_event("tool_call", tool_query_change_record("order-service"))
-    await asyncio.sleep(0.8)
-    yield sse_event("agent_thought", """步骤4完成：变更关联分析
-- CHG-20260807-001（今天10:00）：db-master连接池 max_connections 200→150
-  ⚠️ 该变更缩小了连接池上限，与当前连接池耗尽直接相关！
-- CHG-20260807-002（今天08:30）：order-service v3.2.1灰度发布（新增批量查询接口）
-  新增接口可能增加DB连接需求
-→ 根因定位：连接池缩容 + 新接口增加负载 = 连接池耗尽""")
-    await asyncio.sleep(1.2)
-
-    # 最终结论
-    yield sse_event("agent_message", {
-        "content": """## 🔍 订单服务延迟故障根因分析报告
-
-**故障时间**：2026-08-07 14:32 起  
-**影响服务**：order-service（核心）→ payment-service（级联）  
-**故障等级**：P1-严重
-
----
-
-### 📌 根因定位
-
-| 层级 | 发现 | 严重度 |
-|------|------|--------|
-| 🔴 直接原因 | 数据库连接池耗尽（150/150） | 严重 |
-| 🟠 触发因素 | 今日 10:00 配置变更：max_connections 200→150 | 高 |
-| 🟡 加剧因素 | 今日 08:30 v3.2.1 发布新增批量查询接口，DB连接需求增加 | 中 |
-| 🟡 级联影响 | payment-service 熔断（因 order-service 超时请求积压） | 中 |
-
----
-
-### 🔗 故障时序图
-
-```
-10:00  max_connections 200→150 变更执行
-       ↓
-08:30  v3.2.1 灰度发布（新接口上线）
-       ↓
-14:32  连接池逐渐饱和 → 连接超时
-       ↓
-14:32  连接池耗尽，新请求被拒
-       ↓
-14:32  熔断器触发，payment-service 调用失败
-       ↓
-14:33  P1 告警触发
-```
-
----
-
-### 💡 建议措施
-
-1. **立即**：回滚 max_connections 配置至 200（或更高）
-2. **短期**：审查 v3.2.1 批量查询接口的DB连接使用模式，增加连接复用
-3. **长期**：引入连接池动态伸缩策略 + 慢查询监控自动熔断""",
-        "actions": [
-            {"type": "danger", "id": "restart_service", "label": "🔄 回滚连接池配置（恢复 max_connections=200）", "action": "db_pool_rollback"},
-            {"type": "link", "id": "view_metrics", "label": "📊 查看完整指标", "url": "/ops"},
-            {"type": "link", "id": "view_topology", "label": "🔗 查看拓扑详情", "url": "/ops#ontology"},
-        ]
-    })
-    
-    yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
+    # ── 路由到运维/开发类数字员工（emp-001 运维巡检 / emp-002 告警根因 / emp-003 运维开发助手）──
+    #    全部走通用真实循环：build_employee_prompt + build_employee_tools + execute_configured_tool
+    #    数据源：9007 一体化监控平台（实体/指标/日志/告警/事件/AI自监控），全部只读研判
+    _emp_meta = {
+        "emp-001": ("运维巡检专家", "http://127.0.0.1:9007/ops"),
+        "emp-002": ("告警根因分析专家", "http://127.0.0.1:9007/ops"),
+        "emp-003": ("运维开发助手", "http://127.0.0.1:9007/ops"),
+    }
+    emp_name, emp_url = _emp_meta.get(employee, (employee, "http://127.0.0.1:9007"))
+    async for ev in _run_employee_general_loop(employee, emp_name, query, history, conversation_id,
+                                               route_reason, open_url=emp_url):
+        yield ev
+    return
 
 
 def sse_event(event: str, data):
@@ -1204,6 +1064,102 @@ def build_route_system_prompt() -> str:
     lines = "；".join(f"{e['id']} {e['name']}（{e.get('desc','')[:80]}）" for e in emps)
     return ("你是 NeuOps Agent 主智能体（调度中枢）。判断用户需求属于哪类业务，路由到对应数字员工。"
             f"数字员工：{lines}。务必调用 route_to_employee 工具完成路由。")
+
+
+async def _run_employee_general_loop(employee_id: str, employee_name: str, query: str, history: list,
+                                     conversation_id: str, route_reason: str = "",
+                                     open_url: str = "http://127.0.0.1:9007"):
+    """通用数字员工执行循环（真实执行）：
+    基于 build_employee_prompt（DB员工+技能+工具 动态提示词）+ build_employee_tools（DB动态工具）
+    + execute_configured_tool（按 mcp_servers 真实转发 9007/9006），最多 15 轮工具调用。"""
+    yield sse_event("route", {"employee": employee_id, "name": employee_name, "reason": route_reason or f"{employee_name}任务"})
+    yield sse_event("agent_thought", f"✅ 意图识别完成：路由到【{employee_name} {employee_id}】\n理由：{route_reason or f'{employee_name}任务'}")
+
+    emp_system = build_employee_prompt(employee_id) + build_rag_context(query, employee_id,
+                                                                        conversation_id=conversation_id,
+                                                                        employee_name=employee_name)
+    messages = [{"role": "system", "content": emp_system}] + (history or []) + [{"role": "user", "content": query}]
+    emp_tools = build_employee_tools(employee_id)
+    exec_ctx = {"conversation_id": conversation_id, "stage": "agent_exec",
+                "employee_id": employee_id, "employee_name": employee_name}
+
+    for _round in range(15):
+        resp = await deepseek_chat(messages, tools=emp_tools, temperature=0.2, max_tokens=8000,
+                                   model="deepseek-chat", trace_ctx=exec_ctx, round_no=_round)
+        if "error" in resp:
+            yield sse_event("agent_thought", f"⚠️ {employee_id} 调用失败：" + str(resp["error"]))
+            break
+        msg = resp["choices"][0]["message"]
+        reasoning = msg.get("reasoning_content", "")
+        content = msg.get("content", "")
+        tool_calls = msg.get("tool_calls")
+        if reasoning:
+            yield sse_event("agent_thought", f"💭 {employee_id} 思考：" + reasoning)
+        elif content and tool_calls:
+            yield sse_event("agent_thought", f"💭 {employee_id} 计划：" + content)
+        if tool_calls:
+            messages.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
+            for tc in tool_calls:
+                fn = tc["function"]["name"]
+                try:
+                    fargs = json.loads(tc["function"]["arguments"])
+                except Exception:
+                    fargs = {}
+                yield sse_event("tool_call", {"tool": fn, **fargs})
+                _t0 = time.time()
+                try:
+                    result = await execute_configured_tool(fn, fargs)
+                    _record_tool_call(exec_ctx, _round, fn, fargs, result=result,
+                                      latency_ms=(time.time() - _t0) * 1000)
+                except Exception as _e:
+                    _record_tool_call(exec_ctx, _round, fn, fargs, success=False, error=str(_e),
+                                      latency_ms=(time.time() - _t0) * 1000)
+                    result = {"error": str(_e)}
+                yield sse_event("tool_result", _tool_result_summary(fn, result))
+                messages.append({"role": "tool", "tool_call_id": tc["id"],
+                                 "content": json.dumps(result, ensure_ascii=False)})
+        else:
+            if content:
+                yield sse_event("agent_message", {"content": content, "actions": [
+                    {"id": "open_ops", "label": "🔗 打开监控平台查看详情", "type": "link", "url": open_url}
+                ]})
+            else:
+                yield sse_event("agent_message", {"content": """## ⚠️ 未生成有效结论
+
+模型未返回最终答案，请重试。"""})
+            break
+    else:
+        # 达到轮次上限但未收敛：基于已收集的工具结果输出兜底结论
+        yield sse_event("agent_thought", "⚠️ 已进行多轮工具调用，现根据已收集的结果生成最终结论...")
+        messages.append({"role": "user", "content": "你已通过多轮工具调用收集了大量数据，但尚未输出最终结论。"
+                                                    "现在请不要再调用任何工具，直接基于以上所有工具返回的真实结果，"
+                                                    "用 Markdown 中文输出最终分析结论（含数据表格与简短结论）。"})
+        try:
+            resp = await deepseek_chat(messages, tools=None, temperature=0.2, max_tokens=4000,
+                                       model="deepseek-chat",
+                                       trace_ctx={"conversation_id": conversation_id, "stage": "agent_exec_fallback",
+                                                  "employee_id": employee_id, "employee_name": employee_name},
+                                       round_no=_round + 1)
+            if "error" not in resp:
+                fallback_content = resp["choices"][0]["message"].get("content", "")
+                if fallback_content:
+                    yield sse_event("agent_message", {"content": fallback_content, "actions": [
+                        {"id": "open_ops", "label": "🔗 打开监控平台查看详情", "type": "link", "url": open_url}
+                    ]})
+                else:
+                    yield sse_event("agent_message", {"content": """## ⚠️ 工具调用轮次超限
+
+已收集多轮工具调用结果，但模型未能整理出最终结论。可查看上方工具调用记录，或简化需求后重试。"""})
+            else:
+                yield sse_event("agent_message", {"content": """## ⚠️ 工具调用轮次超限
+
+已完成多轮工具调用但未收敛，请简化需求重试。"""})
+        except Exception as _e:
+            yield sse_event("agent_message", {"content": """## ⚠️ 工具调用轮次超限
+
+已完成多轮工具调用但未收敛，请简化需求重试。"""})
+
+    yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
 
 
 async def execute_biz_tool(name: str, args: dict) -> dict:

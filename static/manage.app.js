@@ -100,7 +100,7 @@ const S = {
   employees: [],
   empDetail: null,
   skills: [],
-  currentSkillTab: 'market',
+  currentSkillTab: 'all',
   skillKeyword: '',
 };
 
@@ -434,8 +434,8 @@ async function renderSkillsPage() {
   try {
     const r = await fetch('/api/skills').then(x => x.json());
     S.skills = r.skills || [];
-    const tab = S.currentSkillTab;
-    const list = S.skills.filter(s => s.category === tab);
+    const tab = S.currentSkillTab || 'all';
+    const list = tab === 'all' ? S.skills : S.skills.filter(s => s.category === tab);
     const kw = (S.skillKeyword || '').toLowerCase();
     const filtered = list.filter(s => !kw || (s.name || '').toLowerCase().includes(kw) || (s.desc || '').toLowerCase().includes(kw));
     const groups = groupByBizGroup(filtered, s => s.group);

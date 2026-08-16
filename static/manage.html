@@ -143,7 +143,8 @@
           <input type="text" id="skillSearchInput" placeholder="搜索技能名称..." oninput="searchSkills(this.value)">
         </div>
         <div class="tabs" id="skillTabs">
-          <button class="tab-btn active" data-tab="market" onclick="switchSkillTab('market')">技能市场</button>
+          <button class="tab-btn active" data-tab="all" onclick="switchSkillTab('all')">全部</button>
+          <button class="tab-btn" data-tab="official" onclick="switchSkillTab('official')">官方技能</button>
           <button class="tab-btn" data-tab="custom" onclick="switchSkillTab('custom')">自定义技能</button>
         </div>
         <div class="skill-card-grid" id="skillCardGrid"></div>

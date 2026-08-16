@@ -1538,13 +1538,13 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
           <div class="welcome-desc">关于告警、拓扑、日志、指标、链路等问题，随时提问。<br>我的回答由 AI 生成，仅作为给你的参考。</div>
 
           <div class="quick-actions">
-            <button class="qa-btn" onclick="fillAndSend('查询订单服务当前QPS和延迟指标')">
+            <button class="qa-btn" onclick="fillAndSend('查询服务器CPU和内存使用率最高的实体')">
               <span class="qa-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12" y="8" width="3" height="10" rx="0.5"/><rect x="17" y="5" width="3" height="13" rx="0.5"/></svg></span>智能查数
             </button>
-            <button class="qa-btn" onclick="fillAndSend('帮我排查订单服务最近的问题')">
+            <button class="qa-btn" onclick="fillAndSend('分析当前未恢复的告警，聚合降噪并定位根因')">
               <span class="qa-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>快速调查<span class="qa-beta">Beta</span>
             </button>
-            <button class="qa-btn" onclick="fillAndSend('对订单服务进行全链路深度分析，包括指标、日志、拓扑、变更')">
+            <button class="qa-btn" onclick="fillAndSend('执行一次全域巡检，检查基础设施和AI数字员工状态')">
               <span class="qa-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v.55A3.5 3.5 0 0 0 4 8.5c0 .64.17 1.24.47 1.75A3.5 3.5 0 0 0 3 13.5c0 .64.17 1.24.47 1.75A3.5 3.5 0 0 0 7 18.95v.55a2.5 2.5 0 0 0 5 0V4.5A2.5 2.5 0 0 0 9.5 2z"/><path d="M14.5 2A2.5 2.5 0 0 1 17 4.5v.55A3.5 3.5 0 0 1 20 8.5c0 .64-.17 1.24-.47 1.75A3.5 3.5 0 0 1 21 13.5c0 .64-.17 1.24-.47 1.75A3.5 3.5 0 0 1 17 18.95v.55a2.5 2.5 0 0 1-5 0V4.5A2.5 2.5 0 0 1 14.5 2z"/></svg></span>深度调查<span class="qa-beta">Beta</span>
             </button>
             <button class="qa-btn" onclick="openDocModal()">
@@ -1555,14 +1555,14 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
           <!-- Recommended -->
           <div class="recommended">
             <div class="rec-title">推荐问题</div>
-            <div class="rec-item" onclick="fillAndSend('订单服务延迟持续上涨，完成全链路排查，分析潜在根因')">
-              订单服务延迟持续上涨，完成全链路排查，分析潜在根因
+            <div class="rec-item" onclick="fillAndSend('执行一次全域巡检，检查基础设施和AI数字员工状态')">
+              执行一次全域巡检，检查基础设施和AI数字员工状态
             </div>
-            <div class="rec-item" onclick="fillAndSend('生成支付服务今日巡检报告')">
-              生成支付服务今日巡检报告
+            <div class="rec-item" onclick="fillAndSend('分析当前未恢复的告警，聚合降噪并定位根因')">
+              分析当前未恢复的告警，聚合降噪并定位根因
             </div>
-            <div class="rec-item" onclick="fillAndSend('查询订单服务的上下游依赖关系，输出拓扑结构')">
-              查询订单服务的上下游依赖关系，输出拓扑结构
+            <div class="rec-item" onclick="fillAndSend('检索最近系统错误日志，定位异常原因')">
+              检索最近系统错误日志，定位异常原因
             </div>
           </div>
         </div>
@@ -3291,33 +3291,34 @@ function openDocModal() {
     </ul>
     <p>每条任务含级别（高 / 中）、标题、通知时间、来源编号。右上角「历史处理」按钮可切换到历史已处理视图（含处理时间与结果）。</p>
 
-    <h3>七、Mock MCP 原子工具</h3>
+    <h3>七、真实 MCP 工具（9007 运维 / 9006 经营，全部只读）</h3>
     <table>
       <tr><th>工具</th><th>用途</th></tr>
-      <tr><td>get_business_metric</td><td>查询业务 QPS、延迟指标</td></tr>
-      <tr><td>search_service_log</td><td>检索服务异常日志</td></tr>
-      <tr><td>query_cmdb_topology</td><td>查询应用资产依赖拓扑</td></tr>
-      <tr><td>query_change_record</td><td>查询近期变更工单</td></tr>
-      <tr><td>run_auto_job</td><td>执行自动化作业（重启、配置重载）</td></tr>
-      <tr><td>query_alarm_info</td><td>查询历史告警信息</td></tr>
+      <tr><td>ops_overview / ops_entities</td><td>运维全域概览 / 实体清单（9007）</td></tr>
+      <tr><td>ops_metrics</td><td>监控时序指标：cpu_usage/mem_usage/disk_usage/load1（9007）</td></tr>
+      <tr><td>ops_logs</td><td>系统日志检索（9007 真实采集）</td></tr>
+      <tr><td>ops_incidents / ops_alerts_aggregate</td><td>故障事件 / 告警聚合统计（9007）</td></tr>
+      <tr><td>monitor_agents / monitor_alerts</td><td>AI 数字员工运行状态 / 异常告警（9007 自监控）</td></tr>
+      <tr><td>long_tasks</td><td>长任务队列（9007 自监控）</td></tr>
+      <tr><td>query_contracts / get_comparison_results</td><td>合同比对（9006 经营）</td></tr>
+      <tr><td>get_etl_metrics / query_ontology</td><td>经营指标 / 原始明细探查（9006）</td></tr>
+      <tr><td>list_project_files / edit_code_file</td><td>9006 平台代码研发（只读/改前备份）</td></tr>
     </table>
 
     <h3>八、标准业务演示流程</h3>
-    <h4>流程 1：全链路故障排查（自由 Agent）</h4>
+    <h4>流程 1：全域巡检（运维巡检专家 emp-001）</h4>
     <ol>
-      <li>输入：订单服务最近延迟持续上涨，完成全链路排查，分析潜在根因</li>
-      <li>Agent 自动选用「服务故障根因分析 Skill」</li>
-      <li>依次调用：业务指标 → 异常日志 → CMDB 拓扑 → 变更记录</li>
-      <li>实时渲染思考过程与工具调用记录</li>
-      <li>输出综合分析结论 + 指标卡片 +「重启实例进行验证」按钮</li>
-      <li>点击按钮 → 审批弹窗 → 确认后执行自动化作业</li>
+      <li>输入：执行一次全域巡检，检查基础设施和AI数字员工状态</li>
+      <li>主智能体路由到「运维巡检专家」</li>
+      <li>依次调用：ops_overview → ops_entities → ops_metrics → monitor_agents → long_tasks</li>
+      <li>实时渲染思考过程与工具调用记录（9007 真实数据）</li>
+      <li>输出风险分级巡检报告</li>
     </ol>
-    <h4>流程 2：标准化巡检（定向技能）</h4>
+    <h4>流程 2：告警根因分析（告警根因分析专家 emp-002）</h4>
     <ol>
-      <li>启用「业务集群巡检 Skill」</li>
-      <li>输入：生成支付集群今日巡检报告</li>
-      <li>Agent 按 Skill 预设流程采集资源指标、告警信息</li>
-      <li>输出结构化巡检 Markdown 报告</li>
+      <li>输入：分析当前未恢复的告警，聚合降噪并定位根因</li>
+      <li>调用：ops_alerts_aggregate → ops_incidents → ops_logs（error）→ ops_metrics</li>
+      <li>输出根因报告与处置建议（所有处置人工确认后执行）</li>
     </ol>
 
     <h3>九、功能边界</h3>

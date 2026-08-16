@@ -15,7 +15,7 @@ DEFAULT_ALERT_RULES = [
     {"id": "rule-004", "name": "单会话 Token 超限", "metric": "conv_overrun", "target": "", "threshold": 50000.0,
      "window_min": 60, "severity": "info", "desc": "单个会话近 60 分钟 Token 超过 5 万"},
     {"id": "rule-005", "name": "智能体长期不活跃", "metric": "agent_idle", "target": "emp-001", "threshold": 2.0,
-     "window_min": 60, "severity": "warning", "desc": "告警分析专家 2 天无调用"},
+     "window_min": 60, "severity": "warning", "desc": "运维巡检专家 2 天无调用"},
 
     # ── 统一探针真实系统指标告警（ops 系列）──
     {"id": "rule-ops-001", "name": "服务器 CPU 使用率过高", "metric": "cpu_percent", "target": "server", "threshold": 90.0,

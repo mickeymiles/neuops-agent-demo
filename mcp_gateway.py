@@ -34,6 +34,9 @@ print(f"[MCP Gateway] 数据源: {DATA_SOURCE}")
 # 经营业务数据源（9006 经营分析系统：原子本体 MCP + 指标数据集 MCP）
 BIZ_9006_BASE = os.getenv("BIZ_9006_BASE", "http://127.0.0.1:9006")
 
+# 运维监控数据源（9007 一体化监控平台：实体/指标/日志/告警/事件 + AI 自监控）
+NEUOPS_BASE = os.getenv("NEUOPS_BASE", "http://127.0.0.1:9007")
+
 app = FastAPI(title="NeuOps MCP Tool Gateway", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -43,11 +46,13 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # ═══════════════════════════════════════════
 
 def tool_response(tool_name: str, success: bool, data: dict, **extra) -> dict:
+    # source 参数用于标记真实数据源（9006/9007），优先于全局 DATA_SOURCE
+    ds = extra.pop("source", DATA_SOURCE)
     return {
         "tool": tool_name,
         "success": success,
         "timestamp": datetime.now().isoformat(),
-        "data_source": DATA_SOURCE,
+        "data_source": ds,
         "data": data,
         **extra,
     }
@@ -446,6 +451,131 @@ async def export_report(
                              {"error": f"无法连接9006经营分析系统: {e}"})
     return tool_response("export_report", True, data,
                          source="9006", cid=cid)
+
+
+# ═══════════════════════════════════════════
+# 运维域：9007 一体化监控平台（只读，转发 9007 真实数据）
+#   - 基础设施巡检：实体/指标/拓扑
+#   - 告警与事件：告警聚合/事件/规则
+#   - 日志检索：统一日志查询
+#   - AI 自监控：智能体状态/时序/长任务
+# ═══════════════════════════════════════════
+
+async def _neuops_forward(tool_name: str, path: str, params: dict = None) -> dict:
+    """统一转发 9007 一体化监控平台（全部只读）"""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(f"{NEUOPS_BASE}{path}", params=params or {})
+            data = r.json()
+    except Exception as e:
+        return tool_response(tool_name, False,
+                             {"error": f"无法连接9007一体化监控平台: {e}"})
+    return tool_response(tool_name, True, data, source="9007")
+
+
+@app.post("/tools/ops_overview")
+@app.get("/tools/ops_overview")
+async def ops_overview():
+    """获取运维全域概览（实体/指标/告警/事件统计，只读，转发 9007）"""
+    return await _neuops_forward("ops_overview", "/api/ops/overview")
+
+
+@app.post("/tools/ops_entities")
+@app.get("/tools/ops_entities")
+async def ops_entities(type: str = Query(default="", description="实体类型：server/database/network/container/middleware/application")):
+    """查询运维实体清单（服务器/数据库/网络等，只读，转发 9007）"""
+    return await _neuops_forward("ops_entities", "/api/ops/entities", {"type": type})
+
+
+@app.post("/tools/ops_topology")
+@app.get("/tools/ops_topology")
+async def ops_topology():
+    """获取运维实体拓扑关系（只读，转发 9007）"""
+    return await _neuops_forward("ops_topology", "/api/ops/topology")
+
+
+@app.post("/tools/ops_metrics")
+@app.get("/tools/ops_metrics")
+async def ops_metrics(
+    entity_type: str = Query(default="", description="实体类型"),
+    entity_name: str = Query(default="", description="实体名"),
+    metric: str = Query(default="", description="指标名：cpu_usage/mem_usage/disk_usage/load1/tcp_conns等"),
+    minutes: int = Query(default=10, ge=1, le=1440, description="时间窗（分钟）"),
+):
+    """查询运维监控时序指标（真实探针采集，只读，转发 9007）"""
+    return await _neuops_forward("ops_metrics", "/api/ops/metrics",
+                                 {"entity_type": entity_type, "entity_name": entity_name,
+                                  "metric": metric, "minutes": minutes})
+
+
+@app.post("/tools/ops_settings")
+@app.get("/tools/ops_settings")
+async def ops_settings():
+    """获取监控平台配置项（阈值/探针/自愈开关等，只读，转发 9007）"""
+    return await _neuops_forward("ops_settings", "/api/ops/settings")
+
+
+@app.post("/tools/ops_logs")
+@app.get("/tools/ops_logs")
+async def ops_logs(
+    source: str = Query(default="", description="日志来源"),
+    level: str = Query(default="", description="级别：error/warn/info/debug"),
+    minutes: int = Query(default=10, ge=1, le=1440, description="时间窗（分钟）"),
+    limit: int = Query(default=50, ge=1, le=200, description="条数"),
+):
+    """检索系统日志（真实日志采集，只读，转发 9007）"""
+    return await _neuops_forward("ops_logs", "/api/ops/logs",
+                                 {"source": source, "level": level,
+                                  "minutes": minutes, "limit": limit})
+
+
+@app.post("/tools/ops_incidents")
+@app.get("/tools/ops_incidents")
+async def ops_incidents(state: str = Query(default="", description="按状态过滤：detected/repairing/verifying/recovered/failed/manual")):
+    """查询故障事件列表（真实事件，只读，转发 9007）"""
+    return await _neuops_forward("ops_incidents", "/api/ops/incidents", {"state": state})
+
+
+@app.post("/tools/ops_alerts_aggregate")
+@app.get("/tools/ops_alerts_aggregate")
+async def ops_alerts_aggregate(status: str = Query(default="firing", description="告警状态：firing/resolved/all")):
+    """查询告警聚合统计（去重降噪后的告警，只读，转发 9007）"""
+    return await _neuops_forward("ops_alerts_aggregate", "/api/ops/alerts/aggregate", {"status": status})
+
+
+@app.post("/tools/monitor_agents")
+@app.get("/tools/monitor_agents")
+async def monitor_agents():
+    """查询全部数字员工（智能体）运行状态（AI自监控，只读，转发 9007）"""
+    return await _neuops_forward("monitor_agents", "/api/monitor/agents")
+
+
+@app.post("/tools/monitor_alerts")
+@app.get("/tools/monitor_alerts")
+async def monitor_alerts(status: str = Query(default="firing", description="告警状态：firing/resolved"), limit: int = Query(default=100, ge=1, le=500)):
+    """查询 AI 智能体异常告警（AI自监控，只读，转发 9007）"""
+    return await _neuops_forward("monitor_alerts", "/api/monitor/alerts", {"status": status, "limit": limit})
+
+
+@app.post("/tools/monitor_alert_rules")
+@app.get("/tools/monitor_alert_rules")
+async def monitor_alert_rules():
+    """查询 AI 智能体告警规则（AI自监控，只读，转发 9007）"""
+    return await _neuops_forward("monitor_alert_rules", "/api/monitor/alert-rules")
+
+
+@app.post("/tools/monitor_timeseries")
+@app.get("/tools/monitor_timeseries")
+async def monitor_timeseries(days: int = Query(default=7, ge=1, le=90, description="统计天数")):
+    """查询 AI 智能体任务/调用时序统计（AI自监控，只读，转发 9007）"""
+    return await _neuops_forward("monitor_timeseries", "/api/monitor/timeseries", {"days": days})
+
+
+@app.post("/tools/long_tasks")
+@app.get("/tools/long_tasks")
+async def long_tasks():
+    """查询数字员工长任务队列（AI自监控，只读，转发 9007）"""
+    return await _neuops_forward("long_tasks", "/api/long-tasks")
 
 
 # ═══════════════════════════════════════════
