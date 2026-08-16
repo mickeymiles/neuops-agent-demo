@@ -479,11 +479,11 @@ MCP_TOOL_SEED = [
 
 
 MCP_SERVER_SEED = [
-    # 本地 MCP Server：9010 MCP 工具网关（见 mcp_gateway.py），承载运维/经营/研发全部 26 个工具
+    # 本地 MCP Server：9010 MCP 工具网关（见 mcp_gateway.py），承载运维/经营/研发/项目管理/售前投标全部 34 个工具
     {
         "id": "mcp-gateway",
         "name": "NeuOps MCP 工具网关",
-        "desc": "统一 MCP 工具网关（/tools 工具发现端点），承载运维/经营/研发/项目管理/售前投标全部 34 个工具",  # noqa: E501
+        "desc": "统一 MCP 工具网关（/tools 工具发现端点），承载运维/经营/研发/项目管理/售前投标全部 34 个工具",
         "base_url": "http://127.0.0.1:9010",
         "type": "gateway",
         "auth": "",
