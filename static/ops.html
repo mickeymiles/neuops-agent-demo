@@ -2364,17 +2364,19 @@ const AG_NODE_COLOR = {
 };
 const AG_EDGE_COLOR = { route: "#fbbf24", skill: "#22d3ee", tool: "#4f8cff", server: "#34d399", kb: "#f472b6", vector: "#fb923c" };
 // 双链路平行布局：MCP 链路五层连续（hub→agent→skill→tool→server），
-// RAG 链路与 MCP 平级（kb 对齐 tool、vector_db 对齐 server），上下两排平行不交叉
-const AG_LAYER_X = { hub: "6%", agent: "22%", skill: "39%", tool: "52%", server: "60%", kb: "52%", vector_db: "60%" };
-// y 纵向分带（%）：hub 居中；agent 全高连通上下两链；MCP 链(skill/tool/server)上半带；RAG 链(kb/vector_db)下半带
-const AG_Y_BAND = { hub: [30, 70], agent: [12, 88], skill: [4, 48], tool: [4, 48], server: [4, 48], kb: [52, 96], vector_db: [52, 96] };
+// RAG 链路与 MCP 平级（kb 对齐 tool、vector_db 对齐 server），上下两排平行不交叉。
+// 横向列距拉开（相邻列 ≥13%）配合节点宽度自适应，避免边框与文字重叠。
+const AG_LAYER_X = { hub: "5%", agent: "18%", skill: "31%", tool: "45%", server: "58%", kb: "45%", vector_db: "58%" };
+// y 纵向分带（%）：hub 居中；agent 全高连通上下两链；MCP 链(skill/tool/server)上半带；RAG 链(kb/vector_db)下半带；带间留空避免文字越带
+const AG_Y_BAND = { hub: [32, 68], agent: [8, 92], skill: [4, 46], tool: [4, 46], server: [4, 46], kb: [54, 96], vector_db: [54, 96] };
 const AG_CAT_INDEX = { hub: 0, agent: 1, skill: 2, tool: 3, server: 4, kb: 5, vector_db: 6 };
 const AG_TYPE_NAME = {
   hub: "编排中枢", agent: "子智能体", skill: "Skill", tool: "Tools",
   server: "MCP Server", kb: "知识库", vector_db: "向量数据库",
 };
 // 拖拽位置持久化（localStorage，按节点 id 存取；id 来自数据库主键或固定值，稳定可靠）
-const AG_TOPO_POS_KEY = "neuops.topo.pos.v1";
+// v2：布局参数变更（画布增高、列距拉大、节点宽度自适应），旧像素坐标作废以免错位
+const AG_TOPO_POS_KEY = "neuops.topo.pos.v2";
 function AG_loadTopoPos() {
   try { return JSON.parse(localStorage.getItem(AG_TOPO_POS_KEY)) || {}; } catch (e) { return {}; }
 }
@@ -2404,18 +2406,28 @@ function AG_renderTopo(data) {
   const W = rect.width || 800, H = rect.height || 620;
   const saved = AG_loadTopoPos();
   const nodes = (data.nodes || []).map(n => {
-    const size = n.type === "hub" ? 44 : n.type === "agent" ? 34 : n.type === "skill" ? 26 : n.type === "server" ? 26 : n.type === "kb" ? 26 : n.type === "vector_db" ? 26 : 22;
+    // 节点宽度按名称长度自适应（中文按字宽、英文按 0.62 倍字宽估算），保证文字不超出边框
+    const h = n.type === "hub" ? 36 : n.type === "agent" ? 30 : 24;
+    const fs = n.type === "hub" ? 11 : n.type === "agent" ? 10 : 9;
+    const textW = [...(n.name || "")].reduce((acc, c) => acc + (c.charCodeAt(0) > 255 ? fs : fs * 0.62), 0);
+    const w = Math.max(44, Math.min(132, Math.ceil(textW) + 18));
     const sp = saved[n.id];
     const hasPos = sp && sp.x != null && sp.y != null;
     return {
-      id: n.id, name: n.name, category: AG_CAT_INDEX[n.type], symbolSize: size,
+      id: n.id, name: n.name, category: AG_CAT_INDEX[n.type], symbolSize: [w, h],
       value: n, symbol: "roundRect",
       itemStyle: {
         color: AG_NODE_COLOR[n.type] ? AG_NODE_COLOR[n.type].bg : "#7d8db0",
         borderColor: n.errors > 0 ? "#f87171" : (AG_NODE_COLOR[n.type] ? AG_NODE_COLOR[n.type].c : "#7d8db0"),
         borderWidth: n.errors > 0 ? 2.5 : 1.5,
       },
-      label: { show: true, color: "#dbe4f5", fontSize: n.type === "hub" ? 12 : n.type === "agent" ? 10 : 9 },
+      label: {
+        show: true, position: "inside", color: "#eaf1ff", fontSize: fs,
+        // 极长名称截断加省略号，杜绝文字溢出边框
+        overflow: "truncate", width: Math.max(28, w - 8),
+        // 深色描边，边框/连线重叠时文字仍清晰可读
+        textBorderColor: "rgba(11,16,32,.9)", textBorderWidth: 2,
+      },
       // 已保存的拖拽位置优先，否则按默认双链路布局
       x: hasPos ? sp.x : Math.round(W * parseFloat(AG_LAYER_X[n.type] || "0%") / 100),
       y: hasPos ? sp.y : null,
@@ -2454,9 +2466,8 @@ function AG_renderTopo(data) {
         return html;
       },
     },
-    legend: {
-      data: presentTypes.map(t => AG_TYPE_NAME[t] || t), textStyle: { color: "#7d8db0" }, top: 8,
-    },
+    // 顶部图例使用页面自定义 ag-topo-legend（badge 样式），ECharts 内置 legend 隐藏以释放画布空间
+    legend: { show: false },
     series: [{
       type: "graph", layout: "none", data: nodes, edges, roam: true, draggable: true,
       animationDuration: 900, animationEasing: "cubicOut",

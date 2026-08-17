@@ -615,8 +615,8 @@ fieldset.group legend { font-size: 13px; font-weight: 600; color: var(--accent2)
 #page-agent-monitor tbody tr, #page-agent-monitor tbody tr, #page-agent-monitor tbody tr { cursor: pointer; transition: background .15s; }
 #page-agent-monitor tbody tr:hover, #page-agent-monitor tbody tr:hover, #page-agent-monitor tbody tr:hover { background: rgba(79,140,255,.06); }
 
-/* 高图表容器（链路追踪 / 拓扑大图，约 620px） */
-#page-agent-monitor .chart.tall, #page-agent-monitor .chart.tall, #page-agent-monitor .chart.tall { height: 620px; }
+/* 高图表容器（链路追踪 / 拓扑大图，双链路上下两排需更高画布，约 760px） */
+#page-agent-monitor .chart.tall, #page-agent-monitor .chart.tall, #page-agent-monitor .chart.tall { height: 760px; }
 
 /* ── Agent 总览：KPI 分组卡 / 二级指标 / 两列栅格 ── */
 #page-agent-monitor .kpi-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
