@@ -29,10 +29,10 @@ MOCK_EMPLOYEES = [
      "rag_kb": "运维知识库-巡检规范", "prompt": "你是一位运维巡检专家，负责基础设施与AI智能体双维度常态化巡检。你通过9007一体化监控平台的真实数据服务用户：①基础设施巡检——查询运维实体清单（ops_entities）、监控时序指标（ops_metrics，如cpu_usage/mem_usage/disk_usage/load1/tcp_conns）、系统日志（ops_logs）、运维拓扑（ops_topology），评估各实体健康水位；②AI自监控——查询数字员工运行状态（monitor_agents）、任务时序统计（monitor_timeseries）、长任务队列（long_tasks），检查任务积压/超时/失败；③输出标准化巡检报告，按低/中/高标注风险等级并给出整改建议。你只读研判、不执行任何变更操作。", "model": "deepseek-v4"},
     {"id": "emp-002", "name": "告警根因分析专家", "desc": "全域告警治理中心，统一处理运维告警与AI智能体异常告警，实现去重、聚合、分级研判、根因定位与处置闭环。数据对接9007一体化监控平台真实告警/事件/日志。", "type": "告警根因", "created": "2026-08-11", "updated": "2026-08-16",
      "skills": ["skill-2"],
-     "rag_kb": "运维知识库-告警根因", "prompt": "你是一位告警根因分析专家，负责告警降噪与故障根因定位。你通过9007一体化监控平台的真实数据服务用户：①告警治理——查询告警聚合统计（ops_alerts_aggregate）、AI智能体告警（monitor_alerts）与告警规则（monitor_alert_rules），对重复告警去重聚合、按运维/AI分类分级；②根因定位——结合故障事件（ops_incidents）、系统日志（ops_logs，重点error/warn）、监控指标回溯（ops_metrics）与运维概览（ops_overview），定位基础设施或AI异常的根因；③处置闭环——输出根因报告、临时处置建议与长期优化方案。你只读研判，所有处置操作必须人工确认后执行。", "model": "deepseek-v4"},
+     "rag_kb": "运维知识库-告警根因", "prompt": "你是一位告警根因分析专家，负责告警降噪与故障根因定位。你通过9007一体化监控平台的真实数据服务用户：①告警治理——查询告警聚合统计（ops_alerts_aggregate）、AI智能体告警（monitor_alerts）与告警规则（monitor_alert_rules），对重复告警去重聚合、按运维/AI分类分级；②根因定位——结合系统日志（ops_logs，重点error/warn）、监控指标回溯（ops_metrics）与运维概览（ops_overview），定位基础设施或AI异常的根因；③处置闭环——输出根因报告、临时处置建议与长期优化方案。你只读研判，所有处置操作必须人工确认后执行。", "model": "deepseek-v4"},
     {"id": "emp-003", "name": "运维开发助手", "desc": "运维研发辅助专家，只生成不执行：按需生成Shell脚本/数据库SQL/排查命令，解析9007真实日志定位代码与配置错误，解读平台配置输出风险点。数据对接9007日志/配置与9006代码库只读。", "type": "运维开发", "created": "2026-08-11", "updated": "2026-08-16",
      "skills": ["skill-3"],
-     "rag_kb": "运维知识库-脚本排障", "prompt": "你是一位运维开发助手，负责辅助运维研发与排障，只生成方案、绝不自动执行。你的能力：①脚本/SQL生成——根据用户需求输出Shell运维脚本、数据库查询SQL、排查命令，并说明用途与注意事项；②日志分析——通过ops_logs检索9007真实系统日志（支持按source/level过滤），解析报错堆栈、定位代码异常、配置错误、服务启动失败原因；③配置解读——查询ops_settings解读监控平台配置（告警阈值/探针/自愈开关），输出风险点；④代码解读——通过list_project_files/read_code_file/search_code只读查看9006平台代码，辅助定位问题。所有生成的脚本/配置必须由人工复核后手动执行。", "model": "deepseek-v4"},
+     "rag_kb": "运维知识库-脚本排障", "prompt": "你是一位运维开发助手，负责辅助运维研发与排障，只生成方案、绝不自动执行。你的能力：①脚本/SQL生成——根据用户需求输出Shell运维脚本、数据库查询SQL、排查命令，并说明用途与注意事项；②日志分析——通过ops_logs检索9007真实系统日志（支持按source/level过滤），解析报错堆栈、定位代码异常、配置错误、服务启动失败原因；③配置解读——查询ops_settings解读监控平台配置（告警阈值/探针等），输出风险点；④代码解读——通过list_project_files/read_code_file/search_code只读查看9006平台代码，辅助定位问题。所有生成的脚本/配置必须由人工复核后手动执行。", "model": "deepseek-v4"},
     {"id": "emp-004", "name": "经营业务分析专家", "desc": "专注采购合同比对、经营指标分析、合同明细探查等经营业务场景。对接9006经营分析系统：通过原子本体MCP查询原始合同/付款/收款明细，通过指标数据集MCP查询签单毛利率等定时ETL预计算指标，通过合同比对引擎分析供应商报价差异。", "type": "经营分析", "created": "2026-08-11", "updated": "2026-08-13",
      "skills": ["skill-10","skill-11","skill-12"],
      "rag_kb": "经营知识库-合同案例", "prompt": "你是一位经营业务分析专家，负责经营分析和顾问工作。你通过9006经营分析系统的三类能力服务用户：①合同比对——用户在9006上传合同基准Excel和供应商报价Excel后，查询比对结果、分析差异、识别高危异常项；②指标分析——通过指标数据集MCP读取定时ETL预计算的签单毛利率、回款毛利率等指标宽表，做同比/环比解读，不做原始聚合计算；③明细探查——通过原子本体MCP按合同编号或关键词查询原始合同、付款、收款明细。指标口径以9006定时任务计算为准，你只做解读，不自行重算。", "model": "deepseek-v4"},
@@ -57,14 +57,13 @@ MOCK_TODOS = [
     {"id": "todo-2", "type": "告警", "title": "contract-compare 应用健康检查失败（degraded）", "level": "critical", "time": "2026-08-15 10:22", "source_id": "rule-ops-004", "auto_skill": "skill-2"},
     {"id": "todo-3", "type": "告警", "title": "单会话 Token 超限（conv-1786688554336）", "level": "info", "time": "2026-08-14 14:51", "source_id": "rule-004", "auto_skill": "skill-1"},
     {"id": "todo-4", "type": "告警", "title": "智能体 emp-001 长期不活跃（999 天无调用）", "level": "warning", "time": "2026-08-14 14:51", "source_id": "rule-005", "auto_skill": "skill-1"},
-    {"id": "todo-5", "type": "事件", "title": "代码自愈测试失败已回滚，升级人工处理", "level": "warning", "time": "2026-08-16 01:50", "source_id": "INC-code-heal", "auto_skill": "skill-3"},
+    {"id": "todo-5", "type": "事件", "title": "告警详情页接入根因分析建议展示", "level": "info", "time": "2026-08-16 01:50", "source_id": "ALERT-OPS", "auto_skill": ""},
 ]
 
 
 MOCK_TODO_HISTORY = [
     {"id": "h-1", "type": "告警", "title": "Token 用量突增（60分钟 217505）", "level": "warning", "time": "2026-08-14 14:51", "handled_time": "2026-08-14 20:02", "result": "已恢复：Token 用量回落至阈值内"},
-    {"id": "h-2", "type": "事件", "title": "neuops-agent 健康检查失败自愈恢复（INC-09C290D3）", "level": "critical", "time": "2026-08-16 00:43", "handled_time": "2026-08-16 00:43", "result": "已恢复：执行 restart_self 动作后恢复"},
-    {"id": "h-3", "type": "事件", "title": "合同比对系统代码自愈回滚（pytest 失败）", "level": "warning", "time": "2026-08-16 01:50", "handled_time": "2026-08-16 01:50", "result": "已升级人工：测试失败自动回滚代码"},
+    {"id": "h-2", "type": "事件", "title": "neuops-agent 健康检查失败恢复（ALERT-OPS-20260816）", "level": "critical", "time": "2026-08-16 00:43", "handled_time": "2026-08-16 00:43", "result": "已恢复：人工重启服务后恢复"},
     {"id": "h-4", "type": "巡检", "title": "全域巡检：服务器/数据库/网络实体指标采集", "level": "normal", "time": "2026-08-16 00:00", "handled_time": "2026-08-16 00:05", "result": "已完成：19 个实体 74846 条指标采集正常"},
     {"id": "h-5", "type": "任务", "title": "ETL 指标预计算（gross-margin 签单毛利率）", "level": "normal", "time": "2026-08-16 00:00", "handled_time": "2026-08-16 00:02", "result": "已完成：经营指标宽表更新"},
 ]
@@ -75,7 +74,7 @@ MOCK_BG_TASKS = [
     {"id": "bgt-2", "name": "告警收敛引擎", "status": "running", "desc": "持续监听告警流，去重聚合、抖动抑制，产出风险事件"},
     {"id": "bgt-3", "name": "ETL 指标预计算", "status": "running", "desc": "9006 定时计算签单毛利率等经营指标宽表"},
     {"id": "bgt-4", "name": "AI 自监控巡检", "status": "running", "desc": "9007 监控数字员工任务/调用/长任务，异常自动告警"},
-    {"id": "bgt-5", "name": "代码自愈检查", "status": "paused", "desc": "9006 代码变更后自动跑测试，失败自动回滚并升级人工"},
+    {"id": "bgt-5", "name": "代码变更回归检查", "status": "paused", "desc": "9006 代码变更后自动跑测试，失败升级人工处理"},
 ]
 
 
@@ -88,13 +87,13 @@ SKILL_DETAILS = {
     },
     "skill-2": {
         "type": "Workflow业务编排技能",
-        "prompt": "你是告警根因分析专家，负责告警降噪与故障根因定位。\n1、查询告警聚合统计（ops_alerts_aggregate）与AI智能体告警（monitor_alerts）、告警规则（monitor_alert_rules）；\n2、对高优先级告警查询故障事件（ops_incidents）与相关日志（ops_logs，重点error/warn）；\n3、通过监控指标回溯（ops_metrics）与运维概览（ops_overview）验证根因假设；\n4、输出根因报告、临时处置建议与长期优化方案；\n5、涉及处置操作必须人工确认后执行。",
-        "tools": ["ops_alerts_aggregate", "ops_incidents", "ops_logs", "ops_metrics", "ops_overview", "monitor_alerts", "monitor_alert_rules"],
+        "prompt": "你是告警根因分析专家，负责告警降噪与故障根因定位。\n1、查询告警聚合统计（ops_alerts_aggregate）与AI智能体告警（monitor_alerts）、告警规则（monitor_alert_rules）；\n2、对高优先级告警查询相关日志（ops_logs，重点error/warn）；\n3、通过监控指标回溯（ops_metrics）与运维概览（ops_overview）验证根因假设；\n4、输出根因报告、临时处置建议与长期优化方案；\n5、涉及处置操作必须人工确认后执行。",
+        "tools": ["ops_alerts_aggregate", "ops_logs", "ops_metrics", "ops_overview", "monitor_alerts", "monitor_alert_rules"],
         "flow": "执行流程：\n1、接收告警/故障范围\n2、并行调用：告警聚合 + 事件列表 + 系统日志\n3、按时间线回溯监控指标验证根因\n4、分级研判（运维/AI），输出根因报告与处置建议\n5、如需处置，输出高危操作标记等待人工确认",
     },
     "skill-3": {
         "type": "Workflow业务编排技能",
-        "prompt": "你是运维开发助手，负责脚本/SQL生成、日志排障与配置解读，只生成不执行。\n1、按用户需求生成Shell脚本/数据库SQL/排查命令并说明注意事项；\n2、通过ops_logs检索9007真实系统日志，解析报错堆栈、定位代码异常、配置错误、服务启动失败原因；\n3、通过ops_settings解读监控平台配置（告警阈值/探针/自愈开关），输出风险点；\n4、通过list_project_files/read_code_file/search_code只读查看9006平台代码辅助定位问题；\n5、所有生成的脚本/配置必须由人工复核后手动执行。",
+        "prompt": "你是运维开发助手，负责脚本/SQL生成、日志排障与配置解读，只生成不执行。\n1、按用户需求生成Shell脚本/数据库SQL/排查命令并说明注意事项；\n2、通过ops_logs检索9007真实系统日志，解析报错堆栈、定位代码异常、配置错误、服务启动失败原因；\n3、通过ops_settings解读监控平台配置（告警阈值/探针等），输出风险点；\n4、通过list_project_files/read_code_file/search_code只读查看9006平台代码辅助定位问题；\n5、所有生成的脚本/配置必须由人工复核后手动执行。",
         "tools": ["ops_logs", "ops_entities", "ops_settings", "ops_overview", "list_project_files", "read_code_file", "search_code", "get_table_schema", "query_ontology"],
         "flow": "执行流程：\n1、接收用户需求（生成脚本/查日志/解读配置/定位问题）\n2、按需调用：检索日志 + 查看配置 + 只读查看代码/表结构\n3、解析错误根因，输出排查步骤或生成脚本/SQL\n4、标注需人工复核执行的项",
     },
@@ -245,10 +244,9 @@ MOCK_CONV_MESSAGES = {
         "employee_id": "emp-002",
         "messages": [
             {"role": "user", "content": "分析当前未恢复的告警，做聚合降噪并定位根因"},
-            {"role": "agent", "thought": "任务分解：\n1. 用户要求告警聚合与根因分析\n2. 匹配 Skill：告警聚合与根因分析（skill-2）\n3. 执行：告警聚合 → 故障事件 → 日志回溯",
+            {"role": "agent", "thought": "任务分解：\n1. 用户要求告警聚合与根因分析\n2. 匹配 Skill：告警聚合与根因分析（skill-2）\n3. 执行：告警聚合 → 日志回溯",
              "tools": [
                  {"tool": "ops_alerts_aggregate", "status": "firing", "source": "9007"},
-                 {"tool": "ops_incidents", "source": "9007"},
                  {"tool": "ops_logs", "level": "error", "minutes": 60, "source": "9007"},
                  {"tool": "monitor_alert_rules", "source": "9007"},
              ],
@@ -313,17 +311,12 @@ MCP_TOOL_SEED = [
          {"name": "minutes", "type": "integer", "required": False, "desc": "时间窗（分钟），默认10"},
          {"name": "limit", "type": "integer", "required": False, "desc": "返回条数上限"},
      ]},
-    {"id": "ops_incidents", "name": "查询故障事件", "desc": "查询故障事件列表（检测/修复/恢复等状态）", "icon": "🚨", "tag": "只读查询", "danger": 0, "category": "运维",
-     "method": "POST", "path": "/tools/ops_incidents",
-     "params_schema": [
-         {"name": "state", "type": "string", "required": False, "desc": "状态过滤：detected/repairing/verifying/recovered/failed/manual"},
-     ]},
     {"id": "ops_alerts_aggregate", "name": "告警聚合统计", "desc": "查询去重降噪后的告警聚合统计", "icon": "🚨", "tag": "只读查询", "danger": 0, "category": "运维",
      "method": "POST", "path": "/tools/ops_alerts_aggregate",
      "params_schema": [
          {"name": "status", "type": "string", "required": False, "desc": "告警状态：firing/resolved/all"},
      ]},
-    {"id": "ops_settings", "name": "查询监控配置", "desc": "获取监控平台配置（告警阈值/探针/自愈开关等）", "icon": "⚙️", "tag": "只读查询", "danger": 0, "category": "运维",
+    {"id": "ops_settings", "name": "查询监控配置", "desc": "获取监控平台配置（告警阈值/探针等）", "icon": "⚙️", "tag": "只读查询", "danger": 0, "category": "运维",
      "method": "POST", "path": "/tools/ops_settings", "params_schema": []},
     {"id": "monitor_agents", "name": "智能体运行状态", "desc": "查询全部数字员工（智能体）运行状态（AI自监控）", "icon": "🤖", "tag": "只读查询", "danger": 0, "category": "运维",
      "method": "POST", "path": "/tools/monitor_agents", "params_schema": []},

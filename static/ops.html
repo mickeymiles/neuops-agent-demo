@@ -34,8 +34,8 @@
     <div class="ops-nav-group">采控中心</div>
     <div class="ops-nav-item" data-tab="probe-center" onclick="switchTab('probe-center')"><span class="oi">🛰</span>采控中心</div>
     <div class="ops-nav-group">告警中心</div>
-    <div class="ops-nav-item" data-tab="alerts" onclick="switchTab('alerts')"><span class="oi">🚨</span>告警中心</div>
-    <div class="ops-nav-item" data-tab="events" onclick="switchTab('events')"><span class="oi">🩺</span>自愈事件 <span class="cnt" id="cnt-incidents">0</span></div>
+    <div class="ops-nav-item" data-tab="alerts" onclick="switchTab('alerts')"><span class="oi">🚨</span>告警列表</div>
+    <div class="ops-nav-item" data-tab="alert-rules" onclick="switchTab('alert-rules')"><span class="oi">📋</span>告警规则</div>
     <div class="ops-nav-group">运维本体</div>
     <div class="ops-nav-item" data-tab="topology" onclick="switchTab('topology')"><span class="oi">🕸</span>本体拓扑</div>
     <div class="ops-nav-group">配置中心</div>
@@ -53,7 +53,7 @@
   <div class="logo">⚙</div>
   <div class="brand">
     <h1>NeuOps 运维监控平台</h1>
-    <div class="sub">基于本体的一体化实时监控 · 统一探针采集 · 全自动自愈</div>
+    <div class="sub">基于本体的一体化实时监控 · 统一探针采集</div>
   </div>
   <div class="right">
     <div class="status-pill" id="timePill"><span class="dot green"></span><span id="clock">--:--:--</span></div>
@@ -87,15 +87,9 @@
       </div>
     </div>
 
-    <div class="grid grid-2" style="margin-top:14px">
-      <div class="card hoverable accent-bar" style="--g1:#34d399;--g2:#22d3ee;cursor:pointer" onclick="switchTab('probe-center')">
-        <div class="card-head"><h3>🛰 采控中心</h3><span class="tag">点击前往</span></div>
-        <div style="padding:20px 0;color:var(--txt2)">查看探针运行状态、六类实体采集情况，配置采集周期与日志路径 →</div>
-      </div>
-      <div class="card hoverable accent-bar" style="--g1:#4f8cff;--g2:#a78bfa">
-        <div class="card-head"><h3>💊 自愈事件</h3><span class="tag" id="incidentSummaryTag">-</span></div>
-        <div class="alert-strip" id="incidentStrip"><div class="empty">暂无自愈事件</div></div>
-      </div>
+    <div class="card hoverable accent-bar" style="--g1:#34d399;--g2:#22d3ee;cursor:pointer;margin-top:14px" onclick="switchTab('probe-center')">
+      <div class="card-head"><h3>🛰 采控中心</h3><span class="tag">点击前往</span></div>
+      <div style="padding:20px 0;color:var(--txt2)">查看探针运行状态、六类实体采集情况，配置采集周期与日志路径 →</div>
     </div>
   </section>
 
@@ -273,23 +267,6 @@
     </div>
   </section>
 
-  <!-- ═══ 自愈事件 Tab ═══ -->
-  <section class="tab-page" id="page-events">
-    <div class="card">
-      <div class="card-head"><h3>🩺 自愈事件中心</h3>
-        <span class="tag"><select id="eventFilter" onchange="loadEvents()">
-          <option value="">全部状态</option>
-          <option value="detected">待处理 detected</option>
-          <option value="repairing">修复中 repairing</option>
-          <option value="verifying">验证中 verifying</option>
-          <option value="recovered">已恢复 recovered</option>
-          <option value="failed">失败 failed</option>
-          <option value="manual">升级人工 manual</option>
-        </select></span></div>
-      <div class="timeline" id="eventTimeline"></div>
-    </div>
-  </section>
-
   <!-- ═══ 配置中心 Tab（通用能力） ═══ -->
   <section class="tab-page" id="page-settings">
     <div class="grid grid-2">
@@ -313,7 +290,7 @@
         <div class="card-head"><h3>🧭 配置入口导航</h3><span class="tag">按职责分区</span></div>
         <div style="display:flex;flex-direction:column;gap:12px;padding-top:4px">
           <div style="cursor:pointer" onclick="switchTab('probe-center')">🛰 采集配置（周期 / 日志路径）→ 前往 <b style="color:var(--blue)">采控中心</b></div>
-          <div style="cursor:pointer" onclick="switchTab('alerts')">🚨 告警配置（阈值 / 规则）→ 前往 <b style="color:var(--blue)">告警中心</b></div>
+          <div style="cursor:pointer" onclick="switchTab('alert-rules')">🚨 告警配置（阈值 / 规则）→ 前往 <b style="color:var(--blue)">告警规则</b></div>
           <div>🔔 飞书告警（Webhook / 密钥）→ 本页</div>
         </div>
       </div>
@@ -427,7 +404,7 @@
   </section>
 
 
-  <!-- ═══ 告警中心 Tab（告警聚合 + 告警配置 + 自愈事件） ═══ -->
+  <!-- ═══ 告警列表 Tab（告警聚合） ═══ -->
   <section class="tab-page" id="page-alerts">
     <div class="card" style="margin-bottom:14px">
       <div class="card-head"><h3>🚨 告警聚合</h3>
@@ -443,17 +420,18 @@
       <div class="alert-filter">
         <select id="ag-f-severity" onchange="AG_loadAlerts()">
           <option value="">全部等级</option>
-          <option value="critical">致命 critical</option>
-          <option value="warning">警告 warning</option>
-          <option value="info">提示 info</option>
+          <option value="p0">P0 致命</option>
+          <option value="p1">P1 严重</option>
+          <option value="p2">P2 提示</option>
+          <option value="p3">P3 一般</option>
         </select>
         <select id="ag-f-type" onchange="AG_loadAlerts()">
           <option value="">全部类型</option>
-          <option value="prewarn">预警 prewarn</option>
-          <option value="fault">故障 fault</option>
-          <option value="perf">性能 perf</option>
-          <option value="availability">可用性 availability</option>
-          <option value="business">业务 business</option>
+          <option value="prewarn">预警</option>
+          <option value="fault">故障</option>
+          <option value="perf">性能</option>
+          <option value="availability">可用性</option>
+          <option value="business">业务</option>
         </select>
         <select id="ag-f-hours" onchange="AG_loadAlerts()">
           <option value="0">全部时间</option>
@@ -468,7 +446,11 @@
       </div>
       <div id="alertAggList"><div class="empty">加载中…</div></div>
     </div>
-    <div class="grid grid-2" style="margin-bottom:14px">
+  </section>
+
+  <!-- ═══ 告警规则 Tab（阈值 + 规则） ═══ -->
+  <section class="tab-page" id="page-alert-rules">
+    <div class="grid grid-2">
       <div class="card">
         <div class="card-head"><h3>🚨 告警阈值（%）</h3><span class="tag">ops 实时指标</span></div>
         <fieldset class="group"><legend>触发条件</legend>
@@ -487,10 +469,6 @@
         <div class="card-head"><h3>📋 告警规则</h3><span class="tag">ops 真实指标检测</span></div>
         <div id="ruleList"><div class="empty">加载中…</div></div>
       </div>
-    </div>
-    <div class="card">
-      <div class="card-head"><h3>🩺 自愈事件</h3><span class="tag" id="incidentSub">基础设施自愈</span></div>
-      <div id="incidentAggList"><div class="empty">加载中…</div></div>
     </div>
   </section>
 
@@ -645,9 +623,6 @@ function statusTag(s) {
   const label = (STATUS_META[s] && STATUS_META[s].label) || s;
   return `<span class="tag-status tag-${c}">${label}</span>`;
 }
-function stateTag(s) {
-  return `<span class="tag-state st-${s}">${s}</span>`;
-}
 
 /* ═══════════════ Tab 切换 ═══════════════ */
 let IT_tab = "server";      // 一体化监控内部 tab
@@ -663,8 +638,8 @@ function switchTab(tab) {
   if (tab === "integrated") IT_show(IT_tab);
   if (tab === "agent-monitor") AG_show(AG_tab);
   if (tab === "topology") loadTopology();
-  if (tab === "alerts") { AG_loadAlerts(); loadSettings(); loadRules(); }
-  if (tab === "events") loadEvents();
+  if (tab === "alerts") AG_loadAlerts();
+  if (tab === "alert-rules") { loadSettings(); loadRules(); }
   if (tab === "settings") loadSettings();
   if (tab === "probe-center") PC_load();
 }
@@ -1058,9 +1033,7 @@ function renderOverview(o) {
   const byType = o.entities.byType || {};
   ENTITY_TABS.forEach(t => { const el = $("cnt-" + t); if (el) el.textContent = byType[t] || 0; });
   $("entityTotalTag").textContent = "共 " + (o.entities.total || 0) + " 个";
-  $("incidentSummaryTag").textContent = (o.incidents.open || 0) + " 个待处理";
   $("alertSummaryTag").textContent = (o.alerts.firing || 0) + " 个告警中";
-  $("cnt-incidents").textContent = o.incidents.open || 0;
 
   // 服务器快照 → KPI
   const ss = o.serverSnapshot || {};
@@ -1106,13 +1079,6 @@ function renderOverview(o) {
 
   // 最新告警
   renderAlerts();
-  // 自愈事件摘要
-  const inc = o.incidents.recent || [];
-  $("incidentStrip").innerHTML = inc.length ? inc.map(i =>
-    `<div class="alert-item ${i.severity === "critical" ? "sev-critical" : "sev-warning"}" onclick="openIncident('${i.id}')">
-      <span class="a-time">${esc(i.created_at||"")}</span>
-      <span class="a-msg">[${esc(i.rule_name||"")}] ${esc(i.entity_name||"")} → ${stateTag(i.state)}</span>
-    </div>`).join("") : `<div class="empty">暂无自愈事件</div>`;
 
   // 拓扑缩略
   renderTopoMini();
@@ -1137,7 +1103,7 @@ async function renderAlerts() {
     const firing = (r.alerts || []).filter(a => a.status === "firing").length;
     $("alertSummaryTag").textContent = firing + " 个告警中";
     $("alertStrip").innerHTML = list.length ? list.map(a =>
-      `<div class="alert-item ${a.severity === "critical" ? "sev-critical" : "sev-warning"}">
+      `<div class="alert-item ${AG_sevInfo(a.severity).cls}">
         <span class="a-time">${esc(a.created_at||"")}</span>
         <span class="a-msg">[${esc(a.rule_name||"")}] ${esc(a.message||a.target_name||"")}</span>
       </div>`).join("") : `<div class="empty">暂无告警</div>`;
@@ -1530,63 +1496,6 @@ function renderTopoMini() {
   }, true);
 }
 
-/* ═══════════════ 自愈事件 ═══════════════ */
-async function loadEvents() {
-  loading(true);
-  try {
-    const f = $("eventFilter").value;
-    const r = await fetch(API + "/incidents?state=" + f).then(d => d.json());
-    const list = r.incidents || [];
-    $("cnt-incidents").textContent = list.filter(i => i.state !== "recovered").length;
-    if (!list.length) { $("eventTimeline").innerHTML = '<div class="empty"><div class="big">💊</div>暂无自愈事件<br>自愈引擎启动后，检测到故障会自动创建事件</div>'; loading(false); return; }
-    $("eventTimeline").innerHTML = list.map(i => `
-      <div class="tl-item st-${i.state}">
-        <div class="tl-time">${esc(i.created_at || "")}</div>
-        <div class="tl-title">[${esc(i.rule_name || "")}] ${esc(i.entity_name || "")} ${stateTag(i.state)}
-          <button class="btn" style="padding:2px 10px" onclick="openIncident('${i.id}')">详情</button></div>
-        <div class="tl-body">${esc((i.message || "") + (i.fix_log ? "\n" + i.fix_log : ""))}</div>
-      </div>`).join("");
-  } catch (e) { toast("事件加载失败: " + e.message, "err"); }
-  loading(false);
-}
-async function openIncident(id) {
-  $("drawer").classList.add("open");
-  $("drawerMask").style.display = "block";
-  $("dTitle").textContent = "事件 " + id;
-  try {
-    const r = await fetch(API + "/incidents/" + id).then(d => d.json());
-    const i = r.incident;
-    $("dTitle").innerHTML = `[${esc(i.rule_name || "")}] ${esc(i.entity_name || "")} ${stateTag(i.state)}`;
-    $("dSub").textContent = `创建 ${i.created_at} · 更新 ${i.updated_at}`;
-    $("dBody").innerHTML = `
-      <div class="metric-grid">
-        <div class="metric-box"><div class="m-label">严重级别</div><div class="m-value" style="color:${i.severity === "critical" ? "var(--red)" : "var(--amber)"}">${esc(i.severity)}</div></div>
-        <div class="metric-box"><div class="m-label">重试次数</div><div class="m-value">${i.retry_count}</div></div>
-        <div class="metric-box"><div class="m-label">修复动作</div><div class="m-value" style="font-size:14px">${esc(i.fix_action || "-")}</div></div>
-        <div class="metric-box"><div class="m-label">恢复时间</div><div class="m-value" style="font-size:13px">${esc(i.resolved_at || "-")}</div></div>
-      </div>
-      <h4 style="margin:16px 0 10px;color:var(--muted);font-size:12px">故障描述</h4>
-      <div class="attr-list"><div class="attr-row"><span>${esc(i.message || "-")}</span></div></div>
-      ${(i.entity_type === "log" || String(i.rule_name || "").indexOf("log_error") >= 0 || String(i.rule_name || "").toLowerCase().indexOf("code") >= 0)
-        ? `<div style="margin:14px 0 0"><button class="btn primary" onclick="runCodeHeal('${i.id}')">🧬 执行代码级自愈</button>
-           <span class="tag" style="margin-left:8px">修复→测试→发布→验证（失败自动回滚）</span></div>` : ""}
-      <h4 style="margin:16px 0 10px;color:var(--muted);font-size:12px">修复日志</h4>
-      <div class="tl-body">${esc(i.fix_log || "无")}</div>`;
-  } catch (e) { $("dTitle").textContent = "加载失败"; $("dBody").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
-}
-async function runCodeHeal(id) {
-  loading(true);
-  try {
-    const r = await fetch(API + "/code-heal/run", { method: "POST",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ incident_id: id }) })
-      .then(d => d.json());
-    const i = r.incident || {};
-    toast("代码自愈完成，状态: " + (i.state || "?"));
-    openIncident(id);
-  } catch (e) { toast("代码自愈失败: " + e.message, "err"); }
-  loading(false);
-}
-
 /* ═══════════════ 配置中心 ═══════════════ */
 async function loadSettings() {
   try {
@@ -1620,11 +1529,11 @@ async function loadRules() {
     const r = await fetch(API + "/alert-rules").then(d => d.json());
     const list = r.rules || [];
     if (!list.length) { $("ruleList").innerHTML = '<div class="empty">暂无告警规则</div>'; return; }
-    $("ruleList").innerHTML = `<table class="tbl"><thead><tr><th>规则</th><th>指标</th><th>目标</th><th>阈值</th><th>级别</th><th>启用</th></tr></thead><tbody>
+    $("ruleList").innerHTML = `<table class="tbl"><thead><tr><th>规则</th><th>类型</th><th>指标</th><th>目标</th><th>阈值</th><th>级别</th><th>启用</th></tr></thead><tbody>
       ${list.map(x => `<tr>
-        <td><b>${esc(x.name)}</b></td><td style="font-family:monospace;font-size:12px">${esc(x.metric || "")}</td>
+        <td><b>${esc(x.name)}</b></td><td>${AG_typeBadge(x.type)}</td><td style="font-family:monospace;font-size:12px">${esc(x.metric || "")}</td>
         <td>${esc(x.target || "")}</td><td>${esc(x.threshold)}</td>
-        <td><span class="tag-state ${x.severity === "critical" ? "st-failed" : "st-detected"}">${esc(x.severity)}</span></td>
+        <td>${AG_sevBadge(x.severity)}</td>
         <td>${x.enabled ? '<span class="tag-status tag-running">开</span>' : '<span class="tag-status tag-unknown">关</span>'}</td>
       </tr>`).join("")}</tbody></table>`;
   } catch (e) { /* ignore */ }
@@ -1834,10 +1743,9 @@ function AG_renderAgentDetail(d) {
 
   html += `<div class="dp-block"><h4>🚨 相关告警 (${d.alerts.length})</h4>${
     d.alerts.length ? d.alerts.map(a => {
-      const sev = a.severity === "critical" ? "crit" : a.severity === "warning" ? "warn" : "ok";
       const st = a.status === "firing" ? `<span class="badge crit">未恢复</span>` : `<span class="badge ok">已恢复</span>`;
       return `<div class="dp-list-item">
-        <div class="t"><span class="badge ${sev}">${esc(a.severity)}</span><span class="ellipsis" style="max-width:160px">${esc(a.rule_name)}</span>${st}</div>
+        <div class="t">${AG_sevBadge(a.severity)}<span class="ellipsis" style="max-width:160px">${esc(a.rule_name)}</span>${st}</div>
         <div class="m" style="color:var(--text)">${esc(a.message)}</div>
         <div class="m"><span>${AG_fmtTime(a.created_at)}</span>${a.value != null ? `<span>指标值 ${AG_fmtNum(a.value)}</span>` : ""}</div>
       </div>`;
@@ -2137,7 +2045,7 @@ function AG_renderTraceGantt(el, spans) {
   setTimeout(() => chart.resize(), 60);
 }
 
-/* ═══════════════ 告警中心聚合（alerts + incidents） ═══════════════ */
+/* ═══════════════ 告警中心聚合（alerts） ═══════════════ */
 let AG_alertStatus = "firing";
 const AG_TYPE_LABEL = { prewarn: "预警", fault: "故障", perf: "性能", availability: "可用性", business: "业务" };
 function AG_typeBadge(t) {
@@ -2145,9 +2053,22 @@ function AG_typeBadge(t) {
   const map = { prewarn: "t-pre", fault: "t-fault", perf: "t-perf", availability: "t-avail", business: "t-biz" };
   return `<span class="badge-type ${map[key] || "t-unknown"}">${AG_TYPE_LABEL[key] || key || "未知"}</span>`;
 }
+const AG_SEV_INFO = {
+  critical: { key: "p0", label: "P0", text: "致命", cls: "sev-p0" },
+  warning: { key: "p1", label: "P1", text: "严重", cls: "sev-p1" },
+  info: { key: "p2", label: "P2", text: "提示", cls: "sev-p2" },
+};
+const AG_SEV_DEFAULT = { key: "p3", label: "P3", text: "一般", cls: "sev-p3" };
+function AG_sevInfo(s) {
+  const k = String(s || "").toLowerCase();
+  return AG_SEV_INFO[k] || AG_SEV_DEFAULT;
+}
+function AG_sevBadge(s) {
+  const info = AG_sevInfo(s);
+  return `<span class="badge ${info.cls}">${info.label} ${info.text}</span>`;
+}
 function AG_renderAlerts(list, status) {
-  const sev = a => a.severity === "critical" ? "crit" : a.severity === "warning" ? "warn" : "ok";
-  const sevLabel = a => a.severity === "critical" ? "致命" : a.severity === "warning" ? "警告" : "提示";
+  const sevI = a => AG_sevInfo(a.severity);
   $("alertAggList").innerHTML = list.map(a => {
     const st = a.status === "firing" ? `<span class="badge crit">未恢复</span>` : `<span class="badge ok">已恢复</span>`;
     const ack = a.acked ? `<span class="ack-tag">✓ 已确认</span>` : "";
@@ -2155,7 +2076,7 @@ function AG_renderAlerts(list, status) {
       ${AG_typeBadge(a.type)}
       <span class="agg-target"><span class="badge">${esc(a.rule_name)}</span>${ack}</span>
       <span class="ellipsis muted" style="flex:1;max-width:300px">${esc(a.message)}</span>
-      <span class="badge ${sev(a)}">${esc(sevLabel(a))}</span>
+      <span class="badge ${sevI(a).cls}">${sevI(a).label} ${sevI(a).text}</span>
       <span class="tnum">${AG_fmtNum(a.value)}</span>
       ${st}
       <span class="muted sm">${AG_fmtTime(a.created_at)}${a.resolved_at ? `<br/>恢复 ${AG_fmtTime(a.resolved_at)}` : ""}</span>
@@ -2176,19 +2097,11 @@ function AG_renderAlertStats(stats) {
     <span class="as-item as-green">已恢复 <b>${stats.resolved}</b></span>
     <span class="as-item as-amber">待确认 <b>${stats.unacked}</b></span>
     <span class="as-item">等级分布 <b>${Object.keys(stats.by_severity || {}).map(s => {
-      const c = s === "critical" ? "as-red" : s === "warning" ? "as-amber" : "as-green";
-      return `<span class="${c}">${s} ${stats.by_severity[s]}</span>`;
+      const si = AG_sevInfo(s);
+      const c = si.key === "p0" ? "as-red" : si.key === "p1" ? "as-amber" : si.key === "p2" ? "as-cyan" : "as-green";
+      return `<span class="${c}">${si.label} ${stats.by_severity[s]}</span>`;
     }).join(" · ") || "—"}</b></span>
     ${byType}`;
-}
-function AG_renderIncidentAgg(list) {
-  $("incidentAggList").innerHTML = list.map(i => `
-    <div class="tl-item st-${i.state}" style="cursor:pointer" onclick="openIncident('${i.id}')">
-      <div class="tl-time">${esc(i.created_at || "")}</div>
-      <div class="tl-title">[${esc(i.rule_name || "")}] ${esc(i.entity_name || "")} ${stateTag(i.state)}
-        <button class="btn" style="padding:2px 10px">详情</button></div>
-      <div class="tl-body">${esc((i.message || "") + (i.fix_log ? "\n" + i.fix_log : ""))}</div>
-    </div>`).join("") || `<div class="empty">暂无自愈事件</div>`;
 }
 function AG_setAlertStatus(s, el) {
   AG_alertStatus = s;
@@ -2208,16 +2121,12 @@ function AG_alertFilterQuery() {
 }
 async function AG_loadAlerts() {
   try {
-    const [al, st, inc] = await Promise.all([
+    const [al, st] = await Promise.all([
       AG_api(`/api/monitor/alerts?${AG_alertFilterQuery()}`),
       AG_api(`/api/monitor/alerts/stats?hours=${$("ag-f-hours").value || "0"}`),
-      fetch(API + "/incidents").then(d => d.json()),
     ]);
     AG_renderAlerts(al || [], AG_alertStatus);
     AG_renderAlertStats(st);
-    AG_renderIncidentAgg((inc && inc.incidents) || []);
-    const cnt = $("cnt-incidents");
-    if (cnt) cnt.textContent = (inc && inc.incidents || []).filter(i => i.state !== "recovered").length;
   } catch (e) { console.error(e); }
 }
 function AG_renderTopo(el, topo) {
@@ -2253,8 +2162,7 @@ async function AG_openAlertDetail(id) {
   try {
     const d = await AG_api(`/api/monitor/alerts/${id}`);
     const a = d.alert;
-    const sev = a.severity === "critical" ? "crit" : a.severity === "warning" ? "warn" : "ok";
-    const sevLabel = a.severity === "critical" ? "致命" : a.severity === "warning" ? "警告" : "提示";
+    const sevI = AG_sevInfo(a.severity);
     const st = a.status === "firing" ? `<span class="badge crit">未恢复</span>` : `<span class="badge ok">已恢复</span>`;
     const ackBtn = a.status === "firing"
       ? `<button class="btn primary" style="padding:4px 14px" onclick="AG_ackAlert(${a.id})">${a.acked ? "✓ 已确认，点击取消" : "⚡ 确认告警"}</button>`
@@ -2272,28 +2180,18 @@ async function AG_openAlertDetail(id) {
         <div class="tl-ts">${AG_fmtTime(t.ts)}</div>
       </div>`).join("");
     const related = (d.related || []).map(r => {
-      const rsev = r.severity === "critical" ? "crit" : r.severity === "warning" ? "warn" : "ok";
       const rst = r.status === "firing" ? `<span class="badge crit">未恢复</span>` : `<span class="badge ok">已恢复</span>`;
       return `<div class="dp-list-item" style="cursor:pointer" onclick="AG_openAlertDetail(${r.id})">
         <div class="t">${AG_typeBadge(r.type)}<span class="ellipsis" style="max-width:220px">${esc(r.rule_name)}</span>${rst}</div>
         <div class="m">${esc(r.message)} · ${AG_fmtTime(r.created_at)}</div>
       </div>`;
     }).join("") || `<div class="muted sm">暂无相关告警</div>`;
-    const incidents = (d.incidents || []).map(inc => {
-      const ist = { detected: "检测中", healing: "自愈中", resolved: "已解决", failed: "失败" }[inc.state] || inc.state;
-      const isev = inc.state === "failed" ? "crit" : inc.state === "healing" ? "warn" : inc.state === "resolved" ? "ok" : "muted";
-      return `<div class="dp-list-item">
-        <div class="t"><span class="badge ${isev}">${esc(ist)}</span>${esc(inc.rule_name)}<span class="muted">${AG_fmtTime(inc.created_at)}</span></div>
-        <div class="m">${esc(inc.fix_action || inc.message || "")}</div>
-        <div class="m">${inc.fix_log ? "📜 " + esc(inc.fix_log) : ""}</div>
-      </div>`;
-    }).join("") || `<div class="muted sm">暂无自愈事件（该告警未触发代码级自愈）</div>`;
     $("dBody").innerHTML = `
       <div class="dp-block"><h4>📋 基本信息</h4>
         <div class="dp-grid">
           <div class="dp-row"><span class="k">告警 ID</span><span class="v tnum">${a.id}</span></div>
           <div class="dp-row"><span class="k">告警类型</span><span class="v">${AG_typeBadge(a.type)}</span></div>
-          <div class="dp-row"><span class="k">等级</span><span class="v"><span class="badge ${sev}">${sevLabel}</span></span></div>
+          <div class="dp-row"><span class="k">等级</span><span class="v"><span class="badge ${sevI.cls}">${sevI.label} ${sevI.text}</span></span></div>
           <div class="dp-row"><span class="k">状态</span><span class="v">${st}</span></div>
           <div class="dp-row"><span class="k">关联对象</span><span class="v">${esc(a.entity_name || a.target_name || "全局")}</span></div>
           <div class="dp-row"><span class="k">发生时间</span><span class="v">${AG_fmtTime(a.created_at)}</span></div>
@@ -2311,8 +2209,7 @@ async function AG_openAlertDetail(id) {
       <div class="dp-block"><h4>🔗 关联影响</h4>${impact}</div>
       <div class="dp-block"><h4>🕸 关联拓扑</h4><div id="ag-alert-topo" class="topo-box"></div></div>
       <div class="dp-block"><h4>🕘 时间线</h4><div class="dp-timeline">${timeline}</div></div>
-      <div class="dp-block"><h4>🔁 相关告警 (${(d.related || []).length})</h4>${related}</div>
-      <div class="dp-block"><h4>🤖 自愈事件 (${(d.incidents || []).length})</h4>${incidents}</div>`;
+      <div class="dp-block"><h4>🔁 相关告警 (${(d.related || []).length})</h4>${related}</div>`;
     AG_renderTopo($("ag-alert-topo"), d.topology);
     setTimeout(() => { const c = echarts.getInstanceByDom($("ag-alert-topo")); if (c) c.resize(); }, 80);
   } catch (e) {
@@ -2668,8 +2565,8 @@ setInterval(() => {
     else if (AG_tab === "topo") AG_loadAgentTopo();
     else if (AG_tab === "traces") AG_loadAgentTraces();
   } else if (currentTab === "topology") loadTopology();
-  else if (currentTab === "alerts") { AG_loadAlerts(); loadRules(); }
-  else if (currentTab === "events") loadEvents();
+  else if (currentTab === "alerts") AG_loadAlerts();
+  else if (currentTab === "alert-rules") loadRules();
   else if (currentTab === "probe-center" && PC_tab === "status") PC_loadStatus();
 }, 30000);
 

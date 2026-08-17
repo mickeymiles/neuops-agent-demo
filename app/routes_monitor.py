@@ -441,9 +441,20 @@ async def monitor_alerts(
     if status != "all":
         conds.append("a.status=?")
         args.append(status)
+    # 等级过滤：前端按 P0-P3 传参，映射回库内值（critical/warning/info/空）
     if severity:
-        conds.append("a.severity=?")
-        args.append(severity)
+        sev_map = {"p0": "critical", "p1": "warning", "p2": "info"}
+        if severity in sev_map:
+            conds.append("a.severity=?")
+            args.append(sev_map[severity])
+        elif severity == "p3":
+            # P3 对应空值 / 未知等级
+            conds.append("(a.severity IS NULL OR a.severity='' "
+                         "OR a.severity NOT IN ('critical','warning','info'))")
+        else:
+            # 兼容直接传库内值的旧调用
+            conds.append("a.severity=?")
+            args.append(severity)
     if type_:
         conds.append(f"{type_expr}=?")
         args.append(type_)
@@ -456,12 +467,15 @@ async def monitor_alerts(
         conds.append("a.created_at>=?")
         args.append(since)
     where = ("WHERE " + " AND ".join(conds)) if conds else ""
-    select = (f"SELECT a.*, {type_expr} AS type FROM alerts a "
+    # 注意：SELECT a.* 与别名字段同名时 sqlite3.Row→dict 会取首个同名列，
+    # 因此用独立别名 type_eff 后在 Python 层覆盖
+    select = (f"SELECT a.*, {type_expr} AS type_eff FROM alerts a "
               "LEFT JOIN alert_rules r ON a.rule_id = r.id")
     rows = _query_rows(f"{select} {where} ORDER BY a.created_at DESC LIMIT ?", args + [limit])
     # 存量告警 suggestion 为空时按类型兜底
     rule_types = {r["id"]: r["type"] for r in _query_rows("SELECT id, type FROM alert_rules WHERE type != ''")}
     for a in rows:
+        a["type"] = a.pop("type_eff", a.get("type") or "fault")
         try:
             a["suggestion"] = json.loads(a.get("suggestion") or "[]")
         except Exception:
@@ -485,9 +499,12 @@ async def monitor_alerts_stats(hours: int = Query(0, ge=0, le=720)):
         where_time = "WHERE created_at>=?"
         time_args = [since]
     by_type = {}
+    # 存量告警 type 为空时按规则兜底
+    rule_types = {r["id"]: r["type"] for r in _query_rows("SELECT id, type FROM alert_rules WHERE type != ''")}
     for r in _query_rows(
-            f"SELECT type, COUNT(*) n FROM alerts {where_time} GROUP BY type", time_args):
-        by_type[r["type"] or "unknown"] = r["n"]
+            f"SELECT rule_id, type, COUNT(*) n FROM alerts {where_time} GROUP BY rule_id, type", time_args):
+        t = r["type"] or rule_types.get(r["rule_id"] or "", "unknown") or "unknown"
+        by_type[t] = by_type.get(t, 0) + r["n"]
     by_severity = {}
     for r in _query_rows(
             f"SELECT severity, COUNT(*) n FROM alerts {where_time} GROUP BY severity", time_args):
@@ -514,7 +531,7 @@ SUGGESTIONS_FALLBACK = {
     "prewarn": ["分析趋势：对比近期窗口指标", "定位消耗源：找出主要贡献者", "提前干预：预算控制 / 上下文压缩",
                 "跟踪确认回归基线"],
     "fault": ["定位故障源：查看最近错误日志与调用链", "逐跳排查：模型服务 / 工具 / 依赖服务状态",
-              "执行恢复动作或代码级自愈", "验证恢复并持续观察"],
+              "执行恢复动作或人工介入修复", "验证恢复并持续观察"],
     "perf": ["定位瓶颈：查看时序指标与 TOP 进程", "扩容或限流：按需提升资源配额", "优化负载：调整调度策略",
              "持续观测确认指标回落"],
     "availability": ["检查服务进程与端口", "查看服务日志定位根因", "重启服务或拉起依赖验证恢复",
@@ -546,7 +563,7 @@ def _alert_topo_entity_id(a: dict) -> str:
 
 @router.get("/api/monitor/alerts/{alert_id}")
 async def monitor_alert_detail(alert_id: int):
-    """告警详情：基本信息 + 处置建议 + 关联影响 + 关联拓扑 + 时间线 + 相关告警 + 自愈事件"""
+    """告警详情：基本信息 + 处置建议 + 关联影响 + 关联拓扑 + 时间线 + 相关告警"""
     rows = _query_rows("SELECT * FROM alerts WHERE id=?", (alert_id,))
     if not rows:
         return JSONResponse({"ok": False, "error": "告警不存在"})
@@ -600,13 +617,9 @@ async def monitor_alert_detail(alert_id: int):
         (alert_id, a.get("rule_id") or "", a.get("entity_name") or ""))
     for r in related:
         r["suggestion"] = []
-    # 自愈事件
-    heal = _query_rows(
-        "SELECT id, rule_name, state, message, fix_action, fix_log, retry_count, created_at, updated_at, resolved_at "
-        "FROM incidents WHERE alert_id = ? ORDER BY created_at DESC LIMIT 5", (alert_id,))
     return JSONResponse({"ok": True, "data": {
         "alert": a, "impact": impact, "topology": topo,
-        "timeline": timeline, "related": related, "incidents": heal,
+        "timeline": timeline, "related": related,
     }})
 
 

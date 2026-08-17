@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """/api/ops/* 接口测试：实体 / 拓扑 / 时序 / 配置 / 事件"""
+# 规格编号: NO-001 探针状态 / NO-002 本体拓扑 / NO-003 告警规则 / NO-007 运维平台
 import os
 import sys
 
@@ -66,12 +67,6 @@ def test_ops_probe_status():
     assert "collectors" in r.json()
 
 
-def test_ops_incidents():
-    r = client.get("/api/ops/incidents")
-    assert r.status_code == 200
-    assert isinstance(r.json()["incidents"], list)
-
-
 def test_ops_alert_rules():
     r = client.get("/api/ops/alert-rules")
     assert r.status_code == 200
@@ -87,8 +82,6 @@ def test_ops_alerts_aggregate():
     d = r.json()
     assert d["ok"] is True
     assert isinstance(d["alerts"], list)
-    assert isinstance(d["incidents"], list)
-    assert isinstance(d["active_incident_count"], int)
 
 
 def test_monitor_redirect_to_ops():

@@ -1,8 +1,8 @@
 # NeuOps 一体化运维监控平台（Agent Demo）
 
-> 基于本体的一体化实时监控 · 统一探针采集 · 全自动自愈 · Agent 运维对话
+> 基于本体的一体化实时监控 · 统一探针采集 · Agent 运维对话
 
-NeuOps 是一个可运行的运维监控平台 Demo：内置统一监控探针（六类真实采集 + 应用日志采集）、运维本体拓扑、告警引擎、全自动自愈引擎、代码级自愈、知识库检索与 Agent 对话，并提供 `/ops` 一体化运维监控页面。
+NeuOps 是一个可运行的运维监控平台 Demo：内置统一监控探针（六类真实采集 + 应用日志采集）、运维本体拓扑、告警引擎、知识库检索与 Agent 对话，并提供 `/ops` 一体化运维监控页面。
 
 默认端口 `9007`。
 
@@ -20,8 +20,7 @@ NeuOps 是一个可运行的运维监控平台 Demo：内置统一监控探针�
 ┌───────────────────────────────┴──────────────────────────────────┐
 │                      后端应用层（app/ 领域包）                     │
 │  agent_chat（Agent 对话/SSE）  routes_*（业务路由）                │
-│  alert_engine（告警引擎）      ops_self_heal（全自动自愈）         │
-│  ops_code_heal（代码级自愈）    ops_ontology（运维本体）            │
+│  alert_engine（告警引擎）      ops_ontology（运维本体）            │
 │  knowledge（知识库/向量检索）   mcp_tools（MCP 工具）              │
 │  devtools（文件/开发工具）      feishu_notify（飞书通知）          │
 │  traditional_pages（传统页面）  mock_data（种子/模拟数据）          │
@@ -36,7 +35,7 @@ NeuOps 是一个可运行的运维监控平台 Demo：内置统一监控探针�
                                 │ 写入
 ┌───────────────────────────────┴──────────────────────────────────┐
 │                       数据层（本地持久化）                        │
-│  neuops_sessions.db（SQLite：实体/指标/日志/告警/自愈事件/会话）   │
+│  neuops_sessions.db（SQLite：实体/指标/日志/告警/会话）           │
 │  chroma_data/（知识库向量库）  uploads/（上传文档）                │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -45,10 +44,7 @@ NeuOps 是一个可运行的运维监控平台 Demo：内置统一监控探针�
 
 ```
 探针采集 → SQLite（实体/时序指标/日志）
-   → 告警引擎（ops 真实指标 + 日志错误）→ alerts
-   → 自愈引擎（incidents 状态机：detected→repairing→verifying→recovered）
-        ├─ 白名单动作（restart_9006 / restart_9007 / restart_self / code_heal）
-        ├─ 安全护栏（次数上限、健康验证、失败升级飞书）
+   → 告警引擎（ops 真实指标 + 日志错误）→ alerts + 飞书通知
    → 本体拓扑（五类实体 + 三类关系）→ /ops 可视化
    → Agent 对话（SSE 流式 + MCP 工具 + 知识库检索）
 ```
@@ -59,7 +55,7 @@ NeuOps 是一个可运行的运维监控平台 Demo：内置统一监控探针�
 
 ```
 neuops-agent-demo/
-├── main.py                    # 薄入口：组装 app / 挂载路由 / 初始化 DB / 启动探针+引擎
+├── main.py                    # 薄入口：组装 app / 挂载路由 / 初始化 DB / 启动探针
 ├── seed_data.py               # 种子数据（技能/员工/会话/MCP 映射），启动时导入
 ├── mcp_gateway.py             # MCP 工具网关（端口 9010，DATA_SOURCE=mock|real）
 ├── requirements.txt           # 依赖清单
@@ -67,12 +63,10 @@ neuops-agent-demo/
 ├── docker-compose.yml         # host 网络编排
 ├── ops.yaml                   # /ops 页面结构快照（验证用，gitignore）
 ├── app/                       # 后端领域包
-│   ├── config.py              # 全局配置：路径/端口/探针周期/阈值/自愈白名单
-│   ├── db.py                  # SQLite 数据层（会话/配置/运维实体/指标/日志/告警/事件）
+│   ├── config.py              # 全局配置：路径/端口/探针周期/阈值/白名单
+│   ├── db.py                  # SQLite 数据层（会话/配置/运维实体/指标/日志/告警）
 │   ├── agent_chat.py          # Agent 对话链路（Mock Agent / DeepSeek / SSE）
 │   ├── alert_engine.py        # 业务告警检测引擎（LLM APM + ops 真实指标 + 日志错误）
-│   ├── ops_self_heal.py       # 全自动自愈引擎（状态机 + 白名单动作 + 审计）
-│   ├── ops_code_heal.py       # 代码级自愈（规则修复器 / LLM 修复引擎预留）
 │   ├── ops_ontology.py        # 运维本体：五类实体 + 三类关系
 │   ├── knowledge.py           # 知识库：文档入库 / 向量检索 / 问答
 │   ├── mcp_tools.py           # MCP 原子工具（业务指标/告警/变更/CMDB/作业/日志）
@@ -94,11 +88,9 @@ neuops-agent-demo/
 │   ├── share.html             # 分享页
 │   ├── ops.css                # /ops 样式
 │   └── traditional/ vendor/   # 传统页面 / 第三方资源
-├── tests/                     # 34 项 pytest
-│   ├── test_ops_api.py        # ops API（总览/实体/拓扑/设置/告警规则/事件）
+├── tests/                     # 32 项 pytest
+│   ├── test_ops_api.py        # ops API（总览/实体/拓扑/设置/告警规则）
 │   ├── test_ops_collector.py  # 六类采集器
-│   ├── test_self_heal.py      # 自愈状态机
-│   ├── test_code_heal.py      # 代码级自愈
 │   └── test_log_collector.py  # 日志采集
 ├── harness/                   # Harness CI/CD 模板（gitops / cd）
 ├── .github/workflows/ci.yml   # GitHub Actions CI（lint + test + 镜像构建）
@@ -125,7 +117,7 @@ neuops-agent-demo/
 `--report-http http://监控中心:9007/api/ops/probe/ingest` 上报，与监控中心采用完全相同的六类采集逻辑。
 上报数据按主机名（scope）隔离存储：实体/关系只重建该主机自身的数据，本机与各远程机互不覆盖；
 指标自动参与既有告警规则（服务器 CPU/内存/磁盘/健康检查）；远程日志 source 带主机前缀避免与本机规则混用；
-远程服务器告警不触发本机自愈动作，升级为人工事件。部署：
+远程服务器告警升级为人工处置。部署：
 
 ```bash
 # 免密 SSH（推荐）
@@ -149,26 +141,14 @@ SSHPASS='你的密码' ./scripts/deploy_remote_probe.sh ubuntu@目标机IP
 - 日志错误统计仅统计 `app:` 源日志，排除系统 syslog 噪音
 - 支持飞书 webhook 通知（页面可配置）
 
-### 4. 全自动自愈（ops_self_heal）
-- incident 状态机：`detected → repairing → verifying → recovered`（失败 → escalation）
-- 白名单动作：`restart_9006` / `restart_9007` / `restart_self` / `code_heal`
-- 安全护栏：自愈开关、最大重试次数、健康验证、失败升级飞书
-- 自愈事件全量审计（fix_action / fix_log / 时间线），`/ops` 自愈事件中心可视化
-- **说明**：当前 9006/9007 由服务器 systemd 托管，自愈动作与 systemd 的适配改造另行安排
-
-### 5. 代码级自愈（ops_code_heal）
-- 规则修复器（无需 LLM）自动定位日志错误并生成修复建议/补丁
-- LLM 修复引擎预留（配置 `code_heal_llm_url` / `code_heal_llm_key` 后自动启用）
-- 补丁白名单安全护栏（仅允许修改 `app/ static/ tests/ requirements.txt scripts/ run.sh` 前缀）
-
-### 6. Agent 运维对话（agent_chat）
+### 4. Agent 运维对话（agent_chat）
 - SSE 流式对话，Mock Agent 执行链路 / DeepSeek 真实 LLM 调用（预留）
 - MCP 工具：业务指标 / 告警查询 / 变更记录 / CMDB 拓扑 / 自动作业 / 服务日志
 - 技能中心：服务故障根因分析 / 告警关联变更排查 / 业务集群巡检 / 工单智能处置 等
 - 知识库检索增强（RAG）
 
-### 7. /ops 一体化运维监控平台
-`http://localhost:9007/ops`，11 个 Tab：总览 / 服务器 / 数据库 / 网络 / 容器 / 中间件 / 应用 / 日志 / 本体拓扑 / 自愈事件 / 配置
+### 5. /ops 一体化运维监控平台
+`http://localhost:9007/ops`，11 个 Tab：总览 / 服务器 / 数据库 / 网络 / 容器 / 中间件 / 应用 / 日志 / 本体拓扑 / 告警中心 / 配置
 
 ---
 
@@ -216,17 +196,14 @@ pytest -q          # 34 项全绿
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/ops/overview` | 总览（探针状态/实体/告警/事件/服务器快照） |
+| GET | `/api/ops/overview` | 总览（探针状态/实体/告警/服务器快照） |
 | GET | `/api/ops/entities` | 实体列表（按类型过滤） |
 | GET | `/api/ops/entities/{id}` | 实体详情 |
 | GET | `/api/ops/topology` | 本体拓扑 |
 | GET | `/api/ops/metrics` | 时序指标 |
-| GET/PUT | `/api/ops/settings` | 配置中心（自愈开关/重试/日志路径等） |
+| GET/PUT | `/api/ops/settings` | 配置中心（阈值/日志路径等） |
 | GET/POST/PUT/DELETE | `/api/ops/alert-rules` | 告警规则管理 |
 | GET | `/api/ops/logs` | 日志查询 |
-| GET | `/api/ops/incidents` | 自愈事件列表 |
-| POST | `/api/ops/code-heal/run` | 手动触发代码自愈 |
-| GET | `/api/ops/code-heal/status` | 代码自愈状态 |
 | GET/POST | `/api/ops/probe/status` `/run-now` `/ingest` | 探针状态 / 手动采集 / 远程上报 |
 | GET | `/api/ops/page` `/ops` | 一体化监控页面 |
 
@@ -241,7 +218,6 @@ pytest -q          # 34 项全绿
 | `OPS_RETENTION_DAYS` | `1` | 指标保留天数 |
 | `LOG_ERROR_WINDOW_MIN` | `5` | 日志错误统计窗口（分钟） |
 | `LOG_ERROR_THRESHOLD` | `10` | 日志错误告警阈值 |
-| `CODE_HEAL_ENABLED` | `True` | 代码级自愈开关 |
 | `APP_9006_*` | `http://127.0.0.1:9006` | 9006 业务系统健康检查 |
 | `MIDDLEWARE_PROBES` | redis/mysql/pg/nginx/rabbitmq/kafka/es/mongo | 中间件探测候选 |
 | `PROBE_REPORT_URL` | `` | 远程探针上报地址（CLI `--report-http` 直接指定，无需环境变量） |
@@ -263,16 +239,14 @@ pytest -q          # 34 项全绿
 - [x] 统一探针六类真实采集 + 应用日志采集
 - [x] 运维本体拓扑与可视化
 - [x] 告警引擎（ops 指标 + 日志错误，修复 syslog 噪音误报）
-- [x] 全自动自愈状态机 + 白名单动作 + 审计（本地单测通过）
-- [x] 代码级自愈（规则修复器 + 白名单护栏）
 - [x] /ops 一体化平台（11 Tab）与 /ops 路由修复
 - [x] Agent 对话（SSE + MCP 工具 + 知识库 RAG）
-- [x] 34 项 pytest 全绿 + 本地端到端验证
-- [x] 服务器部署（rsync/deploy.sh）与真实环境验证（探针/kb 渲染/自愈演练）
+- [x] 32 项 pytest 全绿 + 本地端到端验证
+- [x] 服务器部署（rsync/deploy.sh）与真实环境验证（探针/kb 渲染）
 - [x] CI / Docker / Harness 模板 / GitHub 推送脚本
+- [x] 自愈（self-heal）与代码修复（code heal）功能整体移除
 
 **待办（另行安排）**
-- [ ] 自愈动作与 systemd 托管的适配（restart_9006 优先 `systemctl restart`，避免与守护进程冲突）
 - [ ] 清理服务器遗留的 `neuops-agent.service` 坏 unit（venv 路径失效，持续 auto-restart）
 - [ ] DeepSeek 真实 LLM 对话层联调与成本控制
-- [x] 远程探针（PROBE_REPORT_URL）部署到目标机验证（scope 隔离 + 日志上报 + 自愈防护已完成）
+- [x] 远程探针（PROBE_REPORT_URL）部署到目标机验证（scope 隔离 + 日志上报）

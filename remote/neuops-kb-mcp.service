@@ -1,0 +1,18 @@
+[Unit]
+Description=NeuOps KB MCP Service (49 真实向量知识库)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/neuops-kb-mcp
+Environment=HF_ENDPOINT=https://hf-mirror.com
+Environment=KB_CHROMA_DIR=/home/ubuntu/neuops-kb-mcp/chroma_data
+Environment=KB_COLLECTION=bid_knowledge
+Environment=KB_EMBED_MODEL=BAAI/bge-small-zh-v1.5
+ExecStart=/home/ubuntu/neuops-kb-mcp/.venv/bin/uvicorn kb_mcp_server:app --host 0.0.0.0 --port 9012
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

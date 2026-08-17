@@ -74,21 +74,6 @@ LOG_MAX_LINES_PER_RUN = 300
 LOG_ERROR_WINDOW_MIN = 5
 LOG_ERROR_THRESHOLD = 10
 
-# 代码级自愈（ops_code_heal）
-CODE_HEAL_ENABLED = True
-# 代码仓库路径（默认当前项目根目录；可通过 settings 页面配置 app_code_repo）
-CODE_REPO_DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-# 代码自愈操作步骤超时（秒）
-CODE_HEAL_STEP_TIMEOUT = 120
-# 修复后健康验证的超时与重试
-CODE_HEAL_VERIFY_TIMEOUT = 60
-# LLM 修复引擎预留（配置 code_heal_llm_url / code_heal_llm_key 后自动启用，否则使用规则修复器）
-CODE_HEAL_LLM_URL = ""
-CODE_HEAL_LLM_KEY = ""
-# 补丁白名单：仅允许修改仓库内这些前缀路径（安全护栏）
-CODE_HEAL_ALLOW_PREFIXES = ("app/", "static/", "tests/", "requirements.txt",
-                            "scripts/", "run.sh")
-
 # 9006 业务系统（contract-compare）健康检查
 APP_9006_NAME = "contract-compare"
 APP_9006_BASE = "http://127.0.0.1:9006"

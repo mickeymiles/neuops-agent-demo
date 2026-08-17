@@ -7,7 +7,7 @@
 ```
 Git push (main) → CI.lint(ruff + pytest 34 项) → CI.docker-build(镜像→ghcr.io)
               → CI.deploy(SSH 同步代码 → 安装依赖 → 重启 neuops-9007 → 健康检查)
-              → 监控(统一探针) → 告警(飞书) → 自愈(全自动) → 修复验证 → 事件闭环
+              → 监控(统一探针) → 告警(飞书) → 人工处置 → 事件闭环
 ```
 
 ### 本地手动部署（等价命令）

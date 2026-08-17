@@ -513,7 +513,7 @@ async def ops_metrics(
 @app.post("/tools/ops_settings")
 @app.get("/tools/ops_settings")
 async def ops_settings():
-    """获取监控平台配置项（阈值/探针/自愈开关等，只读，转发 9007）"""
+    """获取监控平台配置项（阈值/探针等，只读，转发 9007）"""
     return await _neuops_forward("ops_settings", "/api/ops/settings")
 
 
@@ -529,13 +529,6 @@ async def ops_logs(
     return await _neuops_forward("ops_logs", "/api/ops/logs",
                                  {"source": source, "level": level,
                                   "minutes": minutes, "limit": limit})
-
-
-@app.post("/tools/ops_incidents")
-@app.get("/tools/ops_incidents")
-async def ops_incidents(state: str = Query(default="", description="按状态过滤：detected/repairing/verifying/recovered/failed/manual")):
-    """查询故障事件列表（真实事件，只读，转发 9007）"""
-    return await _neuops_forward("ops_incidents", "/api/ops/incidents", {"state": state})
 
 
 @app.post("/tools/ops_alerts_aggregate")

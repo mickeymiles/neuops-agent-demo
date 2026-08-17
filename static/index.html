@@ -3278,7 +3278,7 @@ function openDocModal() {
     <h4>消息内交互按钮</h4>
     <ul>
       <li>浏览类：「查看完整指标」「查看拓扑详情」→ 新开标签跳转传统运维页面</li>
-      <li>高危操作类：「执行自愈操作」→ 弹出审批弹窗 → 确认后发起第二轮请求执行</li>
+      <li>处置操作类：Agent 输出处置建议 → 人工确认后手动执行</li>
     </ul>
 
     <h3>五、右侧任务洞察面板（3 个 Tab）</h3>
@@ -3303,7 +3303,7 @@ function openDocModal() {
       <tr><td>ops_overview / ops_entities</td><td>运维全域概览 / 实体清单（9007）</td></tr>
       <tr><td>ops_metrics</td><td>监控时序指标：cpu_usage/mem_usage/disk_usage/load1（9007）</td></tr>
       <tr><td>ops_logs</td><td>系统日志检索（9007 真实采集）</td></tr>
-      <tr><td>ops_incidents / ops_alerts_aggregate</td><td>故障事件 / 告警聚合统计（9007）</td></tr>
+      <tr><td>ops_alerts_aggregate</td><td>告警聚合统计（9007）</td></tr>
       <tr><td>monitor_agents / monitor_alerts</td><td>AI 数字员工运行状态 / 异常告警（9007 自监控）</td></tr>
       <tr><td>long_tasks</td><td>长任务队列（9007 自监控）</td></tr>
       <tr><td>query_contracts / get_comparison_results</td><td>合同比对（9006 经营）</td></tr>
@@ -3328,7 +3328,7 @@ function openDocModal() {
     <h4>流程 2：告警根因分析（告警根因分析专家 emp-002）</h4>
     <ol>
       <li>输入：分析当前未恢复的告警，聚合降噪并定位根因</li>
-      <li>调用：ops_alerts_aggregate → ops_incidents → ops_logs（error）→ ops_metrics</li>
+      <li>调用：ops_alerts_aggregate → ops_logs（error）→ ops_metrics</li>
       <li>输出根因报告与处置建议（所有处置人工确认后执行）</li>
     </ol>
 

@@ -2,7 +2,7 @@
 """运维监控 API：/api/ops/*（一体化运维监控平台后端）
 
 覆盖：总览 / 六类实体 / 本体拓扑 / 时序查询 / 告警规则 / 配置中心 /
-自愈事件 / 探针控制（手动采集、远程探针上报）
+探针控制（手动采集、远程探针上报）
 """
 import socket
 import uuid
@@ -70,8 +70,6 @@ def ops_overview():
         "SELECT COUNT(*) AS n, SUM(CASE WHEN status='firing' THEN 1 ELSE 0 END) AS firing "
         "FROM alerts")
     a = alerts[0] if alerts else {"n": 0, "firing": 0}
-    incidents = db.incident_list(limit=5)
-    incidents_open = len([i for i in db.incident_list() if i["state"] not in ("recovered",)])
     # 最近指标快照
     snapshot = db.ops_get_latest_snapshot()
     server_snapshot = {}
@@ -95,7 +93,6 @@ def ops_overview():
             "types": ops_ontology.ENTITY_META,
         },
         "alerts": {"total": a["n"] or 0, "firing": a["firing"] or 0},
-        "incidents": {"total": len(incidents), "open": incidents_open, "recent": incidents},
         "serverSnapshot": server_snapshot,
     }
 
@@ -152,29 +149,15 @@ SETTINGS_DEF = {
                        "desc": "统一探针采集间隔，默认 30 秒", "group": "探针"},
     "retention_days": {"label": "时序数据保留（天）", "type": "number", "default": "1",
                        "desc": "ops_metrics 保留天数，超期自动清理", "group": "探针"},
-    "self_heal_enabled": {"label": "全自动自愈开关", "type": "bool", "default": "0",
-                          "desc": "启用后检测到故障自动修复（带安全护栏）", "group": "自愈"},
-    "self_heal_max_retry": {"label": "自愈最大重试次数", "type": "number", "default": "2",
-                            "desc": "单故障自动修复最大重试次数", "group": "自愈"},
     "cpu_threshold": {"label": "CPU 使用率告警阈值（%）", "type": "number", "default": "90", "group": "告警阈值"},
     "mem_threshold": {"label": "内存使用率告警阈值（%）", "type": "number", "default": "90", "group": "告警阈值"},
     "disk_threshold": {"label": "磁盘使用率告警阈值（%）", "type": "number", "default": "90", "group": "告警阈值"},
     "probe_apps": {"label": "自定义监控应用", "type": "textarea", "default": "",
                    "desc": "格式：名称|http://地址|端口|进程关键词，每行一个，用 | 分隔", "group": "应用采集"},
-    "app_9006_cwd": {"label": "9006 系统工作目录", "type": "text", "default": "",
-                     "desc": "自愈重启 9006 时的启动目录（如 /home/ubuntu/contract-compare）", "group": "自愈"},
     "app_9006_log": {"label": "9006 应用日志路径", "type": "text", "default": "",
                      "desc": "9006 contract-compare 日志文件路径（统一探针增量采集）", "group": "日志采集"},
     "app_9007_log": {"label": "9007 应用日志路径", "type": "text", "default": "",
                      "desc": "9007 neuops 自身日志文件路径（统一探针增量采集）", "group": "日志采集"},
-    "code_heal_enabled": {"label": "代码级自愈开关", "type": "bool", "default": "1",
-                          "desc": "日志/代码故障自动修复→测试→发布→验证（须同时开启全自动自愈）", "group": "自愈"},
-    "app_code_repo": {"label": "代码仓库路径", "type": "text", "default": "",
-                      "desc": "代码级自愈操作的 Git 仓库根目录，留空默认当前项目", "group": "自愈"},
-    "code_heal_llm_url": {"label": "代码修复 LLM 地址", "type": "text", "default": "",
-                          "desc": "预留：配置后启用 LLM 生成修复补丁；留空使用内置规则修复器", "group": "自愈"},
-    "code_heal_llm_key": {"label": "代码修复 LLM 密钥", "type": "password", "default": "",
-                          "desc": "预留：LLM 服务 API Key", "group": "自愈"},
 }
 
 
@@ -283,71 +266,18 @@ def ops_logs(
     return {"ok": True, "logs": rows, "stats": stats, "count": len(rows)}
 
 
-# ---------------- 自愈事件（incidents） ----------------
-
-@router.get("/incidents")
-def ops_incidents(state: str = Query("", description="按状态过滤：detected/repairing/verifying/recovered/failed/manual")):
-    return {"ok": True, "incidents": db.incident_list(state=state, limit=200)}
-
-
-@router.get("/incidents/{incident_id}")
-def ops_incident_detail(incident_id: str):
-    inc = db.incident_get(incident_id)
-    if not inc:
-        raise HTTPException(404, f"incident {incident_id} not found")
-    return {"ok": True, "incident": inc}
-
-
 @router.get("/alerts/aggregate")
 def ops_alerts_aggregate(status: str = Query("firing", description="告警状态筛选：firing/resolved/all")):
-    """告警中心聚合：合并智能体告警(alerts)与基础设施自愈事件(incidents)统一返回。"""
+    """告警中心聚合：返回告警(alerts)统一列表。"""
     if status not in ("firing", "resolved", "all"):
         status = "firing"
     if status == "all":
         alerts = db._query_rows("SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?", (100,))
     else:
         alerts = db._query_rows("SELECT * FROM alerts WHERE status=? ORDER BY created_at DESC LIMIT ?", (status, 100))
-    incidents = db.incident_list(state="", limit=200)
-    active_incidents = [i for i in incidents if (i.get("state") or "") != "recovered"]
     return {
         "ok": True,
         "alerts": alerts,
-        "incidents": incidents,
-        "active_incident_count": len(active_incidents),
-    }
-
-
-# ---------------- 代码级自愈 ----------------
-
-@router.post("/code-heal/run")
-def ops_code_heal_run(payload: dict = Body(...)):
-    """手动触发某个 incident 的代码级自愈（发现→修复→测试→发布→验证）"""
-    incident_id = (payload.get("incident_id") or "").strip()
-    if not incident_id:
-        raise HTTPException(400, "incident_id required")
-    from . import ops_code_heal
-    inc = db.incident_get(incident_id)
-    if not inc:
-        raise HTTPException(404, f"incident {incident_id} not found")
-    result = ops_code_heal.run_code_heal(incident_id)
-    return {"ok": True, "incident": result}
-
-
-@router.get("/code-heal/status")
-def ops_code_heal_status():
-    """代码自愈能力状态：仓库、git 可用性、LLM 配置、白名单路径"""
-    from . import config as ops_config
-    from . import ops_code_heal
-    repo = ops_code_heal._resolve_repo()
-    git_ok = ops_code_heal._is_git_repo(repo)
-    return {
-        "ok": True,
-        "repo": repo,
-        "git": git_ok,
-        "enabled": db.db_get_setting("code_heal_enabled", "1") == "1",
-        "llmConfigured": bool(db.db_get_setting("code_heal_llm_url", "")),
-        "allowedPrefixes": list(ops_config.CODE_HEAL_ALLOW_PREFIXES),
-        "ruleFixers": ["sqlite_busy_timeout", "add_missing_dependency"],
     }
 
 

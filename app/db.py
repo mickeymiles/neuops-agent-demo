@@ -1702,7 +1702,7 @@ def db_get_kb_employees(kb_id: str):
 # ════════════════════════════════════════════════════════════
 # 统一监控探针数据层
 # ops_metrics 时序指标(保留1天) / ops_entities 本体实体
-# ops_relations 本体关系 / incidents 自愈事件 / settings 配置
+# ops_relations 本体关系 / settings 配置
 # ════════════════════════════════════════════════════════════
 
 OPS_ENTITY_TYPES = ("server", "database", "network", "container", "middleware", "application")
@@ -1749,26 +1749,6 @@ def init_ops_db():
                     PRIMARY KEY (source, target, type)
                 )
             """)
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS incidents (
-                    id TEXT PRIMARY KEY,
-                    alert_id INTEGER NOT NULL DEFAULT 0,
-                    rule_name TEXT NOT NULL DEFAULT '',
-                    entity_type TEXT NOT NULL DEFAULT '',
-                    entity_name TEXT NOT NULL DEFAULT '',
-                    severity TEXT NOT NULL DEFAULT 'warning',
-                    state TEXT NOT NULL DEFAULT 'detected',
-                    message TEXT NOT NULL DEFAULT '',
-                    fix_action TEXT NOT NULL DEFAULT '',
-                    fix_log TEXT NOT NULL DEFAULT '',
-                    retry_count INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL DEFAULT '',
-                    updated_at TEXT NOT NULL DEFAULT '',
-                    resolved_at TEXT NOT NULL DEFAULT ''
-                )
-            """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_state ON incidents(state)")
 
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS settings (
@@ -2072,61 +2052,4 @@ def ops_save_relations(ts: str, items, scope: str = ""):
 
 def ops_get_relations() -> list:
     rows = _query_rows("SELECT source, target, type FROM ops_relations")
-    return [dict(r) for r in rows]
-
-
-# ---- incidents 自愈事件 ----
-
-def incident_create(incident_id: str, alert_id: int, rule_name: str,
-                    entity_type: str, entity_name: str, severity: str,
-                    message: str, ts: str) -> dict:
-    with _db_lock:
-        conn = _get_conn()
-        try:
-            conn.execute(
-                "INSERT INTO incidents (id, alert_id, rule_name, entity_type, entity_name, "
-                "severity, state, message, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'detected', ?, ?, ?)",
-                (incident_id, alert_id, rule_name, entity_type, entity_name,
-                 severity, message, ts, ts))
-            conn.commit()
-        finally:
-            conn.close()
-    return incident_get(incident_id)
-
-
-def incident_update(incident_id: str, **fields):
-    allowed = ("state", "message", "fix_action", "fix_log", "retry_count",
-               "updated_at", "resolved_at")
-    sets, args = [], []
-    for k, v in fields.items():
-        if k in allowed:
-            sets.append(f"{k} = ?")
-            args.append(v)
-    if not sets:
-        return
-    args.append(incident_id)
-    with _db_lock:
-        conn = _get_conn()
-        try:
-            conn.execute(
-                "UPDATE incidents SET " + ", ".join(sets) + " WHERE id = ?", tuple(args))
-            conn.commit()
-        finally:
-            conn.close()
-
-
-def incident_get(incident_id: str) -> dict:
-    row = _query_one("SELECT * FROM incidents WHERE id = ?", (incident_id,))
-    return dict(row) if row else {}
-
-
-def incident_list(state: str = "", limit: int = 100) -> list:
-    if state:
-        rows = _query_rows(
-            "SELECT * FROM incidents WHERE state = ? ORDER BY created_at DESC LIMIT ?",
-            (state, limit))
-    else:
-        rows = _query_rows(
-            "SELECT * FROM incidents ORDER BY created_at DESC LIMIT ?", (limit,))
     return [dict(r) for r in rows]

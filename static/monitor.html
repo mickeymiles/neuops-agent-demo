@@ -1453,15 +1453,6 @@ function openAlertDetail(id) {
         <div class="m">${esc(r.message)} · ${fmtTime(r.created_at)}</div>
       </div>`;
     }).join("") || `<div class="muted sm">暂无相关告警</div>`;
-    const incidents = (d.incidents || []).map(inc => {
-      const ist = { detected: "检测中", healing: "自愈中", resolved: "已解决", failed: "失败" }[inc.state] || inc.state;
-      const isev = inc.state === "failed" ? "crit" : inc.state === "healing" ? "warn" : inc.state === "resolved" ? "ok" : "muted";
-      return `<div class="dp-list-item">
-        <div class="t"><span class="badge ${isev}">${esc(ist)}</span>${esc(inc.rule_name)}<span class="muted">${fmtTime(inc.created_at)}</span></div>
-        <div class="m">${esc(inc.fix_action || inc.message || "")}</div>
-        <div class="m">${inc.fix_log ? "📜 " + esc(inc.fix_log) : ""}</div>
-      </div>`;
-    }).join("") || `<div class="muted sm">暂无自愈事件（该告警未触发代码级自愈）</div>`;
     $("#d-body").innerHTML = `
       <div class="dp-block"><h4>📋 基本信息</h4>
         <div class="dp-grid">
@@ -1485,8 +1476,7 @@ function openAlertDetail(id) {
       <div class="dp-block"><h4>🔗 关联影响</h4>${impact}</div>
       <div class="dp-block"><h4>🕸 关联拓扑</h4><div id="alert-topo" class="topo-box"></div></div>
       <div class="dp-block"><h4>🕘 时间线</h4><div class="dp-timeline">${timeline}</div></div>
-      <div class="dp-block"><h4>🔁 相关告警 (${(d.related || []).length})</h4>${related}</div>
-      <div class="dp-block"><h4>🤖 自愈事件 (${(d.incidents || []).length})</h4>${incidents}</div>`;
+      <div class="dp-block"><h4>🔁 相关告警 (${(d.related || []).length})</h4>${related}</div>`;
     renderAlertTopo($("#alert-topo"), d.topology);
     setTimeout(() => { const c = echarts.getInstanceByDom($("#alert-topo")); if (c) c.resize(); }, 80);
   }).catch(e => {

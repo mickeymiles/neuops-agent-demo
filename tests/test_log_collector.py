@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """统一探针日志采集器测试：级别解析、增量 tail、ops_logs 落库"""
+# 规格编号: NO-001 数据采集（日志采集）
 import datetime
 import os
 import sys

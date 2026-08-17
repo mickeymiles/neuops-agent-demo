@@ -1,5 +1,7 @@
 # NeuOps 服务器版本存档指纹 20260816
 
+> 本快照记录 2026-08-16 的部署状态；其中自愈（self-heal）/ 代码修复（code heal）相关文件与 incidents 数据已于 2026-08-17（变更 `20260817-remove-self-heal`）整体移除。
+
 生成时间: 2026-08-16 09:44:52 CST
 部署目录: /home/ubuntu/neuops-agent-demo
 本地 git tag: v1.0-pre-dsh (HEAD=e133c525eaa8ae50937e84040fe2084d697ce4fb)

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """探针采集器测试：六类采集器返回统一 ProbeReport 结构"""
+# 规格编号: NO-001 数据采集（六类实体采集器）
 import os
 import sys
 

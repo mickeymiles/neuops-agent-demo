@@ -1,4 +1,4 @@
-"""后台告警检测引擎：定时扫描 llm_calls + 统一探针真实 ops 指标，生成/解除告警并触发自愈"""
+"""后台告警检测引擎：定时扫描 llm_calls + 统一探针真实 ops 指标，生成/解除告警并发送飞书通知"""
 
 import json
 import time
@@ -32,7 +32,7 @@ DEFAULT_ALERT_RULES = [
     {"id": "rule-ops-006", "name": "中间件健康检查失败", "metric": "health", "target": "middleware", "threshold": 1.0,
      "window_min": 1, "severity": "warning", "type": "availability", "desc": "中间件健康检查失败"},
     {"id": "rule-ops-007", "name": "应用日志错误突增", "metric": "log_error", "target": "log", "threshold": 10.0,
-     "window_min": 5, "severity": "warning", "type": "fault", "desc": "最近 5 分钟 ERROR/CRITICAL 日志超过阈值（疑似代码级故障，触发代码自愈）"},
+     "window_min": 5, "severity": "warning", "type": "fault", "desc": "最近 5 分钟 ERROR/CRITICAL 日志超过阈值（疑似代码级故障）"},
 ]
 
 # 处置建议知识库：按告警类型/指标给出步骤化处置建议（后续可扩展为 LLM 自动生成）
@@ -40,7 +40,7 @@ SUGGESTIONS = {
     "fault": [
         "定位故障源：查看最近错误日志与调用链，确认异常发生在模型服务、工具还是业务代码",
         "按链路逐跳排查：检查 LLM 服务可用性 / 配额 / 鉴权，以及 MCP 工具与依赖服务状态",
-        "采取恢复动作：重启异常服务或执行代码级自愈，必要时回滚最近变更",
+        "采取恢复动作：重启异常服务或人工介入修复，必要时回滚最近变更",
         "验证恢复：观察错误率回落至阈值以下，并确认相关依赖服务健康",
     ],
     "perf": [
@@ -128,7 +128,7 @@ SUGGESTION_BY_METRIC = {
     "log_error": [
         "查看最近错误日志堆栈，定位异常代码位置",
         "按日志特征判断根因（依赖故障 / 数据异常 / 逻辑缺陷）",
-        "执行代码级自愈修复或人工介入修复",
+        "人工介入修复：定位异常代码并回滚或修正",
         "验证错误日志不再增长，确认服务恢复正常",
     ],
 }
@@ -262,7 +262,7 @@ def _run_alert_checks():
 
 
 def _check_ops_metric(rule, entity_type: str, entity_name_prefix: str, metric: str):
-    """检查统一探针采集的实体实时指标是否超阈值，命中则生成告警并触发自愈"""
+    """检查统一探针采集的实体实时指标是否超阈值，命中则生成告警并发送飞书通知"""
     from . import db
     threshold = float(rule["threshold"] or 0)
     snapshot = db.ops_get_latest_snapshot()
@@ -308,14 +308,14 @@ def _check_ops_health(rule, entity_type: str):
 
 
 def _check_ops_logs(rule):
-    """检查最近窗口内 ERROR/CRITICAL 日志数量，超过阈值触发告警并进入代码级自愈"""
+    """检查最近窗口内 ERROR/CRITICAL 日志数量，超过阈值触发告警"""
     from . import config, db
     threshold = float(rule["threshold"] or 0)
     window = int(rule.get("window_min") or config.LOG_ERROR_WINDOW_MIN)
     # 只统计应用日志（app: 源），排除 system 系统日志噪音，避免误报
     n = db.ops_count_logs(minutes=window, level="error", source_prefix="app:")
     if n >= threshold:
-        # 附带最近一条错误日志，便于代码自愈诊断定位
+        # 附带最近一条错误日志，便于根因诊断定位
         last = db.ops_get_logs(source="", level="error", minutes=window, limit=1)
         hint = last[0]["message"][:300] if last else ""
         _process_alert_ops(rule, n,
@@ -325,7 +325,7 @@ def _check_ops_logs(rule):
 
 
 def _process_alert_ops(rule, value, message, entity_type: str, entity_name: str):
-    """生成 ops 告警 + 触发飞书通知 + 创建自愈事件
+    """生成 ops 告警 + 触发飞书通知
 
     判定方向：cpu/mem/disk 等百分比类指标「大于等于阈值」触发；
     health 类指标（值域 0/1）通过 inverted 规则判定「低于阈值」触发。
@@ -368,15 +368,6 @@ def _process_alert_ops(rule, value, message, entity_type: str, entity_name: str)
                                  f"{entity_type}/{entity_name}\n{message}",
                                  {"entity": entity_name, "metric": rule["metric"],
                                   "value": f"{value:.1f}", "threshold": rule["threshold"]})
-    except Exception:
-        pass
-    # 触发自愈
-    try:
-        from . import ops_self_heal
-        inc = ops_self_heal.create_incident_from_alert(
-            alert_id, rule["name"], entity_type, entity_name, rule["severity"], message)
-        if inc.get("state") in ("detected", "verifying"):
-            ops_self_heal.process_incident(inc["id"])
     except Exception:
         pass
 

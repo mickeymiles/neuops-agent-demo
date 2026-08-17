@@ -85,18 +85,3 @@ def send_alert(severity: str, title: str, content: str, extras: dict = None) -> 
     except Exception as e:  # noqa: BLE001
         logger.exception("[feishu] send exception")
         return {"ok": False, "msg": str(e)}
-
-
-def notify_incident(incident: dict) -> dict:
-    """自愈事件状态变化时通知飞书"""
-    sev = "critical" if incident.get("severity") == "critical" else "warning"
-    title = f"自愈事件 [{incident.get('state', '')}] {incident.get('rule_name', '')}"
-    content = (f"实体: {incident.get('entity_type', '')} / {incident.get('entity_name', '')}\n"
-               f"消息: {incident.get('message', '')}\n"
-               f"修复动作: {incident.get('fix_action') or '待执行'}\n"
-               f"重试: {incident.get('retry_count', 0)}")
-    return send_alert(sev, title, content, {
-        "rule": incident.get("rule_name", ""),
-        "entity": incident.get("entity_name", ""),
-        "state": incident.get("state", ""),
-    })

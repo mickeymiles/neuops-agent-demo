@@ -30,7 +30,6 @@ from app import (
     traditional_pages,
 )
 from app.probe import ProbeManager
-from app.ops_self_heal import get_engine
 
 
 @asynccontextmanager
@@ -40,13 +39,10 @@ async def lifespan(app: FastAPI):
     pm = ProbeManager()
     routes_ops.set_probe(pm)
     pm.start()
-    # 全自动自愈引擎
-    get_engine().start()
     # 业务告警检测引擎（LLM APM + ops 真实指标，后续扩展）
     threading.Thread(target=_alert_engine_loop, daemon=True).start()
     yield
     pm.stop()
-    get_engine().stop()
 
 
 app = FastAPI(title="NeuOps Agent Demo", lifespan=lifespan)

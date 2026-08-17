@@ -29,5 +29,5 @@ VOLUME ["/srv/neuops/data", "/srv/neuops/chroma_data", "/srv/neuops/uploads"]
 
 EXPOSE 9007
 
-# 启动：统一探针 + 自愈引擎在应用 lifespan 中自动启动
+# 启动：统一探针在应用 lifespan 中自动启动
 CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9007"]

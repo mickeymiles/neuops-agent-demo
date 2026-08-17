@@ -27,8 +27,6 @@ def main():
     defaults = {
         "probe_interval": str(interval),
         "retention_days": str(config.OPS_RETENTION_DAYS),
-        "self_heal_enabled": "1",
-        "self_heal_max_retry": "2",
         "cpu_threshold": "90",
         "mem_threshold": "90",
         "disk_threshold": "90",
