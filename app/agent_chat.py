@@ -642,7 +642,7 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
         "emp-002": ("告警根因分析专家", "http://127.0.0.1:9007/ops"),
         "emp-003": ("运维开发助手", "http://127.0.0.1:9007/ops"),
         "emp-006": ("项目管理成本利润治理专家", "http://127.0.0.1:9007/ops"),
-        "emp-007": ("售前投标方案智能组装专家", "http://127.0.0.1:9007/ops"),
+        "emp-007": ("售前投标方案智能组装专家", "http://127.0.0.1:9007/bidding"),
     }
     emp_name, emp_url = _emp_meta.get(employee, (employee, "http://127.0.0.1:9007"))
     async for ev in _run_employee_general_loop(employee, emp_name, query, history, conversation_id,
@@ -939,11 +939,20 @@ def build_employee_prompt(emp_id: str) -> str:
     skills = db_list_skills()
     skill_text = "；".join(
         f"{s['name']}:{s.get('desc','')[:50]}" for s in skills if s["id"] in emp.get("skills", []))
-    return (f"你是「{emp['name']} {emp['id']}」数字员工。{emp.get('desc','')}\n"
-            f"你当前绑定的技能：{skill_text or '无'}\n"
-            f"你有以下原子工具（通过它们查询真实系统的数据，禁止编造数据）：\n{tool_text}\n"
-            f"工作方式：先分析需求 → 选择合适的工具查询真实数据 → 基于返回结果在推理中自行做统计、汇总、对比 → 输出结论。"
-            f"输出要求：用 Markdown 中文输出；涉及表格用 Markdown 表格；金额保留整数加千分位；最后给简要结论。")
+    base_prompt = (f"你是「{emp['name']} {emp['id']}」数字员工。{emp.get('desc','')}\n"
+                   f"你当前绑定的技能：{skill_text or '无'}\n"
+                   f"你有以下原子工具（通过它们查询真实系统的数据，禁止编造数据）：\n{tool_text}\n"
+                   f"工作方式：先分析需求 → 选择合适的工具查询真实数据 → 基于返回结果在推理中自行做统计、汇总、对比 → 输出结论。"
+                   f"输出要求：用 Markdown 中文输出；涉及表格用 Markdown 表格；金额保留整数加千分位；最后给简要结论。")
+    # emp-007 售前投标专家：信息问答 vs 重操作跳转工作台 行为边界（NO-009 FR-7 / NO-006）
+    if emp_id == "emp-007":
+        base_prompt += (
+            "\n\n【工作台协作边界】你是售前投标方案智能组装专家，投标工作台（http://127.0.0.1:9007/bidding）"
+            "已支持：项目管理、规范书上传、拆标解析、生成技术方案/点对点应答/PPT大纲/实施方案、合规自检、成果导出。\n"
+            "信息类问题（如资质要求有哪些、评分标准解读、中标经验咨询、政策解读）请在聊天内基于绑定知识库直接回答。\n"
+            "凡涉及上传规范书、拆标、生成应答、合规自检、导出文档等重操作请求，一律引导用户前往投标工作台 "
+            "http://127.0.0.1:9007/bidding 操作，并简要说明页面内已支持的能力，不要在聊天内执行这些重操作。")
+    return base_prompt
 
 
 def build_rag_context(query: str, emp_id: str, top_k: int = 5, conversation_id: str = "", employee_name: str = "") -> str:

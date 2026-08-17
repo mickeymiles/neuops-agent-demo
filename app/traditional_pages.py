@@ -18,6 +18,13 @@ async def index():
         return HTMLResponse(f.read())
 
 
+@router.get("/bidding")
+async def bidding_page():
+    """投标工作台页面"""
+    with open(os.path.join(STATIC_DIR, "bidding.html"), "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
 @router.get("/health")
 async def health():
     return {"status": "ok", "service": "NeuOps Agent Demo"}

@@ -15,11 +15,13 @@ from fastapi.staticfiles import StaticFiles
 from app.alert_engine import _alert_engine_loop, seed_alert_rules
 from app.config import DB_PATH, PORT, STATIC_DIR
 from app.db import (
-    init_config_db, init_ops_db, init_session_db, seed_config_db, seed_mock_conversations,
+    init_bid_db, init_config_db, init_ops_db, init_session_db, seed_config_db, seed_mock_conversations,
     ensure_mcp_server_mapping, sync_seed_employees,
 )
+from app.seed_bid_kb import seed_bid_kb
 from app import (
     agent_chat,
+    bidding,
     routes_employees,
     routes_knowledge,
     routes_manage,
@@ -78,6 +80,7 @@ app.include_router(routes_knowledge.router)
 app.include_router(routes_ops.router)
 app.include_router(routes_ops.page_router)
 app.include_router(routes_manage.page_router)
+app.include_router(bidding.router)
 
 # 静态资源
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -86,6 +89,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 init_session_db()
 init_config_db()
 init_ops_db()
+init_bid_db()
+seed_bid_kb()
 seed_mock_conversations()
 seed_config_db()
 sync_seed_employees()

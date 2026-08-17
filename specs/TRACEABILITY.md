@@ -15,11 +15,12 @@
 | NO-006 | Agent 对话与 MCP | `app/agent_chat.py`、`app/mcp_tools.py`、`app/mcp_gateway.py` | `tests/test_agent_chat.py`（test_sse_event_format / test_sse_event_data_json_parseable / test_mock_agent_run_approved_action_sequence / test_mock_agent_run_approved_action_thought / test_mock_agent_run_approved_action_message / test_mock_agent_run_approved_action_end / test_skills_api / test_skills_full_api） |
 | NO-007 | 运维一体化平台 | `app/routes_ops.py`、`static/ops.html`、`static/monitor.html`（拓扑拖拽持久化 / 双链路布局） | `tests/test_ops_api.py`（test_ops_page / test_ops_overview / test_ops_settings_roundtrip / test_ops_metrics_query / test_ops_alert_rules / test_ops_alerts_aggregate / test_monitor_redirect_to_ops） |
 | NO-008 | 知识库与 RAG | `app/knowledge.py` | `tests/test_knowledge.py`（test_parse_document_txt / test_parse_document_md / test_parse_document_xlsx / test_parse_document_unsupported_extension / test_chunk_text_empty / test_chunk_text_short_paras_aggregated / test_chunk_text_long_split_with_overlap / test_chunk_text_short_fragments_filtered / test_tokenize_zh_short_word / test_tokenize_zh_long_word_window / test_tokenize_zh_punctuation_split / test_keyword_search_ranking / test_keyword_search_no_match / test_search_knowledge_empty_input / test_search_knowledge_fallback_keyword） |
+| NO-009 | 投标业务专家能力 | `app/bidding/routes_bidding.py`、`app/bidding/bid_engine.py`、`app/db/bidding.py`、`static/bidding.html`、`app/seed_bid_kb.py` | `tests/test_bid.py`（test_bid_project_crud / test_bid_project_name_required / test_bid_upload_txt / test_bid_upload_unsupported_ext / test_bid_parse_rule_fallback / test_bid_parse_api_flow / test_bid_generate_docs / test_bid_generate_invalid_type / test_bid_check_compliance / test_bid_export_md / test_bid_export_docx / test_bid_employee_prompt_guidance / test_bidding_page / test_bid_kb_seeded_and_bound） |
 
 ## 覆盖情况统计
 
-- 已回填规格：8 个（NO-001 ~ NO-008）
-- 有测试覆盖：6 个（NO-001/002/003/006/007/008）
+- 已回填规格：9 个（NO-001 ~ NO-009）
+- 有测试覆盖：7 个（NO-001/002/003/006/007/008/009）
 - 已废弃：2 个（NO-004 自愈引擎、NO-005 代码修复器，随功能整体移除）
 - 待补测试：无
 
@@ -33,3 +34,4 @@
 | 2026-08-17 | 20260817-remove-self-heal | 整体移除自愈（NO-004）与代码修复（NO-005）功能：删除引擎/代码/接口/MCP 工具/incidents 表，同步清理前端、测试与文档 |
 | 2026-08-17 | 20260817-topo-layout-drag | 智能体拓扑拖拽位置持久化（localStorage + 重置布局）与双链路平行布局（kb 对齐 tool、vector_db 对齐 server），NO-007 追加两条 Requirement，归档于 archive/2026-08-17-topo-layout-drag/ |
 | 2026-08-17 | 20260817-db-package-refactor | 数据层内部重构（无行为变更）：`app/db.py` 按表域拆分为 `app/db/` 包（base/schema/sessions/seed/employees/tasks/kb/ops + `__init__.py` 全量 re-export，外部导入零改动）；合并重复 mock 数据源（删除 `app/mock_data.py`，`app/mcp_tools.py` 改用根 `mock_data.py`）。44/45 测试通过，1 例失败为环境依赖（本机未运行 neuops 服务，`test_application_collector` 扫不到应用实体）。归档于 archive/2026-08-17-db-package-refactor/ |
+| 2026-08-17 | 20260817-bid-expert | 新增 NO-009 投标业务专家能力：投标工作台（`/bidding`，项目 CRUD/上传/拆标/生成/自检/导出）+ `app/bidding/` 模块 + `bid_projects` 表；emp-007 聊天重操作跳转工作台（NO-006 追加 FR）；预置 5 类投标知识库并绑定 emp-007（NO-008 追加 FR）。14 个新用例全通过；既有 1 例失败为环境依赖（`test_application_collector`）。归档于 archive/2026-08-17-bid-expert/ |
