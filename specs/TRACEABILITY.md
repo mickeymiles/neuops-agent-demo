@@ -32,3 +32,4 @@
 | 2026-08-17 | 20260817-no008-knowledge-tests | 新增 NO-008 知识库测试（解析/切块/分词/关键词降级检索），归档于 archive/2026-08-17-no008-knowledge-tests/ |
 | 2026-08-17 | 20260817-remove-self-heal | 整体移除自愈（NO-004）与代码修复（NO-005）功能：删除引擎/代码/接口/MCP 工具/incidents 表，同步清理前端、测试与文档 |
 | 2026-08-17 | 20260817-topo-layout-drag | 智能体拓扑拖拽位置持久化（localStorage + 重置布局）与双链路平行布局（kb 对齐 tool、vector_db 对齐 server），NO-007 追加两条 Requirement，归档于 archive/2026-08-17-topo-layout-drag/ |
+| 2026-08-17 | 20260817-db-package-refactor | 数据层内部重构（无行为变更）：`app/db.py` 按表域拆分为 `app/db/` 包（base/schema/sessions/seed/employees/tasks/kb/ops + `__init__.py` 全量 re-export，外部导入零改动）；合并重复 mock 数据源（删除 `app/mock_data.py`，`app/mcp_tools.py` 改用根 `mock_data.py`）。44/45 测试通过，1 例失败为环境依赖（本机未运行 neuops 服务，`test_application_collector` 扫不到应用实体）。归档于 archive/2026-08-17-db-package-refactor/ |

@@ -7,7 +7,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from .mock_data import MOCK_ALARMS, MOCK_CHANGES, MOCK_CMDB, MOCK_LOGS, MOCK_METRICS
+from mock_data import MOCK_ALARMS, MOCK_CHANGES, MOCK_CMDB, MOCK_LOGS, MOCK_METRICS
 
 
 class ChatRequest(BaseModel):
