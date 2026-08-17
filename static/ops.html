@@ -365,7 +365,7 @@
     <div class="topo-wrap">
       <div>
         <div class="panel">
-          <div class="head"><h3>🕸 智能体依赖拓扑</h3><span class="tag">点击节点查看详情</span></div>
+          <div class="head"><h3>🕸 智能体依赖拓扑</h3><span class="tag">点击节点查看详情</span><button class="tab" onclick="AG_resetTopoPos()" title="清除已保存的拖拽位置并恢复默认双链路布局">↺ 重置布局</button></div>
           <div class="body">
             <div class="topo-legend" id="ag-topo-legend"></div>
             <div class="chart tall" id="ag-topo-chart"></div>
@@ -2363,13 +2363,30 @@ const AG_NODE_COLOR = {
   vector_db: { c: "#fb923c", bg: "rgba(251,146,60,.14)" },
 };
 const AG_EDGE_COLOR = { route: "#fbbf24", skill: "#22d3ee", tool: "#4f8cff", server: "#34d399", kb: "#f472b6", vector: "#fb923c" };
-// 双链路分离布局：MCP 链路五层连续（hub→agent→skill→tool→server），RAG 链路独立最右（agent→kb→vector_db）
-const AG_LAYER_X = { hub: "6%", agent: "22%", skill: "39%", tool: "55%", server: "63%", kb: "88%", vector_db: "96%" };
+// 双链路平行布局：MCP 链路五层连续（hub→agent→skill→tool→server），
+// RAG 链路与 MCP 平级（kb 对齐 tool、vector_db 对齐 server），上下两排平行不交叉
+const AG_LAYER_X = { hub: "6%", agent: "22%", skill: "39%", tool: "52%", server: "60%", kb: "52%", vector_db: "60%" };
+// y 纵向分带（%）：hub 居中；agent 全高连通上下两链；MCP 链(skill/tool/server)上半带；RAG 链(kb/vector_db)下半带
+const AG_Y_BAND = { hub: [30, 70], agent: [12, 88], skill: [4, 48], tool: [4, 48], server: [4, 48], kb: [52, 96], vector_db: [52, 96] };
 const AG_CAT_INDEX = { hub: 0, agent: 1, skill: 2, tool: 3, server: 4, kb: 5, vector_db: 6 };
 const AG_TYPE_NAME = {
   hub: "编排中枢", agent: "子智能体", skill: "Skill", tool: "Tools",
   server: "MCP Server", kb: "知识库", vector_db: "向量数据库",
 };
+// 拖拽位置持久化（localStorage，按节点 id 存取；id 来自数据库主键或固定值，稳定可靠）
+const AG_TOPO_POS_KEY = "neuops.topo.pos.v1";
+function AG_loadTopoPos() {
+  try { return JSON.parse(localStorage.getItem(AG_TOPO_POS_KEY)) || {}; } catch (e) { return {}; }
+}
+function AG_saveTopoPos(id, x, y) {
+  const p = AG_loadTopoPos();
+  p[id] = { x, y };
+  try { localStorage.setItem(AG_TOPO_POS_KEY, JSON.stringify(p)); } catch (e) { /* 隐私模式等降级：仅本次会话生效 */ }
+}
+function AG_resetTopoPos() {
+  try { localStorage.removeItem(AG_TOPO_POS_KEY); } catch (e) { /* 忽略 */ }
+  AG_loadAgentTopo();
+}
 async function AG_loadAgentTopo() {
   try {
     AG_renderTopo(await AG_api("/api/monitor/topology"));
@@ -2385,8 +2402,11 @@ function AG_renderTopo(data) {
   if (!ch) return;
   const rect = el.getBoundingClientRect();
   const W = rect.width || 800, H = rect.height || 620;
+  const saved = AG_loadTopoPos();
   const nodes = (data.nodes || []).map(n => {
     const size = n.type === "hub" ? 44 : n.type === "agent" ? 34 : n.type === "skill" ? 26 : n.type === "server" ? 26 : n.type === "kb" ? 26 : n.type === "vector_db" ? 26 : 22;
+    const sp = saved[n.id];
+    const hasPos = sp && sp.x != null && sp.y != null;
     return {
       id: n.id, name: n.name, category: AG_CAT_INDEX[n.type], symbolSize: size,
       value: n, symbol: "roundRect",
@@ -2396,14 +2416,20 @@ function AG_renderTopo(data) {
         borderWidth: n.errors > 0 ? 2.5 : 1.5,
       },
       label: { show: true, color: "#dbe4f5", fontSize: n.type === "hub" ? 12 : n.type === "agent" ? 10 : 9 },
-      x: Math.round(W * parseFloat(AG_LAYER_X[n.type] || "0%") / 100), y: null,
+      // 已保存的拖拽位置优先，否则按默认双链路布局
+      x: hasPos ? sp.x : Math.round(W * parseFloat(AG_LAYER_X[n.type] || "0%") / 100),
+      y: hasPos ? sp.y : null,
     };
   });
+  // 默认布局纵向分带排布（像素坐标）——按实际出现的类型动态分组，空类型不产生空分组；
+  // 已有保存位置的节点跳过默认布局，保持用户拖拽结果
   const byLayer = {};
   (data.nodes || []).forEach((n, i) => { (byLayer[n.type] = byLayer[n.type] || []).push(i); });
-  Object.values(byLayer).forEach(idxs => {
+  Object.entries(byLayer).forEach(([type, idxs]) => {
+    const band = AG_Y_BAND[type] || [8, 92];
     idxs.forEach((i, j) => {
-      const pct = (8 + 84 * (j + 0.5) / Math.max(idxs.length, 1)) / 100;
+      if (nodes[i].y != null) return;
+      const pct = (band[0] + (band[1] - band[0]) * (j + 0.5) / Math.max(idxs.length, 1)) / 100;
       nodes[i].y = Math.round(H * pct);
     });
   });
@@ -2444,6 +2470,13 @@ function AG_renderTopo(data) {
     `<span class="badge" style="border-color:${AG_NODE_COLOR[t] ? AG_NODE_COLOR[t].c : "#7d8db0"};color:${AG_NODE_COLOR[t] ? AG_NODE_COLOR[t].c : "#7d8db0"}">${AG_TYPE_NAME[t] || t}</span>`
   ).join("");
   ch.on("click", p => { if (p.dataType === "node" && p.data.value) AG_showTopoNode(p.data.value, data.edges || []); });
+  // 拖拽结束持久化节点位置（像素坐标），自动刷新 / 切 Tab / 重载后保持
+  ch.off("dragend");
+  ch.on("dragend", p => {
+    if (p.dataType === "node" && p.data && p.data.id != null && p.data.x != null && p.data.y != null) {
+      AG_saveTopoPos(p.data.id, Math.round(p.data.x), Math.round(p.data.y));
+    }
+  });
 }
 function AG_showTopoNode(n, edges) {
   const d = $("ag-topo-detail");
