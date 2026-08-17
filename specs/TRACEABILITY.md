@@ -13,7 +13,7 @@
 | NO-004 | 自愈引擎（已废弃） | （已删除） | （已删除） |
 | NO-005 | 代码修复器（已废弃） | （已删除） | （已删除） |
 | NO-006 | Agent 对话与 MCP | `app/agent_chat.py`、`app/mcp_tools.py`、`app/mcp_gateway.py` | `tests/test_agent_chat.py`（test_sse_event_format / test_sse_event_data_json_parseable / test_mock_agent_run_approved_action_sequence / test_mock_agent_run_approved_action_thought / test_mock_agent_run_approved_action_message / test_mock_agent_run_approved_action_end / test_skills_api / test_skills_full_api） |
-| NO-007 | 运维一体化平台 | `app/routes_ops.py`、`static/ops.html` | `tests/test_ops_api.py`（test_ops_page / test_ops_overview / test_ops_settings_roundtrip / test_ops_metrics_query / test_ops_alert_rules / test_ops_alerts_aggregate / test_monitor_redirect_to_ops） |
+| NO-007 | 运维一体化平台 | `app/routes_ops.py`、`static/ops.html`、`static/monitor.html`（拓扑拖拽持久化 / 双链路布局） | `tests/test_ops_api.py`（test_ops_page / test_ops_overview / test_ops_settings_roundtrip / test_ops_metrics_query / test_ops_alert_rules / test_ops_alerts_aggregate / test_monitor_redirect_to_ops） |
 | NO-008 | 知识库与 RAG | `app/knowledge.py` | `tests/test_knowledge.py`（test_parse_document_txt / test_parse_document_md / test_parse_document_xlsx / test_parse_document_unsupported_extension / test_chunk_text_empty / test_chunk_text_short_paras_aggregated / test_chunk_text_long_split_with_overlap / test_chunk_text_short_fragments_filtered / test_tokenize_zh_short_word / test_tokenize_zh_long_word_window / test_tokenize_zh_punctuation_split / test_keyword_search_ranking / test_keyword_search_no_match / test_search_knowledge_empty_input / test_search_knowledge_fallback_keyword） |
 
 ## 覆盖情况统计
@@ -31,3 +31,4 @@
 | 2026-08-17 | 20260817-no006-agent-chat-tests | 新增 NO-006 Agent 对话测试（SSE 格式/审批转人工/技能接口），归档于 archive/2026-08-17-no006-agent-chat-tests/ |
 | 2026-08-17 | 20260817-no008-knowledge-tests | 新增 NO-008 知识库测试（解析/切块/分词/关键词降级检索），归档于 archive/2026-08-17-no008-knowledge-tests/ |
 | 2026-08-17 | 20260817-remove-self-heal | 整体移除自愈（NO-004）与代码修复（NO-005）功能：删除引擎/代码/接口/MCP 工具/incidents 表，同步清理前端、测试与文档 |
+| 2026-08-17 | 20260817-topo-layout-drag | 智能体拓扑拖拽位置持久化（localStorage + 重置布局）与双链路平行布局（kb 对齐 tool、vector_db 对齐 server），NO-007 追加两条 Requirement，归档于 archive/2026-08-17-topo-layout-drag/ |
