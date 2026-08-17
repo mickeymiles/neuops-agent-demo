@@ -1142,6 +1142,7 @@ function renderWork() {
   if (!grid) return;
   const links = [
     { title: '经营业务平台', desc: '合同比对 / 经营指标 / 明细探查', icon: 'chart', url: BIZ_9006_BASE + '/' },
+    { title: '投标工作台', desc: '拆标解析 / 材料生成 / 合规自检 / 成果导出', icon: 'folder', url: '/bidding' },
   ];
   grid.innerHTML = links.map(l => `
     <a class="work-card" href="${l.url}" target="_blank" rel="noopener">
