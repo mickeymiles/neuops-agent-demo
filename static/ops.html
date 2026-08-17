@@ -2365,40 +2365,24 @@ const AG_NODE_COLOR = {
 const AG_EDGE_COLOR = { route: "#fbbf24", skill: "#22d3ee", tool: "#4f8cff", server: "#34d399", kb: "#f472b6", vector: "#fb923c" };
 // 双链路平行布局：MCP 链路五层连续（hub→agent→skill→tool→server），
 // RAG 链路与 MCP 平级（kb 对齐 tool、vector_db 对齐 server），上下两排平行不交叉。
-// 防重叠策略：列 x 按各列最大节点宽度自适应推算（相邻列边界间距恒定），
-// 列内垂直堆叠（带内居中、间距自适应压缩），最后全局框体碰撞检测兜底。
-// def 为默认纵向带（相对高度 0~1），max 为节点过多时可扩展的最大区间，
-// 且 MCP 链上带 ≤48%、RAG 链下带 ≥52%，两链同 x 列纵向绝不越线相撞。
-const AG_COL_BAND = {
-  hub:       { def: [0.30, 0.70], max: [0.16, 0.84] },
-  agent:     { def: [0.06, 0.94], max: [0.00, 1.00] },
-  skill:     { def: [0.02, 0.46], max: [0.00, 0.48] },
-  tool:      { def: [0.02, 0.46], max: [0.00, 0.48] },
-  server:    { def: [0.02, 0.46], max: [0.00, 0.48] },
-  kb:        { def: [0.54, 0.98], max: [0.52, 1.00] },
-  vector_db: { def: [0.54, 0.98], max: [0.52, 1.00] },
-};
-// 列从左到右布局顺序；kb/vector_db 复用 tool/server 的 x（RAG 链与 MCP 链平级，上下两排）
-const AG_COL_ORDER = ["hub", "agent", "skill", "tool", "server"];
-const AG_MIRROR_X = { kb: "tool", vector_db: "server" };
-// 节点矩形最小间隙（px），用于框体碰撞检测
-const AG_GAP = 3;
+// 横向列距拉开（相邻列 ≥13%）配合节点宽度自适应，避免边框与文字重叠。
+const AG_LAYER_X = { hub: "5%", agent: "18%", skill: "31%", tool: "45%", server: "58%", kb: "45%", vector_db: "58%" };
+// y 纵向分带（%）：hub 居中；agent 全高连通上下两链；MCP 链(skill/tool/server)上半带；RAG 链(kb/vector_db)下半带；带间留空避免文字越带
+const AG_Y_BAND = { hub: [32, 68], agent: [8, 92], skill: [4, 46], tool: [4, 46], server: [4, 46], kb: [54, 96], vector_db: [54, 96] };
 const AG_CAT_INDEX = { hub: 0, agent: 1, skill: 2, tool: 3, server: 4, kb: 5, vector_db: 6 };
 const AG_TYPE_NAME = {
   hub: "编排中枢", agent: "子智能体", skill: "Skill", tool: "Tools",
   server: "MCP Server", kb: "知识库", vector_db: "向量数据库",
 };
-// 拖拽位置持久化（localStorage，按 "类型:id" 复合键存取）。
-// 关键：agent/skill/tool/server/kb 各表主键独立自增，裸 id 会跨类型冲突（如 tool:1 与 skill:1），
-// 导致不同类型节点读取到同一保存位置而堆叠——v3 用复合键彻底隔离。
-const AG_TOPO_POS_KEY = "neuops.topo.pos.v3";
-function AG_posKey(type, id) { return type + ":" + id; }
+// 拖拽位置持久化（localStorage，按节点 id 存取；id 来自数据库主键或固定值，稳定可靠）
+// v2：布局参数变更（画布增高、列距拉大、节点宽度自适应），旧像素坐标作废以免错位
+const AG_TOPO_POS_KEY = "neuops.topo.pos.v2";
 function AG_loadTopoPos() {
   try { return JSON.parse(localStorage.getItem(AG_TOPO_POS_KEY)) || {}; } catch (e) { return {}; }
 }
-function AG_saveTopoPos(type, id, x, y) {
+function AG_saveTopoPos(id, x, y) {
   const p = AG_loadTopoPos();
-  p[AG_posKey(type, id)] = { x, y };
+  p[id] = { x, y };
   try { localStorage.setItem(AG_TOPO_POS_KEY, JSON.stringify(p)); } catch (e) { /* 隐私模式等降级：仅本次会话生效 */ }
 }
 function AG_resetTopoPos() {
@@ -2413,132 +2397,54 @@ async function AG_loadAgentTopo() {
     if (d) d.innerHTML = `<div class="empty">拓扑加载失败：${esc(e.message || e)}</div>`;
   }
 }
-// ── 拓扑防重叠布局：列 x 自适应 + 列内垂直堆叠 + 全局框体碰撞检测 ──
-// 节点宽高：按名称长度自适应（中文按字宽、英文按 0.62 倍字宽估算），保证文字不超出边框
-function AG_nodeSize(n) {
-  const h = n.type === "hub" ? 36 : n.type === "agent" ? 30 : 24;
-  const fs = n.type === "hub" ? 11 : n.type === "agent" ? 10 : 9;
-  const textW = [...(n.name || "")].reduce((a, c) => a + (c.charCodeAt(0) > 255 ? fs : fs * 0.62), 0);
-  return { w: Math.max(44, Math.min(132, Math.ceil(textW) + 18)), h, fs };
-}
-// 列内垂直堆叠：带内垂直居中、间距自适应压缩，保证同列节点绝不重叠
-function AG_stackColumn(items, topPx, botPx) {
-  const n = items.length;
-  if (!n) return [];
-  const sumH = items.reduce((s, it) => s + it.h, 0);
-  const avail = botPx - topPx;
-  const gap = Math.max(4, Math.min(16, (avail - sumH) / Math.max(n - 1, 1)));
-  const total = sumH + gap * (n - 1);
-  let y = topPx + Math.max(0, (avail - total) / 2);
-  return items.map(it => { const cy = y + it.h / 2; y += it.h + gap; return cy; });
-}
-// 列 x 自适应：按每列最大节点宽度推算列心坐标，相邻列边界间距恒定 ≥ 26px，杜绝跨列框体重叠
-function AG_computeColX(colMaxW, W) {
-  const margin = 30, gap = 26;
-  const xs = {};
-  let cursor = margin;
-  AG_COL_ORDER.forEach(t => {
-    const mw = colMaxW[t] || 60;
-    xs[t] = cursor + mw / 2;
-    cursor += mw + gap;
-  });
-  const last = AG_COL_ORDER[AG_COL_ORDER.length - 1];
-  const right = xs[last] + (colMaxW[last] || 60) / 2 + margin;
-  if (right > W) {
-    const k = (W - margin * 2) / (cursor - margin);
-    AG_COL_ORDER.forEach(t => { xs[t] = margin + (xs[t] - margin) * k; });
-  }
-  Object.entries(AG_MIRROR_X).forEach(([t, s]) => { xs[t] = xs[s]; });
-  return xs;
-}
-// 全局框体碰撞检测：把自动布局节点从固定（已保存拖拽）节点处推开，并夹回画布边界内
-function AG_resolveCollisions(nodes, W, H) {
-  for (let iter = 0; iter < 80; iter++) {
-    let moved = false;
-    for (let a = 0; a < nodes.length; a++) {
-      for (let b = a + 1; b < nodes.length; b++) {
-        const A = nodes[a], B = nodes[b];
-        if (A.fixed && B.fixed) continue;
-        const ox = Math.min(A.x + A.w / 2, B.x + B.w / 2) - Math.max(A.x - A.w / 2, B.x - B.w / 2) + AG_GAP;
-        const oy = Math.min(A.y + A.h / 2, B.y + B.h / 2) - Math.max(A.y - A.h / 2, B.y - B.h / 2) + AG_GAP;
-        if (ox <= 0 || oy <= 0) continue;
-        // 沿重叠更浅的轴分离；fixed 节点不动，auto 节点承担位移
-        const horizontal = ox < oy;
-        const dx = horizontal ? (A.x < B.x ? -ox : ox) : 0;
-        const dy = horizontal ? 0 : (A.y < B.y ? -oy : oy);
-        if (A.fixed) { B.x += dx; B.y += dy; moved = true; }
-        else if (B.fixed) { A.x -= dx; A.y -= dy; moved = true; }
-        else { A.x -= dx / 2; A.y -= dy / 2; B.x += dx / 2; B.y += dy / 2; moved = true; }
-      }
-    }
-    if (!moved) break;
-    nodes.forEach(r => {
-      if (r.fixed) return;
-      r.x = Math.max(r.w / 2 + 6, Math.min(W - r.w / 2 - 6, r.x));
-      r.y = Math.max(r.h / 2 + 6, Math.min(H - r.h / 2 - 6, r.y));
-    });
-  }
-}
-// 主布局：返回含 x/y/w/h/fs/fixed 的节点数组；固定位置节点作障碍，其余节点列布局 + 碰撞规避
-function AG_layoutTopo(rawNodes, W, H) {
-  const saved = AG_loadTopoPos();
-  const nodes = rawNodes.map(src => {
-    const sz = AG_nodeSize(src);
-    const sp = saved[AG_posKey(src.type, src.id)];
-    const fixed = !!(sp && sp.x != null && sp.y != null);
-    return Object.assign({ src, fixed }, sz, fixed
-      ? {
-        x: Math.max(sz.w / 2 + 6, Math.min(W - sz.w / 2 - 6, sp.x)),
-        y: Math.max(sz.h / 2 + 6, Math.min(H - sz.h / 2 - 6, sp.y)),
-      }
-      : { x: null, y: null });
-  });
-  // 每列最大宽度（仅自动布局节点参与列宽推算）
-  const colMaxW = {};
-  nodes.forEach(nn => { colMaxW[nn.type] = Math.max(colMaxW[nn.type] || 0, nn.w); });
-  const xs = AG_computeColX(colMaxW, W);
-  // 按列垂直堆叠（自动节点）：默认带内居中，节点过多时扩展带，仍放不下则自动压紧间距
-  Object.entries(AG_COL_BAND).forEach(([type, band]) => {
-    const col = nodes.filter(nn => nn.type === type && !nn.fixed);
-    if (!col.length) return;
-    const defTop = H * band.def[0], defBot = H * band.def[1];
-    const maxTop = H * band.max[0], maxBot = H * band.max[1];
-    const sumH = col.reduce((s, c) => s + c.h, 0) + 14 * (col.length - 1);
-    const overflow = sumH > defBot - defTop;
-    const ys = AG_stackColumn(col, overflow ? maxTop : defTop, overflow ? maxBot : defBot);
-    col.forEach((nn, i) => { nn.x = xs[type]; nn.y = ys[i]; });
-  });
-  AG_resolveCollisions(nodes, W, H);
-  return nodes;
-}
 function AG_renderTopo(data) {
   const el = $("ag-topo-chart");
   if (!el || !data) return;
   const ch = getChart("ag-topo-chart");
   if (!ch) return;
   const rect = el.getBoundingClientRect();
-  const W = rect.width || 800, H = rect.height || 760;
-  // 布局计算：列 x 自适应 + 列内垂直堆叠 + 全局框体碰撞检测，任何尺寸下所有框互不重叠；
-  // 已保存拖拽位置的节点作为固定障碍物，自动布局节点会绕开它们
-  const laid = AG_layoutTopo(data.nodes || [], W, H);
-  const nodes = laid.map(nn => ({
-    id: nn.id, type: nn.type, name: nn.name, category: AG_CAT_INDEX[nn.type],
-    symbolSize: [nn.w, nn.h], symbol: "roundRect",
-    value: nn.src,
-    itemStyle: {
-      color: AG_NODE_COLOR[nn.type] ? AG_NODE_COLOR[nn.type].bg : "#7d8db0",
-      borderColor: nn.src.errors > 0 ? "#f87171" : (AG_NODE_COLOR[nn.type] ? AG_NODE_COLOR[nn.type].c : "#7d8db0"),
-      borderWidth: nn.src.errors > 0 ? 2.5 : 1.5,
-    },
-    label: {
-      show: true, position: "inside", color: "#eaf1ff", fontSize: nn.fs,
-      // 极长名称截断加省略号，杜绝文字溢出边框
-      overflow: "truncate", width: Math.max(28, nn.w - 8),
-      // 深色描边，边框/连线重叠时文字仍清晰可读
-      textBorderColor: "rgba(11,16,32,.9)", textBorderWidth: 2,
-    },
-    x: Math.round(nn.x), y: Math.round(nn.y),
-  }));
+  const W = rect.width || 800, H = rect.height || 620;
+  const saved = AG_loadTopoPos();
+  const nodes = (data.nodes || []).map(n => {
+    // 节点宽度按名称长度自适应（中文按字宽、英文按 0.62 倍字宽估算），保证文字不超出边框
+    const h = n.type === "hub" ? 36 : n.type === "agent" ? 30 : 24;
+    const fs = n.type === "hub" ? 11 : n.type === "agent" ? 10 : 9;
+    const textW = [...(n.name || "")].reduce((acc, c) => acc + (c.charCodeAt(0) > 255 ? fs : fs * 0.62), 0);
+    const w = Math.max(44, Math.min(132, Math.ceil(textW) + 18));
+    const sp = saved[n.id];
+    const hasPos = sp && sp.x != null && sp.y != null;
+    return {
+      id: n.id, name: n.name, category: AG_CAT_INDEX[n.type], symbolSize: [w, h],
+      value: n, symbol: "roundRect",
+      itemStyle: {
+        color: AG_NODE_COLOR[n.type] ? AG_NODE_COLOR[n.type].bg : "#7d8db0",
+        borderColor: n.errors > 0 ? "#f87171" : (AG_NODE_COLOR[n.type] ? AG_NODE_COLOR[n.type].c : "#7d8db0"),
+        borderWidth: n.errors > 0 ? 2.5 : 1.5,
+      },
+      label: {
+        show: true, position: "inside", color: "#eaf1ff", fontSize: fs,
+        // 极长名称截断加省略号，杜绝文字溢出边框
+        overflow: "truncate", width: Math.max(28, w - 8),
+        // 深色描边，边框/连线重叠时文字仍清晰可读
+        textBorderColor: "rgba(11,16,32,.9)", textBorderWidth: 2,
+      },
+      // 已保存的拖拽位置优先，否则按默认双链路布局
+      x: hasPos ? sp.x : Math.round(W * parseFloat(AG_LAYER_X[n.type] || "0%") / 100),
+      y: hasPos ? sp.y : null,
+    };
+  });
+  // 默认布局纵向分带排布（像素坐标）——按实际出现的类型动态分组，空类型不产生空分组；
+  // 已有保存位置的节点跳过默认布局，保持用户拖拽结果
+  const byLayer = {};
+  (data.nodes || []).forEach((n, i) => { (byLayer[n.type] = byLayer[n.type] || []).push(i); });
+  Object.entries(byLayer).forEach(([type, idxs]) => {
+    const band = AG_Y_BAND[type] || [8, 92];
+    idxs.forEach((i, j) => {
+      if (nodes[i].y != null) return;
+      const pct = (band[0] + (band[1] - band[0]) * (j + 0.5) / Math.max(idxs.length, 1)) / 100;
+      nodes[i].y = Math.round(H * pct);
+    });
+  });
   const presentTypes = [...new Set((data.nodes || []).map(n => n.type))];
   const edges = (data.edges || []).map(e => ({
     source: e.source, target: e.target,
@@ -2575,22 +2481,12 @@ function AG_renderTopo(data) {
     `<span class="badge" style="border-color:${AG_NODE_COLOR[t] ? AG_NODE_COLOR[t].c : "#7d8db0"};color:${AG_NODE_COLOR[t] ? AG_NODE_COLOR[t].c : "#7d8db0"}">${AG_TYPE_NAME[t] || t}</span>`
   ).join("");
   ch.on("click", p => { if (p.dataType === "node" && p.data.value) AG_showTopoNode(p.data.value, data.edges || []); });
-  // 拖拽结束持久化节点位置（像素坐标），自动刷新 / 切 Tab / 重载后保持。
-  // key 采用 "类型:id" 复合键：各表 id 独立自增会跨类型冲突（如 tool:1 与 skill:1），
-  // 裸 id 会导致不同类型节点读取到同一保存位置而堆叠
+  // 拖拽结束持久化节点位置（像素坐标），自动刷新 / 切 Tab / 重载后保持
   ch.off("dragend");
   ch.on("dragend", p => {
-    if (p.dataType !== "node" || !p.data || p.data.id == null || p.data.type == null) return;
-    let x = p.data.x, y = p.data.y;
-    // 部分 ECharts 版本拖拽后不写回 data.x/y，用 convertFromPixel 兜底取图坐标
-    if (x == null || y == null) {
-      try {
-        const pt = ch.convertFromPixel({ seriesIndex: 0 }, [p.event.offsetX, p.event.offsetY]);
-        if (pt) { x = pt[0]; y = pt[1]; }
-      } catch (e) { /* ignore */ }
+    if (p.dataType === "node" && p.data && p.data.id != null && p.data.x != null && p.data.y != null) {
+      AG_saveTopoPos(p.data.id, Math.round(p.data.x), Math.round(p.data.y));
     }
-    if (x == null || y == null) return;
-    AG_saveTopoPos(p.data.type, p.data.id, Math.round(x), Math.round(y));
   });
 }
 function AG_showTopoNode(n, edges) {
