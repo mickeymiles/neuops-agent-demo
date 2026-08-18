@@ -83,8 +83,6 @@ from .tasks import (
     db_create_long_task,
     db_update_long_task,
     db_delete_long_task,
-    db_list_todos,
-    db_list_todo_history,
     db_list_bg_tasks,
 )
 
@@ -144,4 +142,7 @@ from .bidding import (
     bid_save_parse_report,
     bid_add_generated_doc,
     bid_save_check_result,
+    bid_save_prd,
+    bid_save_outline,
+    bid_save_chapters,
 )

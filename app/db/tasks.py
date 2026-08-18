@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""任务域：长任务 / 待办 / 后台任务"""
+"""任务域：长任务 / 后台任务"""
 
 import json
 
@@ -74,24 +74,6 @@ def db_delete_long_task(task_id: str):
         try:
             conn.execute("DELETE FROM long_tasks WHERE id=?", (task_id,))
             conn.commit()
-        finally:
-            conn.close()
-
-
-def db_list_todos() -> list:
-    with _db_lock:
-        conn = _get_conn()
-        try:
-            return [dict(r) for r in conn.execute("SELECT * FROM todos ORDER BY id").fetchall()]
-        finally:
-            conn.close()
-
-
-def db_list_todo_history() -> list:
-    with _db_lock:
-        conn = _get_conn()
-        try:
-            return [dict(r) for r in conn.execute("SELECT * FROM todo_history ORDER BY id").fetchall()]
         finally:
             conn.close()
 

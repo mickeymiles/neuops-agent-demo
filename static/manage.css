@@ -780,38 +780,6 @@ body {
   background: var(--c-primary-light); color: var(--c-primary); margin-right: 4px; margin-bottom: 4px;
 }
 
-/* ═══════ TODO (待办任务) ═══════ */
-.todo-group { margin-bottom: 26px; }
-.todo-group-header {
-  font-size: 15px; font-weight: 600; color: var(--c-text-body);
-  margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
-}
-.todo-group-count {
-  background: var(--c-primary-light); color: var(--c-primary);
-  font-size: 12px; font-weight: 500; padding: 1px 9px; border-radius: 10px;
-}
-.todo-item {
-  display: flex; align-items: center; gap: 12px;
-  border: 1px solid var(--c-border-light); border-radius: 8px;
-  padding: 14px 16px; margin-bottom: 8px; background: var(--c-main-bg);
-  transition: all 0.15s;
-}
-.todo-item:hover { border-color: var(--c-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.todo-level {
-  width: 20px; height: 20px; border-radius: 4px; font-size: 12px; font-weight: 600;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.todo-level.high { background: rgba(239,68,68,0.15); color: var(--c-danger); }
-.todo-level.normal { background: rgba(245,158,11,0.15); color: var(--c-warning); }
-.todo-info { flex: 1; min-width: 0; }
-.todo-title { font-size: 14px; color: var(--c-text-body); }
-.todo-meta { font-size: 12px; color: var(--c-text-time); margin-top: 4px; }
-.todo-result { font-size: 12px; color: var(--c-success); margin-top: 4px; }
-.todo-type { font-size: 12px; color: var(--c-text-secondary); flex-shrink: 0; }
-.todo-empty {
-  color: var(--c-text-placeholder); font-size: 13px; text-align: center;
-  padding: 20px; border: 1px dashed var(--c-border-light); border-radius: 8px;
-}
 
 /* ═══════ TABS ═══════ */
 .tabs {
@@ -1331,10 +1299,10 @@ table td { border-color: #1E2A44; }
 .table-actions .tb-btn:hover,
 .emp-table-wrap .row-actions .tb-btn:hover { background: var(--c-bg-hover); }
 .tb-input { background: #0E1626; border-color: #27334B; color: var(--c-text-body); }
-.qa-item, .skill-item, .todo-item, .emp-item, .task-item {
+.qa-item, .skill-item, .emp-item, .task-item {
   background: #0E1626; border: 1px solid #1E2A44;
 }
-.qa-item:hover, .skill-item:hover, .todo-item:hover, .emp-item:hover, .task-item:hover {
+.qa-item:hover, .skill-item:hover, .emp-item:hover, .task-item:hover {
   border-color: rgba(56, 189, 248, 0.35);
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
@@ -1357,7 +1325,7 @@ table td { border-color: #1E2A44; }
 .divider { background: #1E2A44; }
 mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
 /* 按钮按压反馈 */
-.btn-primary, .btn-outline, .tb-btn, .nav-item, .qa-item, .skill-item, .todo-item, .emp-item, .task-item, .tool-chip {
+.btn-primary, .btn-outline, .tb-btn, .nav-item, .qa-item, .skill-item, .emp-item, .task-item, .tool-chip {
   transition: all 0.18s ease;
 }
 .btn-primary:active, .btn-outline:active, .tb-btn:active { transform: scale(0.96); }

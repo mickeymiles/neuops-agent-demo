@@ -51,24 +51,6 @@ MOCK_EMPLOYEES = [
 MOCK_LONG_TASKS = []
 
 
-MOCK_TODOS = [
-    # 待办均来自 9007 一体化监控平台真实告警（alerts 表）
-    {"id": "todo-1", "type": "告警", "title": "neuops-agent 应用健康检查失败（degraded）", "level": "critical", "time": "2026-08-15 23:47", "source_id": "rule-ops-004", "auto_skill": "skill-2"},
-    {"id": "todo-2", "type": "告警", "title": "contract-compare 应用健康检查失败（degraded）", "level": "critical", "time": "2026-08-15 10:22", "source_id": "rule-ops-004", "auto_skill": "skill-2"},
-    {"id": "todo-3", "type": "告警", "title": "单会话 Token 超限（conv-1786688554336）", "level": "info", "time": "2026-08-14 14:51", "source_id": "rule-004", "auto_skill": "skill-1"},
-    {"id": "todo-4", "type": "告警", "title": "智能体 emp-001 长期不活跃（999 天无调用）", "level": "warning", "time": "2026-08-14 14:51", "source_id": "rule-005", "auto_skill": "skill-1"},
-    {"id": "todo-5", "type": "事件", "title": "告警详情页接入根因分析建议展示", "level": "info", "time": "2026-08-16 01:50", "source_id": "ALERT-OPS", "auto_skill": ""},
-]
-
-
-MOCK_TODO_HISTORY = [
-    {"id": "h-1", "type": "告警", "title": "Token 用量突增（60分钟 217505）", "level": "warning", "time": "2026-08-14 14:51", "handled_time": "2026-08-14 20:02", "result": "已恢复：Token 用量回落至阈值内"},
-    {"id": "h-2", "type": "事件", "title": "neuops-agent 健康检查失败恢复（ALERT-OPS-20260816）", "level": "critical", "time": "2026-08-16 00:43", "handled_time": "2026-08-16 00:43", "result": "已恢复：人工重启服务后恢复"},
-    {"id": "h-4", "type": "巡检", "title": "全域巡检：服务器/数据库/网络实体指标采集", "level": "normal", "time": "2026-08-16 00:00", "handled_time": "2026-08-16 00:05", "result": "已完成：19 个实体 74846 条指标采集正常"},
-    {"id": "h-5", "type": "任务", "title": "ETL 指标预计算（gross-margin 签单毛利率）", "level": "normal", "time": "2026-08-16 00:00", "handled_time": "2026-08-16 00:02", "result": "已完成：经营指标宽表更新"},
-]
-
-
 MOCK_BG_TASKS = [
     {"id": "bgt-1", "name": "监控探针采集", "status": "running", "desc": "9007 实时采集服务器/数据库/网络实体指标与系统日志"},
     {"id": "bgt-2", "name": "告警收敛引擎", "status": "running", "desc": "持续监听告警流，去重聚合、抖动抑制，产出风险事件"},

@@ -10,8 +10,6 @@ from seed_data import (
     MOCK_BG_TASKS,
     MOCK_EMPLOYEES,
     MOCK_LONG_TASKS,
-    MOCK_TODO_HISTORY,
-    MOCK_TODOS,
     SKILL_DETAILS,
     SKILLS,
 )
@@ -73,18 +71,6 @@ def seed_config_db():
                     (t["id"], t["name"], t["status"], t.get("description", ""), t.get("employee_id", ""),
                      t.get("schedule", ""), t.get("update_time", ""),
                      json.dumps(t.get("executions", []), ensure_ascii=False)),
-                )
-            # 待办
-            for t in MOCK_TODOS:
-                conn.execute(
-                    "INSERT OR REPLACE INTO todos (id, type, title, level, time, source_id, auto_skill) VALUES (?,?,?,?,?,?,?)",
-                    (t["id"], t["type"], t["title"], t["level"], t["time"], t.get("source_id", ""), t.get("auto_skill", "")),
-                )
-            # 待办历史
-            for t in MOCK_TODO_HISTORY:
-                conn.execute(
-                    "INSERT OR REPLACE INTO todo_history (id, type, title, level, time, handled_time, result) VALUES (?,?,?,?,?,?,?)",
-                    (t["id"], t["type"], t["title"], t["level"], t["time"], t.get("handled_time", ""), t.get("result", "")),
                 )
             # 后台任务
             for t in MOCK_BG_TASKS:

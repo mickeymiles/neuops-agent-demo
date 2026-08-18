@@ -890,34 +890,6 @@ body {
   background: var(--c-primary-light); color: var(--c-primary); margin-right: 4px; margin-bottom: 4px;
 }
 
-/* ═══════ TODO (待办任务) ═══════ */
-.todo-group { margin-bottom: 26px; }
-.todo-group-header {
-  font-size: 15px; font-weight: 600; color: var(--c-text-body);
-  margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
-}
-.todo-group-count {
-  background: var(--c-primary-light); color: var(--c-primary);
-  font-size: 12px; font-weight: 500; padding: 1px 9px; border-radius: 10px;
-}
-.todo-item {
-  display: flex; align-items: center; gap: 12px;
-  border: 1px solid var(--c-border-light); border-radius: 8px;
-  padding: 14px 16px; margin-bottom: 8px; background: var(--c-main-bg);
-  transition: all 0.15s;
-}
-.todo-item:hover { border-color: var(--c-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.todo-level {
-  width: 20px; height: 20px; border-radius: 4px; font-size: 12px; font-weight: 600;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.todo-level.high { background: rgba(239,68,68,0.15); color: var(--c-danger); }
-.todo-level.normal { background: rgba(245,158,11,0.15); color: var(--c-warning); }
-.todo-info { flex: 1; min-width: 0; }
-.todo-title { font-size: 14px; color: var(--c-text-body); }
-.todo-meta { font-size: 12px; color: var(--c-text-time); margin-top: 4px; }
-.todo-result { font-size: 12px; color: var(--c-success); margin-top: 4px; }
-.todo-type { font-size: 12px; color: var(--c-text-secondary); flex-shrink: 0; }
 .todo-empty {
   color: var(--c-text-placeholder); font-size: 13px; text-align: center;
   padding: 20px; border: 1px dashed var(--c-border-light); border-radius: 8px;
@@ -1403,10 +1375,10 @@ table td { border-color: #1E2A44; }
 .tb-btn.danger, .tb-btn.danger:hover { color: var(--c-danger); }
 .tb-btn.danger:hover { background: rgba(239,68,68,0.15); border-color: var(--c-danger); }
 .tb-input { background: #0E1626; border-color: #27334B; color: var(--c-text-body); }
-.qa-item, .skill-item, .todo-item, .emp-item, .task-item {
+.qa-item, .skill-item, .emp-item, .task-item {
   background: #0E1626; border: 1px solid #1E2A44;
 }
-.qa-item:hover, .skill-item:hover, .todo-item:hover, .emp-item:hover, .task-item:hover {
+.qa-item:hover, .skill-item:hover, .emp-item:hover, .task-item:hover {
   border-color: rgba(56, 189, 248, 0.35);
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
@@ -1429,7 +1401,7 @@ table td { border-color: #1E2A44; }
 .divider { background: #1E2A44; }
 mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
 /* 按钮按压反馈 */
-.btn-primary, .btn-outline, .tb-btn, .nav-item, .qa-item, .skill-item, .todo-item, .emp-item, .task-item, .tool-chip {
+.btn-primary, .btn-outline, .tb-btn, .nav-item, .qa-item, .skill-item, .emp-item, .task-item, .tool-chip {
   transition: all 0.18s ease;
 }
 .btn-primary:active, .btn-outline:active, .tb-btn:active { transform: scale(0.96); }
@@ -1458,10 +1430,6 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
     <div class="nav-menu">
       <div class="nav-item active" data-page="chat" onclick="newConversation()">
         <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>新建对话
-      </div>
-      <div class="nav-item" data-page="todos" onclick="navigateTo('todos')">
-        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg></span>待办任务
-        <span class="nav-badge" id="todoBadge">0</span>
       </div>
       <div class="nav-item" data-page="long-tasks" onclick="navigateTo('long-tasks')">
         <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>长期任务
@@ -1594,20 +1562,6 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
           </div>
           <div class="mention-dropdown" id="mentionDropdown"></div>
         </div>
-      </div>
-    </div>
-
-    <!-- ═══════ PAGE: TODOS ═══════ -->
-    <div id="page-todos" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
-      <div class="page-header">
-        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>待办任务</h2>
-        <div class="header-right">
-          <button class="btn-primary" id="todoHistoryBtn" onclick="toggleTodoHistory()">历史处理</button>
-        </div>
-      </div>
-      <div class="page-body" style="padding:24px 32px;">
-        <div id="todoCurrentView"></div>
-        <div id="todoHistoryView" class="hidden"></div>
       </div>
     </div>
 
@@ -1835,7 +1789,7 @@ const S = {
   enabledSkills: ['skill-1','skill-2','skill-3','skill-6','skill-10'],
   pendingApproval: null, isStreaming: false, toolCallHistory: [], route: null,
   conversations: [], skills: [], employees: [], longTasks: [],
-  currentSkillTab: 'market', currentEmpId: null, showingTodoHistory: false,
+  currentSkillTab: 'market', currentEmpId: null,
   projects: [], activeProjectId: '', projectsCollapsed: false, convFilter: 'all',
 };
 
@@ -1860,7 +1814,6 @@ function navigateTo(page) {
   }
   if (page === 'long-tasks') renderLongTasks();
   if (page === 'employees') { showEmpList(); renderEmployees(); }
-  if (page === 'todos') { S.showingTodoHistory = false; renderTodos(); }
 }
 
 // ═══════════ TIME FILTER ═══════════
@@ -2972,64 +2925,6 @@ async function deleteEmployee(id) {
   await fetch('/api/employees/' + id, { method: 'DELETE' });
   renderEmployees();
 }
-// ═══════════ TODOS (待办任务) ═══════════
-async function renderTodos() {
-  try {
-    const r = await fetch('/api/todos').then(x => x.json());
-    S.todos = r.todos || [];
-    const groups = { '告警': [], '工单': [], '变更': [] };
-    S.todos.forEach(t => { if (groups[t.type]) groups[t.type].push(t); });
-    const order = [['告警', `${icon('bell')} 待处理告警`], ['工单', `${icon('doc')} 待处理工单`], ['变更', `${icon('refresh')} 待处理变更`]];
-    document.getElementById('todoCurrentView').innerHTML = order.map(([type, label]) => {
-      const list = groups[type] || [];
-      return `<div class="todo-group">
-        <div class="todo-group-header">${label} <span class="todo-group-count">${list.length}</span></div>
-        ${list.length ? list.map(renderTodoItem).join('') : '<div class="todo-empty">暂无待办</div>'}
-      </div>`;
-    }).join('');
-    document.getElementById('todoHistoryView').classList.add('hidden');
-    document.getElementById('todoCurrentView').classList.remove('hidden');
-    document.getElementById('todoHistoryBtn').textContent = '历史处理';
-  } catch (e) { console.error(e); }
-}
-
-function renderTodoItem(t) {
-  const high = t.level === 'high';
-  return `<div class="todo-item">
-    <span class="todo-level ${high ? 'high' : 'normal'}">${high ? '高' : '中'}</span>
-    <div class="todo-info">
-      <div class="todo-title">${escapeHtml(t.title)}</div>
-      <div class="todo-meta">${t.time} · ${t.source_id || ''}</div>
-    </div>
-    <span class="todo-type">${t.type}</span>
-  </div>`;
-}
-
-async function renderTodoHistory() {
-  const r = await fetch('/api/todos/history').then(x => x.json());
-  const list = r.history || [];
-  document.getElementById('todoHistoryView').innerHTML = list.map(h => {
-    const high = h.level === 'high';
-    return `<div class="todo-item">
-      <span class="todo-level ${high ? 'high' : 'normal'}">${high ? '高' : '中'}</span>
-      <div class="todo-info">
-        <div class="todo-title">${escapeHtml(h.title)}</div>
-        <div class="todo-meta">通知 ${h.time} · 处理 ${h.handled_time}</div>
-        <div class="todo-result">${escapeHtml(h.result)}</div>
-      </div>
-      <span class="todo-type">${h.type}</span>
-    </div>`;
-  }).join('');
-}
-
-function toggleTodoHistory() {
-  S.showingTodoHistory = !S.showingTodoHistory;
-  document.getElementById('todoCurrentView').classList.toggle('hidden', S.showingTodoHistory);
-  document.getElementById('todoHistoryView').classList.toggle('hidden', !S.showingTodoHistory);
-  document.getElementById('todoHistoryBtn').textContent = S.showingTodoHistory ? '返回待办' : '历史处理';
-  if (S.showingTodoHistory) renderTodoHistory();
-}
-
 // ═══════════ LONG TASKS ═══════════
 async function renderLongTasks(keyword) {
   const kw = (keyword || '').toLowerCase();
@@ -3251,7 +3146,7 @@ function openDocModal() {
     <h3>二、页面布局（三栏）</h3>
     <table>
       <tr><th>区域</th><th>宽度</th><th>说明</th></tr>
-      <tr><td>左侧导航资源区</td><td>240px 固定</td><td>导航菜单、待办角标、最近会话、用户信息</td></tr>
+      <tr><td>左侧导航资源区</td><td>240px 固定</td><td>导航菜单、最近会话、用户信息</td></tr>
       <tr><td>中间主对话工作区</td><td>自适应</td><td>默认首页，进入系统直接展示对话区，无前置菜单</td></tr>
       <tr><td>右侧任务洞察面板</td><td>360px</td><td>默认展开，可收起；收起后右侧边缘悬浮展开按钮</td></tr>
     </table>
@@ -3259,7 +3154,6 @@ function openDocModal() {
     <h3>三、左侧导航资源区</h3>
     <ul>
       <li><strong>💬 新建对话</strong>：进入对话工作台，开启全新上下文</li>
-      <li><strong>📋 待办任务</strong>（数量角标）：运维人员视角的任务清单，详见第六节</li>
       <li><strong>⏱ 长期任务</strong>：7×24 自动化运维任务，支持启动 / 停止</li>
       <li><strong>🤖 数字员工</strong>：可配置的运维智能体，含对话记录、技能、MCP、设置</li>
       <li><strong>🧩 技能中心</strong>：预编排的标准化运维流程（技能市场 / 官方推荐 / 自定义技能）</li>
@@ -3291,16 +3185,7 @@ function openDocModal() {
       <li><strong>知识推荐</strong>：RAG 检索命中的文档标题与摘要</li>
     </ul>
 
-    <h3>六、待办任务（运维人员视角）</h3>
-    <p>展示通知到「我」、需要处理的任务，分三类：</p>
-    <ul>
-      <li>🚨 待处理告警</li>
-      <li>📝 待处理工单</li>
-      <li>🔄 待处理变更</li>
-    </ul>
-    <p>每条任务含级别（高 / 中）、标题、通知时间、来源编号。右上角「历史处理」按钮可切换到历史已处理视图（含处理时间与结果）。</p>
-
-    <h3>七、真实 MCP 工具（9007 运维 / 9006 经营，全部只读）</h3>
+    <h3>六、真实 MCP 工具（9007 运维 / 9006 经营，全部只读）</h3>
     <table>
       <tr><th>工具</th><th>用途</th></tr>
       <tr><td>ops_overview / ops_entities</td><td>运维全域概览 / 实体清单（9007）</td></tr>
@@ -3319,7 +3204,7 @@ function openDocModal() {
       <tr><td>doc_export</td><td>投标文档结构化导出（Word/PPT 大纲，供人工下载）</td></tr>
     </table>
 
-    <h3>八、标准业务演示流程</h3>
+    <h3>七、标准业务演示流程</h3>
     <h4>流程 1：全域巡检（运维巡检专家 emp-001）</h4>
     <ol>
       <li>输入：执行一次全域巡检，检查基础设施和AI数字员工状态</li>
@@ -3335,9 +3220,9 @@ function openDocModal() {
       <li>输出根因报告与处置建议（所有处置人工确认后执行）</li>
     </ol>
 
-    <h3>九、功能边界</h3>
+    <h3>八、功能边界</h3>
     <ul>
-      <li>✅ <strong>已实现</strong>：三栏布局、会话切换、流式输出与分层渲染、Skill 状态管理、高危审批、右侧三 Tab、传统页面跳转、待办任务</li>
+      <li>✅ <strong>已实现</strong>：三栏布局、会话切换、流式输出与分层渲染、Skill 状态管理、高危审批、右侧三 Tab、传统页面跳转</li>
       <li>❌ <strong>暂未实现</strong>：登录权限（写死默认用户）、会话持久化（刷新清空）、真实文件解析、真实图表、Dify / MCP 底层代码</li>
     </ul>`;
   document.getElementById('docModal').classList.remove('hidden');
@@ -3393,10 +3278,6 @@ async function init() {
     S.employees = r.employees || [];
   } catch (e) { console.error(e); }
   await loadKnowledge('');
-  try {
-    const r = await fetch('/api/todos').then(x => x.json());
-    document.getElementById('todoBadge').textContent = r.count || 0;
-  } catch (e) { console.error(e); }
   await loadConversations();
   // 右侧面板默认收起（点开才显示）
   document.getElementById('rightPanel').classList.add('collapsed');

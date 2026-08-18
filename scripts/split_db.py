@@ -30,7 +30,7 @@ STDLIB = {"json", "sqlite3", "threading", "uuid", "datetime"}
 
 SEED_NAMES = [
     "MCP_SERVER_SEED", "MCP_TOOL_SEED", "MOCK_BG_TASKS", "MOCK_CONV_MESSAGES",
-    "MOCK_EMPLOYEES", "MOCK_LONG_TASKS", "MOCK_TODO_HISTORY", "MOCK_TODOS",
+    "MOCK_EMPLOYEES", "MOCK_LONG_TASKS",
     "SKILL_DETAILS", "SKILLS",
 ]
 
@@ -69,9 +69,8 @@ DOMAINS = [
     ], "员工 / 技能域"),
     ("tasks", [
         "db_list_long_tasks", "db_get_long_task", "db_create_long_task",
-        "db_update_long_task", "db_delete_long_task", "db_list_todos",
-        "db_list_todo_history", "db_list_bg_tasks",
-    ], "任务域：长任务 / 待办 / 后台任务"),
+        "db_update_long_task", "db_delete_long_task", "db_list_bg_tasks",
+    ], "任务域：长任务 / 后台任务"),
     ("kb", [
         "db_list_knowledge_bases", "db_get_knowledge_base",
         "db_create_knowledge_base", "db_rename_knowledge_base",

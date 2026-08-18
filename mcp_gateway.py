@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from mock_data import (
     MOCK_METRICS, MOCK_LOGS, MOCK_CMDB,
-    MOCK_CHANGES, MOCK_ALARMS, MOCK_TODOS,
+    MOCK_CHANGES, MOCK_ALARMS,
     MOCK_PM_PROJECTS, MOCK_PM_TASKS, MOCK_PM_WORKHOURS, MOCK_PM_COSTS,
     MOCK_BIZ_METRICS, MOCK_BID_KB, MOCK_BID_TEMPLATES,
     get_timestamps,

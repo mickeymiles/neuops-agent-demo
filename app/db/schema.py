@@ -356,28 +356,6 @@ def init_config_db():
                 )
             """)
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS todos (
-                    id TEXT PRIMARY KEY,
-                    type TEXT DEFAULT '',
-                    title TEXT DEFAULT '',
-                    level TEXT DEFAULT '',
-                    time TEXT DEFAULT '',
-                    source_id TEXT DEFAULT '',
-                    auto_skill TEXT DEFAULT ''
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS todo_history (
-                    id TEXT PRIMARY KEY,
-                    type TEXT DEFAULT '',
-                    title TEXT DEFAULT '',
-                    level TEXT DEFAULT '',
-                    time TEXT DEFAULT '',
-                    handled_time TEXT DEFAULT '',
-                    result TEXT DEFAULT ''
-                )
-            """)
-            conn.execute("""
                 CREATE TABLE IF NOT EXISTS bg_tasks (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,

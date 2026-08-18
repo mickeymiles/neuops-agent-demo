@@ -1,4 +1,4 @@
-"""会话 / 技能 / 待办 / 知识库等工作区路由"""
+"""会话 / 技能 / 知识库等工作区路由"""
 
 import json
 import uuid
@@ -29,8 +29,6 @@ from .db import (
     db_list_mcp_tools,
     db_list_projects,
     db_list_skills,
-    db_list_todo_history,
-    db_list_todos,
     db_mark_mock_conv_deleted,
     db_rename_project,
     db_set_skill_enabled,
@@ -228,18 +226,6 @@ async def get_knowledge(query: str = "", employee_id: str = ""):
         kb_ids = [k["id"] for k in db_list_knowledge_bases()]
     results = search_knowledge(query, kb_ids, top_k=5)
     return JSONResponse({"recommendations": results, "knowledge": results, "items": results})
-
-
-@router.get("/api/todos")
-async def get_todos():
-    todos = db_list_todos()
-    return JSONResponse({"todos": todos, "count": len(todos)})
-
-
-@router.get("/api/todos/history")
-async def get_todo_history():
-    history = db_list_todo_history()
-    return JSONResponse({"history": history, "count": len(history)})
 
 
 @router.get("/api/bg-tasks")
