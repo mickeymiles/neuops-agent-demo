@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""投标业务域：bid_projects 表（项目元数据 + 拆标报告 JSON + 生成成果 + 自检结果）"""
+"""投标业务域：bid_projects 表（项目元数据 + 拆标报告 JSON + 生成成果 + 自检结果 + 分步编写状态）"""
 
 import json
 import time
@@ -22,6 +22,19 @@ def _now():
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _migrate_bid_db(conn):
+    """幂等迁移：为旧库补充分步编写相关字段（NO-009 FR-17/19/21）"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(bid_projects)")}
+    adds = {
+        "prd_json": "TEXT DEFAULT '{}'",          # 需求分析 PRD（FR-17）
+        "outline_json": "TEXT DEFAULT '[]'",      # 章节大纲（FR-19）
+        "chapters_json": "TEXT DEFAULT '[]'",     # 章节列表与确认状态（FR-20）
+    }
+    for name, ddl in adds.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE bid_projects ADD COLUMN {name} {ddl}")
+
+
 def init_bid_db():
     """初始化投标表结构"""
     with _db_lock:
@@ -39,11 +52,15 @@ def init_bid_db():
                     parse_report TEXT DEFAULT '{}',
                     generated_docs TEXT DEFAULT '[]',
                     check_result TEXT DEFAULT '{}',
+                    prd_json TEXT DEFAULT '{}',
+                    outline_json TEXT DEFAULT '[]',
+                    chapters_json TEXT DEFAULT '[]',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_bid_status ON bid_projects(status)")
+            _migrate_bid_db(conn)
             conn.commit()
         finally:
             conn.close()
@@ -176,9 +193,56 @@ def bid_save_check_result(pid, result: dict):
     return bid_get_project(pid)
 
 
+# ---------------- 分步编写：需求分析 / 大纲 / 章节（NO-009 FR-17/19/20） ----------------
+
+def bid_save_prd(pid, prd: dict):
+    """保存需求分析 PRD"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            conn.execute(
+                "UPDATE bid_projects SET prd_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(prd, ensure_ascii=False), _now(), pid),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return bid_get_project(pid)
+
+
+def bid_save_outline(pid, outline: list):
+    """保存章节大纲 [{index,title,purpose}]"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            conn.execute(
+                "UPDATE bid_projects SET outline_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(outline, ensure_ascii=False), _now(), pid),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return bid_get_project(pid)
+
+
+def bid_save_chapters(pid, chapters: list):
+    """保存章节列表与确认状态 [{index,title,purpose,content,confirmed,source}]"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            conn.execute(
+                "UPDATE bid_projects SET chapters_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(chapters, ensure_ascii=False), _now(), pid),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return bid_get_project(pid)
+
+
 def _decode_project(row: dict):
     """把 JSON 字段解码为对象（原地修改）"""
-    for key in ("parse_report", "generated_docs", "check_result"):
+    for key in ("parse_report", "generated_docs", "check_result", "prd_json", "outline_json", "chapters_json"):
         raw = row.get(key)
         if isinstance(raw, str):
             try:
@@ -187,3 +251,7 @@ def _decode_project(row: dict):
                 row[key] = [] if key == "generated_docs" else {}
         if key == "generated_docs" and row.get(key) is None:
             row[key] = []
+    if row.get("outline_json") is None:
+        row["outline_json"] = []
+    if row.get("chapters_json") is None:
+        row["chapters_json"] = []

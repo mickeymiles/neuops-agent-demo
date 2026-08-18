@@ -5,6 +5,7 @@ FastAPI 后端 + Mock MCP 网关 + SSE 流式对话 + 统一监控探针 + 一�
 薄入口：组装 app、挂载路由与静态资源、初始化数据库、启动监控探针与告警引擎。
 业务逻辑按领域拆分于 app/ 包，保持与原单文件版本 100% 行为兼容。
 """
+import os
 import threading
 from contextlib import asynccontextmanager
 
@@ -13,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.alert_engine import _alert_engine_loop, seed_alert_rules
-from app.config import DB_PATH, PORT, STATIC_DIR
+from app.config import DB_PATH, PORT, STATIC_DIR, BASE_DIR
 from app.db import (
     init_bid_db, init_config_db, init_ops_db, init_session_db, seed_config_db, seed_mock_conversations,
     ensure_mcp_server_mapping, sync_seed_employees,
@@ -84,6 +85,8 @@ app.include_router(bidding.router)
 
 # 静态资源
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# 投标工作台上传/生成成果（demo 演示网页预览：/uploads/bid/{pid}/outputs/{id}.html）
+app.mount("/uploads", StaticFiles(directory=os.path.join(BASE_DIR, "uploads"), check_dir=False), name="uploads")
 
 # 初始化数据库与种子数据（模块加载即执行，与原 main.py 行为一致）
 init_session_db()

@@ -67,6 +67,56 @@ tr:hover td { background:rgba(56,189,248,.04); }
   background:var(--panel); border:1px solid var(--border2); color:var(--text); z-index:99; font-size:13px; }
 .toast.ok { border-color:var(--success); color:var(--success); }
 .toast.err { border-color:var(--danger); color:var(--danger); }
+/* 拆标卡片滚动条：避免文字过多撑破页面（FR-3） */
+.sec .sec-body { max-height:240px; overflow:auto; padding-right:4px; }
+/* 6 步 SOP 步骤条（FR-21） */
+.stepper { display:flex; align-items:center; gap:4px; margin-bottom:16px; overflow-x:auto; padding:4px 0; }
+.step { display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:20px; font-size:12px;
+  color:var(--dim); border:1px solid var(--border); background:var(--panel2); white-space:nowrap; cursor:default; }
+.step .no { width:18px; height:18px; border-radius:50%; background:var(--border2); color:var(--panel2);
+  display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
+.step.done { color:var(--success); border-color:rgba(16,185,129,.4); }
+.step.done .no { background:var(--success); color:#062033; }
+.step.active { color:var(--primary); border-color:var(--primary); background:var(--primary-bg); }
+.step.active .no { background:var(--primary); color:#062033; }
+.step-arrow { color:var(--border2); font-size:12px; }
+/* 左右对照编辑器（FR-20） */
+.split { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px; }
+@media (max-width:900px) { .split { grid-template-columns:1fr; } }
+.split .col { border:1px solid var(--border); border-radius:10px; background:var(--panel2); overflow:hidden;
+  display:flex; flex-direction:column; min-height:280px; }
+.split .col-head { padding:8px 12px; font-size:12px; color:var(--sub); border-bottom:1px solid var(--border);
+  background:var(--panel); display:flex; align-items:center; gap:6px; }
+.split .col-body { padding:10px 12px; font-size:12.5px; line-height:1.7; overflow:auto; max-height:420px; flex:1; }
+.split .col-body textarea { width:100%; height:100%; min-height:280px; resize:vertical; background:var(--panel2); }
+.chapter-nav { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.chapter-tab { padding:5px 12px; border-radius:8px; border:1px solid var(--border2); background:var(--panel2);
+  font-size:12px; color:var(--sub); cursor:pointer; }
+.chapter-tab:hover { border-color:var(--primary); color:var(--primary); }
+.chapter-tab.active { border-color:var(--primary); color:var(--primary); background:var(--primary-bg); }
+.chapter-tab.done { color:var(--success); border-color:rgba(16,185,129,.4); }
+.chapter-tab.done::after { content:" ✓"; }
+/* 全屏 loading 遮罩（FR-21） */
+.loading-mask { position:fixed; inset:0; background:rgba(11,18,32,.72); backdrop-filter:blur(2px);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:98; gap:14px; }
+.spinner { width:40px; height:40px; border:4px solid var(--border2); border-top-color:var(--primary);
+  border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.loading-mask .msg { color:var(--text); font-size:14px; }
+.loading-mask .sub { color:var(--dim); font-size:12px; }
+/* 一键起草：顶部两上传卡 + 主按钮 + 横向滑动面板（FR-23） */
+.upload-zone { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media (max-width:900px) { .upload-zone { grid-template-columns:1fr; } }
+.start-zone { text-align:center; padding:6px 0 18px; }
+.start-btn { padding:12px 36px; font-size:15px; border-radius:10px; }
+.pipeline-msg { margin-top:8px; font-size:12px; color:var(--sub); min-height:16px; }
+.pipeline-track { display:flex; gap:16px; overflow-x:auto; scroll-snap-type:x mandatory;
+  scroll-behavior:smooth; padding:0 4px 12px; }
+.pipeline-track::-webkit-scrollbar { height:6px; }
+.pipeline-track::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
+.pipeline-track::-webkit-scrollbar-track { background:transparent; }
+.pipeline-panel { flex:0 0 100%; scroll-snap-align:start; padding:0 4px; }
+.pipeline-panel .card { margin-bottom:0; }
 </style>
 </head>
 <body>
@@ -132,40 +182,85 @@ tr:hover td { background:rgba(56,189,248,.04); }
       </div>
     </div>
 
-    <div class="grid grid-2">
+    <!-- ═══ 顶部：两上传卡 + 开始生成（FR-23） ═══ -->
+    <div class="upload-zone">
       <div class="card">
-        <h2>规范书上传 <span class="tag">docx / pdf / xlsx / txt</span></h2>
-        <input type="file" id="file-input" multiple accept=".docx,.pdf,.xlsx,.txt,.md">
+        <h2>① 招标内容上传 <span class="tag">docx / pdf / xlsx / txt / md · 多文件 + 分类</span></h2>
+        <input type="file" id="file-input" multiple accept=".docx,.pdf,.xlsx,.txt,.md" onchange="previewUpload()">
+        <div id="pending-files" class="mt8"></div>
         <button class="btn btn-primary btn-sm mt8" onclick="uploadFiles()">上传并抽取文本</button>
         <div id="file-list" class="mt8"></div>
       </div>
-
       <div class="card">
-        <h2>拆标解析 <span class="tag">规则粗筛 + LLM 精提炼</span></h2>
-        <button class="btn btn-primary btn-sm" onclick="doParse()">触发拆标</button>
-        <p style="font-size:12px;color:var(--dim);margin-top:8px;">输出：资质 / 业绩 / 技术参数 / 评分标准 / 废标条款 / 应答清单 六类结构化报告</p>
-        <div id="parse-out" class="mt8"></div>
+        <h2>② 投标模板上传 <span class="tag">定稿 docx · 单模板覆盖 · 模板化导出</span></h2>
+        <input type="file" id="tpl-input" accept=".docx" onchange="renderTemplatePending()">
+        <div id="tpl-pending" class="mt8"></div>
+        <button class="btn btn-primary btn-sm mt8" onclick="uploadTemplate()">上传模板</button>
+        <div id="tpl-info" class="mt8"></div>
       </div>
     </div>
 
-    <div class="card">
-      <h2>材料生成 <span class="tag">拆标报告 + 知识库 + 模板</span></h2>
-      <div class="actions">
-        <button class="btn btn-sm" onclick="doGenerate('tech_proposal')">技术方案建议书</button>
-        <button class="btn btn-sm" onclick="doGenerate('response')">招标点对点应答</button>
-        <button class="btn btn-sm" onclick="doGenerate('ppt_outline')">售前汇报 PPT 大纲</button>
-        <button class="btn btn-sm" onclick="doGenerate('impl_plan')">运维实施方案</button>
-      </div>
-      <div id="gen-out" class="mt8"></div>
+    <!-- ═══ 开始生成：一键智能起草（FR-22） ═══ -->
+    <div class="start-zone">
+      <button class="btn btn-primary start-btn" id="btn-pipeline" onclick="runPipeline(false)">▶ 开始生成（智能起草）</button>
+      <button class="btn start-btn" onclick="runPipeline(true)">⚡ 全自动生成</button>
+      <div class="pipeline-msg" id="pipeline-msg"></div>
     </div>
 
-    <div class="card">
-      <h2>合规自检 <span class="tag">未响应项 / 废标红线 / 评分建议</span></h2>
-      <button class="btn btn-primary btn-sm" onclick="doCheck()">执行自检</button>
-      <div id="check-out" class="mt8"></div>
+    <!-- 横向步骤条（FR-23） -->
+    <div class="stepper" id="stepper">
+      <div class="step" data-step="1"><span class="no">1</span>拆标解析</div><span class="step-arrow">→</span>
+      <div class="step" data-step="2"><span class="no">2</span>需求分析</div><span class="step-arrow">→</span>
+      <div class="step" data-step="3"><span class="no">3</span>演示原型</div><span class="step-arrow">→</span>
+      <div class="step" data-step="4"><span class="no">4</span>逐章编写</div><span class="step-arrow">→</span>
+      <div class="step" data-step="5"><span class="no">5</span>组装 · 合规自检</div>
     </div>
 
-    <div class="card">
+    <!-- 横向滑动面板：随流水线进度自动滑动（FR-23） -->
+    <div class="pipeline-track" id="pipeline-track">
+      <section class="pipeline-panel" id="panel-1">
+        <div class="card">
+          <h2>面板 1 · 拆标解析 <span class="tag">规则粗筛 + LLM 精提炼</span></h2>
+          <div class="actions"><button class="btn btn-primary btn-sm" onclick="doParse()">触发拆标</button></div>
+          <p style="font-size:12px;color:var(--dim);margin-top:8px;">输出：资质 / 业绩 / 技术参数 / 评分标准 / 废标条款 / 应答清单 六类结构化报告</p>
+          <div id="parse-out" class="mt8"></div>
+        </div>
+      </section>
+      <section class="pipeline-panel" id="panel-2">
+        <div class="card">
+          <h2>面板 2 · 需求分析 <span class="tag">LLM 整理开发可读 PRD</span></h2>
+          <div class="actions"><button class="btn btn-primary btn-sm" id="btn-req" onclick="doRequirements()">生成需求分析</button></div>
+          <div id="prd-out" class="mt8"></div>
+        </div>
+      </section>
+      <section class="pipeline-panel" id="panel-3">
+        <div class="card">
+          <h2>面板 3 · 演示原型 <span class="tag">LLM 直出演示网页 · 可预览</span></h2>
+          <div class="actions"><button class="btn btn-primary btn-sm" id="btn-mockup" onclick="doMockup()">生成演示网页</button></div>
+          <p style="font-size:12px;color:var(--dim);margin-top:8px;">基于需求分析 PRD + 拆标技术参数生成「模拟界面原型」，供逐章编写时截图配图。</p>
+        </div>
+      </section>
+      <section class="pipeline-panel" id="panel-4">
+        <div class="card">
+          <h2>面板 4 · 逐章编写 <span class="tag">左右对照 · 人工复核调整</span></h2>
+          <div class="actions"><button class="btn btn-primary btn-sm" id="btn-outline" onclick="doOutline()">生成章节大纲</button></div>
+          <div id="outline-out" class="mt8"></div>
+        </div>
+      </section>
+      <section class="pipeline-panel" id="panel-5">
+        <div class="card">
+          <h2>面板 5 · 组装与合规自检 <span class="tag">合并确认章节 → 自检 → 导出</span></h2>
+          <div class="actions">
+            <button class="btn btn-primary btn-sm" id="btn-assemble" onclick="doAssemble()" style="display:none;">组装全部已确认章节</button>
+            <button class="btn btn-sm" onclick="doCheck()">执行合规自检</button>
+          </div>
+          <div id="check-out" class="mt8"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 生成成果与导出 -->
+    <div class="card" style="margin-top:16px;">
       <h2>生成成果与导出</h2>
       <div id="docs-out" class="empty">暂无生成成果</div>
     </div>
@@ -182,6 +277,18 @@ function toast(msg, ok) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
+// 全屏 loading 遮罩（FR-21）
+function showLoading(msg, sub) {
+  const m = document.createElement('div');
+  m.className = 'loading-mask';
+  m.id = 'loading-mask';
+  m.innerHTML = `<div class="spinner"></div><div class="msg">${esc(msg || '处理中...')}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}`;
+  document.body.appendChild(m);
+}
+function hideLoading() {
+  const m = document.getElementById('loading-mask');
+  if (m) m.remove();
+}
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtDate(s) { return s ? String(s).slice(0,10) : '-'; }
 function statusClass(st) {
@@ -192,7 +299,13 @@ function statusClass(st) {
 
 function showList() { S.view='list'; hideAll(); document.getElementById('view-list').classList.remove('hidden'); loadProjects(); }
 function showCreate() { S.view='create'; hideAll(); document.getElementById('view-create').classList.remove('hidden'); }
-function showDetail(pid) { S.view='detail'; S.pid=pid; hideAll(); document.getElementById('view-detail').classList.remove('hidden'); loadProject(pid); }
+async function showDetail(pid) {
+  S.view='detail'; S.pid=pid; hideAll();
+  document.getElementById('view-detail').classList.remove('hidden');
+  stopPipelinePolling();
+  await loadProject(pid);
+  checkPipelineResume();
+}
 function hideAll() { ['view-list','view-create','view-detail'].forEach(id => document.getElementById(id).classList.add('hidden')); }
 
 async function api(url, opt) {
@@ -244,9 +357,13 @@ async function loadProject(pid) {
     <span>预算：<b>${p.budget || 0} 万</b></span>
     <span>截止：<b>${fmtDate(p.deadline)}</b></span>`;
   renderFiles(p.files || []);
+  renderTemplate(p.template);
   renderParse(p.parse_report);
   renderDocs(p.generated_docs || []);
   renderCheck(p.check_result);
+  renderStepper(p);
+  renderPrd(p.prd_json || {});
+  renderOutline(p.outline_json || [], p.chapters_json || []);
 }
 
 async function saveMeta() {
@@ -266,13 +383,39 @@ async function delProject() {
   toast('已删除', r.success); showList();
 }
 
+const CATS = { feasibility:'可研文件', technical:'技术要求', commercial:'商务要求', contract:'合同文稿', format:'格式要求', other:'其他' };
+function autoCat(name) {
+  if (/可研|可行性|建议书|立项|初步设计/.test(name)) return 'feasibility';
+  if (/格式要求|编制要求|装订|密封|排版|模板/.test(name)) return 'format';
+  if (/技术规范|技术需求|技术要求|技术参数|采购需求/.test(name)) return 'technical';
+  if (/商务|报价/.test(name)) return 'commercial';
+  if (/合同|协议书/.test(name)) return 'contract';
+  return 'other';
+}
+function previewUpload() {
+  const input = document.getElementById('file-input');
+  const el = document.getElementById('pending-files');
+  if (!input.files.length) { el.innerHTML = ''; return; }
+  el.innerHTML = [...input.files].map((f, i) => `
+    <div class="file-row"><span class="name">📄 ${esc(f.name)}</span>
+      <select id="cat-${i}" style="width:150px;">
+        ${Object.entries(CATS).map(([k, v]) => `<option value="${k}" ${autoCat(f.name) === k ? 'selected' : ''}>${v}</option>`).join('')}
+      </select>
+    </div>`).join('');
+}
 async function uploadFiles() {
   const input = document.getElementById('file-input');
   if (!input.files.length) return toast('请先选择文件', false);
   const fd = new FormData();
-  for (const f of input.files) fd.append('files', f);
+  const catMap = {};
+  [...input.files].forEach((f, i) => {
+    fd.append('files', f);
+    const sel = document.getElementById('cat-' + i);
+    if (sel && sel.value) catMap[f.name] = sel.value;
+  });
+  if (Object.keys(catMap).length) fd.append('categories', JSON.stringify(catMap));
   const r = await api('/api/bid/projects/' + S.pid + '/upload', { method:'POST', body: fd });
-  if (r.success) { toast(`已上传 ${r.saved.length} 个文件`, true); input.value=''; loadProject(S.pid); }
+  if (r.success) { toast(`已上传 ${r.saved.length} 个文件`, true); input.value=''; document.getElementById('pending-files').innerHTML=''; loadProject(S.pid); }
   else toast(r.error || '上传失败', false);
 }
 
@@ -280,7 +423,46 @@ function renderFiles(files) {
   const el = document.getElementById('file-list');
   if (!files.length) { el.innerHTML = '<p style="color:var(--dim);font-size:12px;">尚未上传规范书</p>'; return; }
   el.innerHTML = files.map(f => `
-    <div class="file-row"><span class="name">📄 ${esc(f.name)}</span><span class="size">${(f.size/1024).toFixed(1)} KB</span></div>`).join('');
+    <div class="file-row"><span class="name">📄 ${esc(f.name)}</span>
+      <span class="size">${esc(CATS[f.category] || '其他')}</span>
+      <span class="size">${(f.size/1024).toFixed(1)} KB</span></div>`).join('');
+}
+
+// ---------- 投标模板（FR-13） ----------
+function renderTemplatePending() {
+  const input = document.getElementById('tpl-input');
+  const el = document.getElementById('tpl-pending');
+  if (!input.files.length) { el.innerHTML = ''; return; }
+  const f = input.files[0];
+  el.innerHTML = `<div class="file-row"><span class="name">📄 ${esc(f.name)}</span><span class="size">${(f.size/1024).toFixed(1)} KB</span></div>`;
+}
+async function uploadTemplate() {
+  const input = document.getElementById('tpl-input');
+  if (!input.files.length) return toast('请先选择 .docx 模板文件', false);
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  const r = await api('/api/bid/projects/' + S.pid + '/template', { method:'POST', body: fd });
+  if (r.success) { toast('模板已上传', true); input.value=''; document.getElementById('tpl-pending').innerHTML=''; renderTemplate(r.template); }
+  else toast(r.error || '模板上传失败', false);
+}
+async function deleteTemplate() {
+  if (!confirm('确认删除当前投标模板？')) return;
+  const r = await api('/api/bid/projects/' + S.pid + '/template', { method:'DELETE' });
+  if (r.success) { toast('模板已删除', true); renderTemplate(null); }
+  else toast(r.error || '删除失败', false);
+}
+function renderTemplate(tpl) {
+  const el = document.getElementById('tpl-info');
+  if (!tpl) { el.innerHTML = '<p style="color:var(--dim);font-size:12px;">尚未上传模板，导出 docx 将使用排版基线</p>'; return; }
+  const tree = (tpl.structure || []).map(s => `<div class="item" style="font-size:12px;">${'　'.repeat(Math.max(0, (s.level||1)-1))}▸ ${esc(s.title)}</div>`).join('');
+  el.innerHTML = `
+    <div class="file-row"><span class="name">📄 ${esc(tpl.name)}</span>
+      <span class="size">${(tpl.size/1024).toFixed(1)} KB</span>
+      <button class="btn btn-sm btn-danger" onclick="deleteTemplate()">删除</button></div>
+    <div style="margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:8px;max-height:180px;overflow:auto;background:var(--panel2);">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:4px;">章节结构（模板化导出按标题匹配插入）</div>
+      ${tree || '<p style="color:var(--dim);font-size:12px;">未解析到章节</p>'}
+    </div>`;
 }
 
 async function doParse() {
@@ -304,7 +486,14 @@ const SEC_META = {
 function renderParse(report) {
   const el = document.getElementById('parse-out');
   if (!report || !Object.keys(report).length) { el.innerHTML = ''; return; }
-  el.innerHTML = Object.entries(SEC_META).map(([k, meta]) => {
+  const fmt = report.format_spec;
+  let fmtHtml = '';
+  if (fmt) {
+    fmtHtml = `<div class="sec"><h3>投标格式规范 <span style="color:var(--dim);font-weight:400;">docx 排版基线（可从格式要求文件自动提取覆盖）</span></h3>
+      <div class="sec-body"><p>正文：${esc(fmt.font_body || '宋体')} ${fmt.size_body || 12}pt · 行距 ${fmt.line_spacing || 1.5} · 标题：${esc(fmt.font_heading || '黑体')}</p>
+      <p>页边距：上 ${fmt.margin_top_cm}cm / 下 ${fmt.margin_bottom_cm}cm / 左 ${fmt.margin_left_cm}cm / 右 ${fmt.margin_right_cm}cm · 页码：${fmt.page_number ? '开启' : '关闭'} · 封面/目录：${(fmt.cover === false || fmt.toc === false) ? '关闭' : '开启'}</p></div></div>`;
+  }
+  el.innerHTML = fmtHtml + Object.entries(SEC_META).map(([k, meta]) => {
     const items = report[k] || [];
     const body = items.map(it => {
       if (k === 'rejection_clauses') return `<div class="item">${esc(it)}</div>`;
@@ -314,16 +503,160 @@ function renderParse(report) {
       return `<div class="item"><b>${esc(parts[0] || it.item || '未识别')}</b>${parts.slice(1).map(x => ` · ${esc(x)}`).join('')}${it.is_key ? ' <span class="result-badge" style="background:rgba(245,158,11,.12);color:var(--warning);">关键项</span>' : ''}</div>`;
     }).join('');
     const n = items.length ? `${items.length} 项` : '未识别';
-    return `<div class="sec"><h3>${meta[0]} <span style="color:var(--dim);font-weight:400;">${n}</span></h3>${body || '<p>未识别</p>'}</div>`;
+    return `<div class="sec"><h3>${meta[0]} <span style="color:var(--dim);font-weight:400;">${n}</span></h3><div class="sec-body">${body || '<p>未识别</p>'}</div></div>`;
   }).join('');
 }
 
-async function doGenerate(type) {
-  const r = await api('/api/bid/projects/' + S.pid + '/generate', {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ type })
+// ---------- 横向步骤条（FR-23） ----------
+const STEP_NAMES = ['拆标解析', '需求分析', '演示原型', '逐章编写', '组装·合规自检'];
+const STAGE_PANEL = { parse:1, requirements:2, mockup:3, outline:4, chapters:4, shots:4, assemble:5, review:5 };
+function stageToPanel(stage) { return STAGE_PANEL[stage] || 0; }
+function renderStepper(p) {
+  const done = [];
+  if (p.parse_report && Object.keys(p.parse_report).length) done.push(1);
+  if (p.prd_json && Object.keys(p.prd_json).length) done.push(2);
+  if ((p.generated_docs || []).some(d => d.kind === 'mockup')) done.push(3);
+  const chapters = p.chapters_json || [];
+  const confirmedCount = chapters.filter(c => c.confirmed).length;
+  if (chapters.length && confirmedCount === chapters.length) done.push(4);
+  if ((p.generated_docs || []).some(d => d.kind === 'assemble')) done.push(5);
+  let active = 1;
+  for (let i = 1; i <= 5; i++) if (!done.includes(i)) { active = i; break; }
+  document.querySelectorAll('#stepper .step').forEach(el => {
+    const n = parseInt(el.dataset.step, 10);
+    el.classList.toggle('done', done.includes(n));
+    el.classList.toggle('active', n === active);
   });
-  if (r.success) { toast('已生成 ' + r.doc.title, true); renderDocs(S.project.generated_docs || []); }
-  else toast(r.error || '生成失败', false);
+}
+
+// ---------- 需求分析（FR-17） ----------
+function renderPrd(prd) {
+  const el = document.getElementById('prd-out');
+  if (!prd || !Object.keys(prd).length) { el.innerHTML = '<p style="color:var(--dim);font-size:12px;">尚未生成需求分析。</p>'; return; }
+  const roles = (prd.roles || []).map(x => `<span class="result-badge" style="background:var(--primary-bg);color:var(--primary);margin-right:6px;">${esc(x)}</span>`).join('');
+  const feats = (prd.features || []).map(f => `<div class="item"><b>${esc(f.name)}</b> <span class="result-badge" style="background:${f.priority === 'P0' ? 'rgba(239,68,68,.12);color:var(--danger)' : f.priority === 'P1' ? 'rgba(245,158,11,.12);color:var(--warning)' : 'rgba(148,163,184,.15);color:var(--sub)'}">${esc(f.priority || 'P2')}</span> ${esc(f.desc || '')}</div>`).join('');
+  const pages = (prd.pages || []).map(pg => `<div class="item"><b>${esc(pg.name)}</b> ${esc(pg.desc || '')}${(pg.features || []).length ? ` <span style="color:var(--dim);">关联：${pg.features.map(esc).join('、')}</span>` : ''}</div>`).join('');
+  const interacts = (prd.interactions || []).map(i => `<div class="item"><b>${esc(i.page || '')}</b> · ${esc(i.action || '')} → <span style="color:var(--primary);">${esc(i.result || '')}</span></div>`).join('');
+  el.innerHTML = `
+    <div class="sec"><h3>项目概述</h3><div class="sec-body"><p>${esc(prd.summary || '')}</p></div></div>
+    <div class="sec"><h3>用户角色</h3><div class="sec-body">${roles || '<p>未识别</p>'}</div></div>
+    <div class="sec"><h3>功能点 <span style="color:var(--dim);font-weight:400;">${(prd.features || []).length} 项</span></h3><div class="sec-body">${feats || '<p>未识别</p>'}</div></div>
+    <div class="sec"><h3>页面清单 <span style="color:var(--dim);font-weight:400;">${(prd.pages || []).length} 个</span></h3><div class="sec-body">${pages || '<p>未识别</p>'}</div></div>
+    <div class="sec"><h3>交互说明</h3><div class="sec-body">${interacts || '<p>未识别</p>'}</div></div>
+    <div class="sec"><h3>验收口径</h3><div class="sec-body">${(prd.acceptance || []).map(a => `<div class="item">${esc(a)}</div>`).join('') || '<p>未识别</p>'}</div></div>`;
+}
+async function doRequirements() {
+  const btn = document.getElementById('btn-req');
+  showLoading('正在整理需求分析（LLM）...', '将上传材料转译为开发可读的 PRD');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/bid/projects/' + S.pid + '/requirements', { method:'POST' });
+    if (r.success) { toast('需求分析完成', true); await loadProject(S.pid); }
+    else toast(r.error || '需求分析失败', false);
+  } finally { hideLoading(); btn.disabled = false; }
+}
+
+// ---------- 假页面（FR-18） ----------
+async function doMockup() {
+  const btn = document.getElementById('btn-mockup');
+  showLoading('正在生成假页面（LLM）...', '依据 PRD 与拆标技术参数绘制演示网页');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/bid/projects/' + S.pid + '/mockup', { method:'POST' });
+    if (r.success) { toast('假页面已生成，可预览', true); await loadProject(S.pid); }
+    else toast(r.error || '假页面生成失败', false);
+  } finally { hideLoading(); btn.disabled = false; }
+}
+
+// ---------- 大纲与逐章（FR-19/FR-20） ----------
+let S_CHAPTER = { active: 1 };
+function renderOutline(outline, chapters) {
+  const el = document.getElementById('outline-out');
+  const btnAsm = document.getElementById('btn-assemble');
+  if (!outline.length) { el.innerHTML = '<p style="color:var(--dim);font-size:12px;">尚未生成章节大纲。</p>'; btnAsm.style.display = 'none'; return; }
+  const tabs = outline.map((o, i) => {
+    const ch = chapters[i] || {};
+    const cls = ch.confirmed ? ' done' : (i + 1 === S_CHAPTER.active ? ' active' : '');
+    return `<span class="chapter-tab${cls}" onclick="openChapter(${i + 1})">${i + 1}. ${esc(o.title)}</span>`;
+  }).join('');
+  const confirmedCount = chapters.filter(c => c.confirmed).length;
+  btnAsm.style.display = confirmedCount ? 'inline-flex' : 'none';
+  btnAsm.textContent = `组装全部已确认章节（${confirmedCount}/${outline.length}）`;
+  el.innerHTML = `<div class="chapter-nav">${tabs}</div><div id="chapter-editor"></div>`;
+  renderChapterEditor(outline, chapters);
+}
+function openChapter(i) { S_CHAPTER.active = i; const p = S.project; renderOutline(p.outline_json || [], p.chapters_json || []); }
+function renderChapterEditor(outline, chapters) {
+  const el = document.getElementById('chapter-editor');
+  if (!el) return;
+  const i = S_CHAPTER.active;
+  const o = outline[i - 1];
+  const ch = chapters[i - 1] || {};
+  if (!o) return;
+  el.innerHTML = `
+    <div class="split">
+      <div class="col"><div class="col-head">📋 规范书要求 / 拆标要点</div>
+        <div class="col-body" id="col-source">${esc(ch.source_text || o.purpose || '本章编写要点见大纲。点击「生成本章草稿」后，左侧将展示拆标报告对应依据。')}</div></div>
+      <div class="col"><div class="col-head">✍️ AI 草稿（可编辑）${ch.confirmed ? '<span class="result-badge" style="background:rgba(16,185,129,.12);color:var(--success);margin-left:auto;">已确认</span>' : ''}</div>
+        <div class="col-body"><textarea id="chapter-text" placeholder="点击「生成本章草稿」调用 LLM 编写，或直接在此输入...">${esc(ch.content || '')}</textarea></div></div>
+    </div>
+    <div class="actions mt8">
+      <button class="btn btn-primary btn-sm" onclick="genChapter(${i}, false)">生成本章草稿</button>
+      <button class="btn btn-sm" onclick="genChapter(${i}, true)">重新生成</button>
+      <button class="btn btn-sm" style="border-color:rgba(16,185,129,.5);color:var(--success);" onclick="confirmChapter(${i})">确认本章 ✓</button>
+      <button class="btn btn-sm" onclick="goChapter(${i - 1})">&larr; 上一章</button>
+      <button class="btn btn-sm" onclick="goChapter(${i + 1})">下一章 →</button>
+    </div>`;
+}
+function goChapter(i) {
+  const outline = (S.project.outline_json || []);
+  if (i < 1 || i > outline.length) return toast('已到边界', false);
+  openChapter(i);
+}
+async function doOutline() {
+  const btn = document.getElementById('btn-outline');
+  showLoading('正在生成章节大纲（LLM）...', '依据投标模板章节结构与拆标报告规划章节');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/bid/projects/' + S.pid + '/outline', { method:'POST' });
+    if (r.success) { toast('章节大纲已生成', true); S_CHAPTER.active = 1; await loadProject(S.pid); }
+    else toast(r.error || '大纲生成失败', false);
+  } finally { hideLoading(); btn.disabled = false; }
+}
+async function genChapter(i, force) {
+  showLoading('正在编写本章（LLM）...', '结合规范书要求与项目知识库逐章撰写');
+  try {
+    const r = await api('/api/bid/projects/' + S.pid + '/chapter', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ index: i, force })
+    });
+    if (r.success) {
+      toast(r.done ? '本章已是确认稿' : '本章草稿已生成', true);
+      await loadProject(S.pid);
+      const p = S.project;
+      renderOutline(p.outline_json || [], p.chapters_json || []);
+    } else toast(r.error || '章节生成失败', false);
+  } finally { hideLoading(); }
+}
+async function confirmChapter(i) {
+  const ta = document.getElementById('chapter-text');
+  const content = ta ? ta.value : '';
+  if (!content.trim()) return toast('请先生成或输入本章内容', false);
+  showLoading('正在确认本章...', '');
+  try {
+    const r = await api('/api/bid/projects/' + S.pid + '/chapters/confirm', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ index: i, content })
+    });
+    if (r.success) { toast('本章已确认', true); await loadProject(S.pid); }
+    else toast(r.error || '确认失败', false);
+  } finally { hideLoading(); }
+}
+async function doAssemble() {
+  showLoading('正在组装最终文档...', '合并全部已确认章节');
+  try {
+    const r = await api('/api/bid/projects/' + S.pid + '/assemble', { method:'POST' });
+    if (r.success) { toast('已组装：' + r.doc.title, true); await loadProject(S.pid); }
+    else toast(r.error || '组装失败', false);
+  } finally { hideLoading(); }
 }
 
 async function fetchDocBody(doc) {
@@ -337,12 +670,27 @@ function renderDocs(docs) {
   const el = document.getElementById('docs-out');
   if (!docs.length) { el.className = 'empty'; el.textContent = '暂无生成成果'; return; }
   el.className = '';
-  el.innerHTML = docs.map(d => `
+  el.innerHTML = docs.map(d => {
+    if (d.type === 'tech_demo') {
+      return `
+      <div class="file-row">
+        <span class="name">🌐 ${esc(d.title)} <span style="color:var(--dim);font-size:11px;">演示网页</span></span>
+        <button class="btn btn-sm btn-primary" onclick="previewDemo('${esc(d.path)}')">预览</button>
+        <button class="btn btn-sm" onclick="exportDoc('${d.id}','html')">下载 html</button>
+      </div>`;
+    }
+    return `
     <div class="file-row">
       <span class="name">📄 ${esc(d.title)} <span style="color:var(--dim);font-size:11px;">${esc(d.type)}</span></span>
       <button class="btn btn-sm" onclick="exportDoc('${d.id}','docx')">下载 docx</button>
       <button class="btn btn-sm" onclick="exportDoc('${d.id}','md')">下载 md</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+
+function previewDemo(absPath) {
+  const rel = absPath.replace(/^.*\/neuops-agent-demo/, '').replace(/\\/g, '/');
+  window.open((rel.startsWith('/') ? rel : '/' + rel) + '?v=' + Date.now(), '_blank');
 }
 
 function exportDoc(docId, fmt) {
@@ -370,6 +718,75 @@ function renderCheck(result) {
     <div class="sec"><h3>未响应项 <span style="color:var(--danger);">${(result.unresponded||[]).length}</span></h3>${u || '<p>无</p>'}</div>
     <div class="sec"><h3>废标红线 <span style="color:var(--warning);">${(result.redlines||[]).length}</span></h3>${rl || '<p>无</p>'}</div>
     <div class="sec"><h3>评分点得分建议</h3>${sc || '<p>无</p>'}</div>`;
+}
+
+// ---------- 一键智能起草流水线（FR-22/FR-23） ----------
+let PIPELINE_TIMER = null;
+function stopPipelinePolling() {
+  if (PIPELINE_TIMER) { clearInterval(PIPELINE_TIMER); PIPELINE_TIMER = null; }
+}
+async function checkPipelineResume() {
+  try {
+    const r = await api('/api/bid/projects/' + S.pid + '/pipeline/status');
+    if (r.status && r.status.running) startPipelinePolling();
+  } catch (e) {}
+}
+async function runPipeline(autoConfirm) {
+  if (S.pipelineRunning) return toast('流水线运行中，请稍候', false);
+  S.pipelineRunning = true;
+  document.querySelectorAll('.start-btn').forEach(b => b.disabled = true);
+  try {
+    const r = await api('/api/bid/projects/' + S.pid + '/pipeline/run', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ auto_confirm: autoConfirm })
+    });
+    if (!r.success) {
+      S.pipelineRunning = false;
+      document.querySelectorAll('.start-btn').forEach(b => b.disabled = false);
+      toast(r.error || '启动失败', false);
+      return;
+    }
+    toast(r.message || '已启动', true);
+    startPipelinePolling();
+  } catch (e) {
+    S.pipelineRunning = false;
+    document.querySelectorAll('.start-btn').forEach(b => b.disabled = false);
+    toast('启动失败: ' + e, false);
+  }
+}
+function startPipelinePolling() {
+  stopPipelinePolling();
+  const pollOnce = async () => {
+    try {
+      const r = await api('/api/bid/projects/' + S.pid + '/pipeline/status');
+      const st = r.status;
+      if (!st || !st.running) {
+        stopPipelinePolling();
+        S.pipelineRunning = false;
+        document.querySelectorAll('.start-btn').forEach(b => b.disabled = false);
+        if (st && st.done) await loadProject(S.pid);
+        return;
+      }
+      renderPipelineProgress(st);
+    } catch (e) {}
+  };
+  pollOnce();
+  PIPELINE_TIMER = setInterval(pollOnce, 1200);
+}
+function renderPipelineProgress(st) {
+  const pi = stageToPanel(st.stage);
+  document.querySelectorAll('#stepper .step').forEach(el => {
+    const n = parseInt(el.dataset.step, 10);
+    el.classList.toggle('done', n < pi);
+    el.classList.toggle('active', n === pi);
+  });
+  const msg = document.getElementById('pipeline-msg');
+  if (msg) msg.textContent = st.message || '';
+  if (pi) {
+    const track = document.getElementById('pipeline-track');
+    const panel = document.getElementById('panel-' + pi);
+    if (track && panel) track.scrollTo({ left: panel.offsetLeft - track.offsetLeft, behavior: 'smooth' });
+  }
 }
 
 showList();

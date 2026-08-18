@@ -16,7 +16,7 @@
 | NO-006 | Agent 对话与 MCP | 生效 | 2026-08-17 | `app/agent_chat.py`、`app/mcp_tools.py` |
 | NO-007 | 运维一体化平台 | 生效 | 2026-08-17 | `app/routes_ops.py`、`static/ops.html` |
 | NO-008 | 知识库与 RAG | 生效 | 2026-08-17 | `app/knowledge.py` |
-| NO-009 | 投标业务专家能力 | 生效 | 2026-08-17 | `app/bidding/`、`static/bidding.html`、`static/manage.app.js`（工作成果入口） |
+| NO-009 | 投标业务专家能力 | 生效 | 2026-08-18 | `app/bidding/`、`app/bidding/screenshot.py`、`static/bidding.html`、`static/manage.app.js`（工作成果入口） |
 
 ## 状态定义
 

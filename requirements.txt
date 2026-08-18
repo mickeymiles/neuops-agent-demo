@@ -10,3 +10,4 @@ fastembed
 psutil>=5.9.0
 requests>=2.31.0
 zstandard
+playwright>=1.44.0

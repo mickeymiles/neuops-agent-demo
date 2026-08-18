@@ -29,6 +29,11 @@ venv/
 *.pem
 *.key
 
+# ═══ 测试/调试产物 ═══
+.playwright-cli/
+/*.png
+_debug_shot.py
+
 # ═══ 系统文件 ═══
 .DS_Store
 Thumbs.db
