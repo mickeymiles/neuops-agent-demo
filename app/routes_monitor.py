@@ -315,8 +315,8 @@ async def monitor_token_dist():
 
 @router.get("/api/monitor/topology")
 async def monitor_topology():
-    """智能体 APM 拓扑：总智能体(编排中枢) → 子智能体 → Skill → Tools → MCP Server 依赖链，
-    以及 RAG 检索链路 数字员工 → 知识库 → 向量数据库。
+    """智能体 APM 拓扑：总智能体(编排中枢) → 子智能体 → Skill → MCP Server → Tools 依赖链，
+    以及 RAG 检索链路 数字员工 → 向量数据库 → 知识库。
     节点携带动态指标（调用数/Token/错误数），边携带关系类型（route / skill / tool / server / kb / vector）"""
     employees = _query_rows("SELECT id, name, type FROM employees")
     skills = _query_rows("SELECT id, name, category FROM skills")
@@ -378,9 +378,9 @@ async def monitor_topology():
         edges.append({"source": sm["skill_id"], "target": sm["mcp_id"], "type": "tool", "label": "调用"})
     for t in tools:
         if t.get("server_id"):
-            edges.append({"source": t["id"], "target": t["server_id"], "type": "server", "label": "归属"})
+            edges.append({"source": t["server_id"], "target": t["id"], "type": "server", "label": "承载"})
 
-    # ── RAG 链路：数字员工 → 知识库 → 向量数据库（无知识库时不渲染，保持空数据兼容）──
+    # ── RAG 链路：数字员工 → 向量数据库 → 知识库（无知识库时不渲染，保持空数据兼容）──
     if kbs:
         # 检索次数聚合：员工 → 检索次数；知识库 → 绑定该库员工的检索次数之和
         # （rag_retrievals 无 kb_id 字段，员工绑定多库时次数计入其绑定库，近似口径）
@@ -402,12 +402,11 @@ async def monitor_topology():
                 "retrieve_count": kb_retrieve.get(k["id"], 0),
                 "calls": 0, "tokens": 0, "errors": 0, "avg_latency_ms": 0,
             })
-            # 知识库 → 向量数据库（存储）
-            edges.append({"source": k["id"], "target": "chroma", "type": "vector", "label": "存储"})
-        # 数字员工 → 知识库（检索，基于 employee_kb 绑定）
-        for ek in emp_kb:
-            if ek["employee_id"] in emp_ids:
-                edges.append({"source": ek["employee_id"], "target": ek["kb_id"], "type": "kb", "label": "检索"})
+            # 向量数据库 → 知识库（承载）
+            edges.append({"source": "chroma", "target": k["id"], "type": "vector", "label": "承载"})
+        # 数字员工 → 向量数据库（检索，基于 employee_kb 绑定，按员工去重）
+        for eid in sorted({ek["employee_id"] for ek in emp_kb} & emp_ids):
+            edges.append({"source": eid, "target": "chroma", "type": "kb", "label": "检索"})
 
         # 全局唯一向量数据库节点
         chunk_row = _query_rows("SELECT COUNT(*) AS n FROM knowledge_chunks")

@@ -2363,20 +2363,20 @@ const AG_NODE_COLOR = {
   vector_db: { c: "#fb923c", bg: "rgba(251,146,60,.14)" },
 };
 const AG_EDGE_COLOR = { route: "#fbbf24", skill: "#22d3ee", tool: "#4f8cff", server: "#34d399", kb: "#f472b6", vector: "#fb923c" };
-// 双链路平行布局：MCP 链路五层连续（hub→agent→skill→tool→server），
-// RAG 链路与 MCP 平级（kb 对齐 tool、vector_db 对齐 server），上下两排平行不交叉。
+// 双链路平行布局：MCP 链路五层连续（hub→agent→skill→server→tool），
+// RAG 链路与 MCP 平级（vector_db 对齐 server、kb 对齐 tool），上下两排平行不交叉。
 // 横向列距拉开（相邻列 ≥13%）配合节点宽度自适应，避免边框与文字重叠。
-const AG_LAYER_X = { hub: "5%", agent: "18%", skill: "31%", tool: "45%", server: "58%", kb: "45%", vector_db: "58%" };
-// y 纵向分带（%）：hub 居中；agent 全高连通上下两链；MCP 链(skill/tool/server)上半带；RAG 链(kb/vector_db)下半带；带间留空避免文字越带
-const AG_Y_BAND = { hub: [32, 68], agent: [8, 92], skill: [4, 46], tool: [4, 46], server: [4, 46], kb: [54, 96], vector_db: [54, 96] };
-const AG_CAT_INDEX = { hub: 0, agent: 1, skill: 2, tool: 3, server: 4, kb: 5, vector_db: 6 };
+const AG_LAYER_X = { hub: "5%", agent: "18%", skill: "31%", server: "45%", vector_db: "45%", tool: "58%", kb: "58%" };
+// y 纵向分带（%）：hub 居中；agent 全高连通上下两链；MCP 链(skill/server/tool)上半带；RAG 链(vector_db/kb)下半带；带间留空避免文字越带
+const AG_Y_BAND = { hub: [32, 68], agent: [8, 92], skill: [4, 46], server: [4, 46], tool: [4, 46], vector_db: [54, 96], kb: [54, 96] };
+const AG_CAT_INDEX = { hub: 0, agent: 1, skill: 2, server: 3, tool: 4, vector_db: 5, kb: 6 };
 const AG_TYPE_NAME = {
   hub: "编排中枢", agent: "子智能体", skill: "Skill", tool: "Tools",
   server: "MCP Server", kb: "知识库", vector_db: "向量数据库",
 };
 // 拖拽位置持久化（localStorage，按节点 id 存取；id 来自数据库主键或固定值，稳定可靠）
-// v2：布局参数变更（画布增高、列距拉大、节点宽度自适应），旧像素坐标作废以免错位
-const AG_TOPO_POS_KEY = "neuops.topo.pos.v2";
+// v3：布局参数变更（tool/server 列交换、RAG 链方向修正为 数字员工→向量数据库→知识库），旧像素坐标作废以免错位
+const AG_TOPO_POS_KEY = "neuops.topo.pos.v3";
 function AG_loadTopoPos() {
   try { return JSON.parse(localStorage.getItem(AG_TOPO_POS_KEY)) || {}; } catch (e) { return {}; }
 }
@@ -2493,7 +2493,7 @@ function AG_showTopoNode(n, edges) {
   const d = $("ag-topo-detail");
   if (!d || !n) return;
   const rels = (edges || []).filter(e => e.source === n.id || e.target === n.id);
-  const relTypeName = { route: "路由分配", skill: "使用技能", tool: "调用工具", server: "归属服务", kb: "检索知识库", vector: "向量存储" };
+  const relTypeName = { route: "路由分配", skill: "使用技能", tool: "调用工具", server: "承载工具", kb: "检索", vector: "承载知识库" };
   let html = `<h4>🕸 ${esc(n.name)} <span class="muted">· ${esc(n.subtype || AG_TYPE_NAME[n.type] || n.type)}</span></h4>
     <div class="row"><span class="k">类型</span><span>${esc(n.subtype || n.type)}</span></div>`;
   if (n.type === "server") {

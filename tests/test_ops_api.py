@@ -94,3 +94,34 @@ def test_ops_probe_run_now():
     r = client.post("/api/ops/probe/run-now")
     assert r.status_code == 200
     assert r.json()["ok"] is True
+
+
+def test_monitor_topology_layer_direction():
+    # NO-007 拓扑双链路布局：MCP 链 server→tool（承载）、RAG 链 agent→vector_db→kb（检索/承载）
+    r = client.get("/api/monitor/topology")
+    assert r.status_code == 200
+    d = r.json()["data"]
+    nodes = {n["id"]: n for n in d["nodes"]}
+    edges = d["edges"]
+    # 服务承载工具：server 边 SHALL 为 server → tool（不得出现 tool → server 旧方向）
+    server_edges = [e for e in edges if e["type"] == "server"]
+    assert server_edges, "拓扑缺少 server 边（MCP Server 承载 Tools）"
+    for e in server_edges:
+        assert nodes[e["source"]]["type"] == "server", f"server 边源节点应为 MCP Server: {e}"
+        assert nodes[e["target"]]["type"] == "tool", f"server 边目标节点应为 Tool: {e}"
+    # RAG 链：有知识库数据时验证 数字员工 → 向量数据库 → 知识库 方向
+    if any(n["type"] == "kb" for n in nodes.values()):
+        vec_edges = [e for e in edges if e["type"] == "vector"]
+        assert vec_edges, "存在知识库但缺少 vector 边（向量数据库承载知识库）"
+        for e in vec_edges:
+            assert e["source"] == "chroma", f"vector 边源节点应为向量数据库 chroma: {e}"
+            assert nodes[e["target"]]["type"] == "kb", f"vector 边目标节点应为知识库: {e}"
+        kb_edges = [e for e in edges if e["type"] == "kb"]
+        assert kb_edges, "存在知识库但缺少 kb 边（数字员工检索向量数据库）"
+        for e in kb_edges:
+            assert nodes[e["source"]]["type"] == "agent", f"kb 边源节点应为数字员工: {e}"
+            assert e["target"] == "chroma", f"kb 边目标节点应为向量数据库 chroma: {e}"
+        # 不得残留旧方向边：agent→kb / kb→chroma
+        for e in edges:
+            assert not (e["type"] == "kb" and e["target"] != "chroma"), f"残留旧方向 kb 边: {e}"
+            assert not (e["type"] == "vector" and e["source"] != "chroma"), f"残留旧方向 vector 边: {e}"
