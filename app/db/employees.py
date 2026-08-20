@@ -17,6 +17,10 @@ def db_list_employees() -> list:
             for r in rows:
                 e = dict(r)
                 e["enabled"] = bool(e.get("enabled", 1))
+                try:
+                    e["workbench"] = json.loads(e.pop("workbench_json", "") or "null")
+                except (TypeError, json.JSONDecodeError):
+                    e["workbench"] = None
                 skill_rows = conn.execute(
                     "SELECT skill_id, enabled FROM employee_skills WHERE employee_id=?",
                     (e["id"],)).fetchall()
@@ -41,6 +45,10 @@ def db_get_employee(emp_id: str):
                 return None
             e = dict(r)
             e["enabled"] = bool(e.get("enabled", 1))
+            try:
+                e["workbench"] = json.loads(e.pop("workbench_json", "") or "null")
+            except (TypeError, json.JSONDecodeError):
+                e["workbench"] = None
             skill_rows = conn.execute(
                 "SELECT skill_id, enabled FROM employee_skills WHERE employee_id=?",
                 (emp_id,)).fetchall()
@@ -60,14 +68,15 @@ def db_upsert_employee(emp: dict):
         conn = _get_conn()
         try:
             conn.execute(
-                "INSERT INTO employees (id, name, desc, type, created, updated, rag_kb, prompt, model, enabled) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                 "INSERT INTO employees (id, name, desc, type, created, updated, rag_kb, prompt, model, workbench_json, enabled) "
+                 "VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                 "name=excluded.name, desc=excluded.desc, type=excluded.type, updated=excluded.updated, "
                 "rag_kb=excluded.rag_kb, prompt=excluded.prompt, model=excluded.model, "
-                "enabled=excluded.enabled",
+                 "workbench_json=excluded.workbench_json, enabled=excluded.enabled",
                 (emp["id"], emp["name"], emp.get("desc", ""), emp.get("type", ""),
                  emp.get("created", ""), emp.get("updated", ""),
                  emp.get("rag_kb", ""), emp.get("prompt", ""), emp.get("model", ""),
+                  json.dumps(emp.get("workbench"), ensure_ascii=False) if emp.get("workbench") else "",
                  1 if emp.get("enabled", True) else 0),
             )
             # 重建关联（元素可为字符串 id，或 {"id":.., "enabled":..}；缺省启停看 skill_states）

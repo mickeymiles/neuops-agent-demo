@@ -115,15 +115,18 @@ def sync_seed_employees():
                         "INSERT OR IGNORE INTO skill_mcp (skill_id, mcp_id) VALUES (?,?)",
                         (s["id"], mid),
                     )
-            # 员工：INSERT OR REPLACE 覆盖官方最新定义（保留 enabled 启停状态）
+            # 员工：INSERT OR REPLACE 覆盖官方最新定义（保留用户状态与工作台配置）
             for e in MOCK_EMPLOYEES:
-                row = conn.execute("SELECT enabled FROM employees WHERE id=?", (e["id"],)).fetchone()
+                row = conn.execute(
+                    "SELECT enabled, workbench_json FROM employees WHERE id=?", (e["id"],)
+                ).fetchone()
                 conn.execute(
-                    "INSERT OR REPLACE INTO employees (id, name, desc, type, created, updated, rag_kb, prompt, model, enabled) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT OR REPLACE INTO employees (id, name, desc, type, created, updated, rag_kb, prompt, model, workbench_json, enabled) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (e["id"], e["name"], e.get("desc", ""), e.get("type", ""),
                      e.get("created", ""), e.get("updated", ""),
                      e.get("rag_kb", ""), e.get("prompt", ""), e.get("model", ""),
+                     row["workbench_json"] if row else "",
                      row["enabled"] if row else 1),
                 )
                 for sid in e.get("skills", []):

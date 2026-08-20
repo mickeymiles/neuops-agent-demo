@@ -197,16 +197,12 @@ def init_config_db():
                     rag_kb TEXT DEFAULT '',
                     prompt TEXT DEFAULT '',
                     model TEXT DEFAULT '',
+                    workbench_json TEXT DEFAULT '',
                     enabled INTEGER DEFAULT 1
                 )
             """)
-            # 兼容旧库：为已存在的 employees 表补 enabled 列（默认启用）
-            try:
-                emp_cols = [r["name"] for r in conn.execute("PRAGMA table_info(employees)")]
-                if "enabled" not in emp_cols:
-                    conn.execute("ALTER TABLE employees ADD COLUMN enabled INTEGER DEFAULT 1")
-            except Exception:
-                pass
+            _ensure_column(conn, "employees", "enabled", "INTEGER DEFAULT 1")
+            _ensure_column(conn, "employees", "workbench_json", "TEXT DEFAULT ''")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS skills (
                     id TEXT PRIMARY KEY,

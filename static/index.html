@@ -922,7 +922,7 @@ body {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .emp-detail-top .back-icon:hover { color: var(--c-primary); }
-.emp-detail-top .detail-title { font-size: 22px; font-weight: 500; color: #212121; }
+.emp-detail-top .detail-title { font-size: 22px; font-weight: 500; color: var(--c-text-h1); }
 .emp-detail-top .help-icon {
   width: 24px; height: 24px; border-radius: 50%;
   border: 1px solid #c0c4cc; color: #909399;
@@ -949,7 +949,57 @@ body {
 
 .emp-detail-body { padding: 24px 32px; flex: 1; overflow-y: auto; }
 
-/* ─ Tab1: 对话记录 ─ */
+/* ─ Tab1: 业务工作台 ─ */
+.workbench-shell { padding: 16px 24px 24px; width: 100%; margin: 0 auto; }
+.workbench-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
+.workbench-title { font-size: 20px; font-weight: 600; color: var(--c-text-h1); margin-bottom: 6px; }
+.workbench-desc { font-size: 13px; color: var(--c-text-secondary); line-height: 1.6; }
+.workbench-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.workbench-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.workbench-widget { border: 1px solid var(--c-border-light); border-radius: 8px; background: var(--c-main-bg); padding: 18px; min-width: 0; }
+.workbench-widget.metric { grid-column: 1 / -1; }
+.workbench-widget-title { font-size: 14px; font-weight: 600; color: var(--c-text-h1); margin-bottom: 14px; }
+.workbench-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.workbench-metric { border-left: 3px solid var(--c-primary); background: var(--c-bg-hover); padding: 12px 14px; min-height: 88px; }
+.workbench-metric-label { font-size: 12px; color: var(--c-text-secondary); margin-bottom: 8px; }
+.workbench-metric-value { font-size: 24px; font-weight: 600; color: var(--c-text-h1); }
+.workbench-metric-trend { font-size: 11px; color: var(--c-text-time); margin-top: 5px; }
+.workbench-list-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--c-border-light); }
+.workbench-list-item:last-child { border-bottom: none; }
+.workbench-list-main { flex: 1; min-width: 0; }
+.workbench-list-label { font-size: 13px; color: var(--c-text-body); }
+.workbench-list-detail { font-size: 12px; color: var(--c-text-secondary); margin-top: 4px; }
+.workbench-status { font-size: 11px; color: var(--c-success); border: 1px solid rgba(16,185,129,.35); padding: 2px 8px; border-radius: 999px; flex-shrink: 0; }
+.workbench-action-list { display: flex; flex-wrap: wrap; gap: 10px; }
+.workbench-action-btn { height: 34px; padding: 0 13px; border: 1px solid var(--c-border-light); border-radius: 6px; background: var(--c-bg-hover); color: var(--c-text-body); cursor: pointer; font-size: 13px; }
+.workbench-action-btn:hover { color: var(--c-primary); border-color: var(--c-primary); }
+.workbench-note { font-size: 13px; line-height: 1.7; color: var(--c-text-secondary); white-space: pre-wrap; }
+.workbench-editor { margin-top: 18px; border: 1px solid var(--c-border-light); border-radius: 8px; padding: 16px; background: var(--c-main-bg); }
+.workbench-editor textarea { width: 100%; min-height: 300px; resize: vertical; border: 1px solid var(--c-border-light); border-radius: 6px; background: var(--c-bg-hover); color: var(--c-text-body); padding: 12px; font: 12px/1.6 monospace; outline: none; }
+.workbench-editor textarea:focus { border-color: var(--c-primary); }
+.workbench-editor-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.workbench-widget.business-app { grid-column: 1 / -1; padding: 0; overflow: hidden; }
+.workbench-app-head { height: 48px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--c-border-light); }
+.workbench-app-head .workbench-widget-title { margin: 0; }
+.workbench-app-frame { display: block; width: 100%; height: calc(100vh - 210px); min-height: 640px; border: 0; background: #fff; }
+.workbench-app-empty { min-height: 320px; display: flex; align-items: center; justify-content: center; color: var(--c-text-secondary); font-size: 13px; }
+.workbench-shell.embedded { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.workbench-shell.embedded .workbench-head { flex-shrink: 0; margin-bottom: 12px; }
+.workbench-shell.embedded .workbench-grid { flex: 1; min-height: 0; display: block; }
+.workbench-shell.embedded .workbench-widget.business-app { height: 100%; display: flex; flex-direction: column; }
+.workbench-shell.embedded .workbench-app-head { flex-shrink: 0; }
+.workbench-shell.embedded .workbench-app-frame { flex: 1; height: auto; min-height: 0; }
+@media (max-width: 900px) {
+  .emp-detail-top, .workbench-head { align-items: flex-start; flex-direction: column; }
+  .emp-detail-tabs { max-width: 100%; overflow-x: auto; }
+  .workbench-grid { grid-template-columns: 1fr; }
+  .workbench-widget.metric { grid-column: auto; }
+  .workbench-metrics { grid-template-columns: 1fr; }
+  .workbench-shell { padding: 14px 16px 20px; }
+  .workbench-app-frame { height: calc(100vh - 180px); min-height: 560px; }
+}
+
+/* ─ Tab2: 对话记录 ─ */
 .conv-search-row { display: flex; gap: 0; margin-bottom: 24px; }
 .conv-search-row input {
   flex: 1; height: 36px; padding: 0 14px; border: 1px solid var(--c-border-light);
@@ -1595,10 +1645,11 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
       </div>
       <div id="empDetailView" class="hidden" style="height:100%;display:flex;flex-direction:column;">
         <div id="empDetailTop" class="emp-detail-top"></div>
+        <div id="emp-tab-workbench" style="flex:1;overflow-y:auto;"></div>
         <div id="emp-tab-conv" style="flex:1;overflow-y:auto;"></div>
         <div id="emp-tab-skill" style="flex:1;overflow-y:auto;"></div>
         <div id="emp-tab-mcp" style="flex:1;overflow-y:auto;"></div>
-        <div id="emp-tab-settings" style="flex:1;overflow-y:auto;"></div>
+        <div id="emp-tab-settings" class="hidden" style="flex:1;overflow-y:auto;"></div>
       </div>
     </div>
 
@@ -1788,6 +1839,7 @@ const S = {
   conversations: [], skills: [], employees: [], longTasks: [],
   currentSkillTab: 'market', currentEmpId: null,
   projects: [], activeProjectId: '', projectsCollapsed: false, convFilter: 'all',
+  workbenchConfig: {},
 };
 
 // ═══════════ NAVIGATION ═══════
@@ -2554,24 +2606,30 @@ function showEmpList() {
 async function showEmpDetail(id) {
   S.currentEmpId = id;
   try {
-    const r = await fetch('/api/employees/' + id + '/full').then(x => x.json());
+    const [r, workbenchConfig] = await Promise.all([
+      fetch('/api/employees/' + id + '/full').then(x => x.json()),
+      fetch('/api/workbench/config').then(x => x.ok ? x.json() : {}).catch(() => ({})),
+    ]);
     if (r.error) { uiAlert({ title: '加载失败', message: r.error, type: 'error' }); return; }
     S.empDetail = r;
+    S.workbenchConfig = workbenchConfig;
     document.getElementById('empListView').classList.add('hidden');
     document.getElementById('empDetailView').classList.remove('hidden');
     renderEmpDetailTop(r);
+    renderEmpWorkbenchTab(r);
     renderEmpConvTab(r);
     renderEmpSkillTab(r);
     renderEmpMcpTab(r);
-    switchEmpTab('conv');
+    switchEmpTab('workbench');
   } catch (e) { console.error(e); }
 }
 
 function renderEmpDetailTop(emp) {
   const tabs = [
-    { id: 'conv', label: '对话记录' },
+    { id: 'workbench', label: '工作台' },
+    { id: 'conv', label: '对话' },
     { id: 'skill', label: '技能' },
-    { id: 'mcp', label: 'MCP服务' },
+    { id: 'mcp', label: 'MCP' },
   ];
   document.getElementById('empDetailTop').innerHTML = `
     <div class="back-area">
@@ -2579,15 +2637,123 @@ function renderEmpDetailTop(emp) {
       <span class="detail-title">${emp.name}</span>
     </div>
     <div class="emp-detail-tabs">
-      ${tabs.map(t => `<button class="emp-detail-tab ${t.id === 'conv' ? 'active' : ''}" onclick="switchEmpTab('${t.id}')">${t.label}</button>`).join('')}
+      ${tabs.map(t => `<button class="emp-detail-tab ${t.id === 'workbench' ? 'active' : ''}" data-tab="${t.id}" onclick="switchEmpTab('${t.id}')">${t.label}</button>`).join('')}
     </div>`;
 }
 
 function switchEmpTab(tab) {
-  document.querySelectorAll('.emp-detail-tab').forEach(b => b.classList.toggle('active', b.textContent === ({conv:'对话记录',skill:'技能',mcp:'MCP服务'})[tab]));
-  ['conv', 'skill', 'mcp'].forEach(t => {
+  document.querySelectorAll('.emp-detail-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  ['workbench', 'conv', 'skill', 'mcp', 'settings'].forEach(t => {
     document.getElementById('emp-tab-' + t).classList.toggle('hidden', t !== tab);
   });
+}
+
+function renderEmpWorkbenchTab(emp) {
+  const workbench = emp.workbench || {};
+  const components = Array.isArray(workbench.components) ? workbench.components : [];
+  const embedded = components.some(component => component.type === 'business_app');
+  const visibleComponents = embedded ? components.filter(component => component.type === 'business_app') : components;
+  const wrap = document.getElementById('emp-tab-workbench');
+  wrap.style.overflowY = embedded ? 'hidden' : 'auto';
+  wrap.innerHTML = `
+    <div class="workbench-shell ${embedded ? 'embedded' : ''}">
+      <div class="workbench-head">
+        <div>
+          <div class="workbench-title">${escapeHtml(workbench.title || emp.name + '工作台')}</div>
+          <div class="workbench-desc">${escapeHtml(workbench.description || '该工作台尚未配置')}</div>
+        </div>
+        <div class="workbench-actions">
+          ${emp.workbench_custom ? '<button class="btn-outline" onclick="resetEmpWorkbench()">恢复默认</button>' : ''}
+          <button class="btn-primary-filled" onclick="toggleWorkbenchEditor()">${icon('edit')} 配置工作台</button>
+        </div>
+      </div>
+      <div class="workbench-grid">${visibleComponents.map(renderWorkbenchComponent).join('')}</div>
+      <div id="workbenchEditor" class="workbench-editor hidden">
+        <div class="workbench-widget-title">工作台 JSON 配置</div>
+        <textarea id="workbenchJson">${escapeHtml(JSON.stringify(workbench, null, 2))}</textarea>
+        <div class="workbench-editor-foot">
+          <button class="btn-outline" onclick="toggleWorkbenchEditor(false)">取消</button>
+          <button class="btn-primary-filled" onclick="saveEmpWorkbench()">保存配置</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderWorkbenchComponent(component) {
+  const title = `<div class="workbench-widget-title">${escapeHtml(component.title || '')}</div>`;
+  const items = Array.isArray(component.items) ? component.items : [];
+  if (component.type === 'business_app') {
+    const source = S.workbenchConfig.contract_base_url || '';
+    return `<section class="workbench-widget business-app">
+      <div class="workbench-app-head">${title}<button class="tb-btn" title="刷新业务系统" onclick="refreshWorkbenchApp()">${icon('refresh')}</button></div>
+      ${source
+        ? `<iframe id="contractWorkbenchFrame" class="workbench-app-frame" src="${escapeHtml(source)}" title="合同经营分析平台" loading="lazy" sandbox="allow-forms allow-scripts allow-same-origin allow-downloads"></iframe>`
+        : '<div class="workbench-app-empty">业务系统地址未配置</div>'}
+    </section>`;
+  }
+  if (component.type === 'metric') {
+    return `<section class="workbench-widget metric">${title}<div class="workbench-metrics">${items.map(item => `
+      <div class="workbench-metric"><div class="workbench-metric-label">${escapeHtml(item.label)}</div><div class="workbench-metric-value">${escapeHtml(item.value)}</div><div class="workbench-metric-trend">${escapeHtml(item.trend)}</div></div>`).join('')}</div></section>`;
+  }
+  if (component.type === 'list') {
+    return `<section class="workbench-widget">${title}${items.map(item => `<div class="workbench-list-item"><div class="workbench-list-main"><div class="workbench-list-label">${escapeHtml(item.label)}</div><div class="workbench-list-detail">${escapeHtml(item.detail)}</div></div><span class="workbench-status">${escapeHtml(item.status)}</span></div>`).join('')}</section>`;
+  }
+  if (component.type === 'action') {
+    return `<section class="workbench-widget">${title}<div class="workbench-action-list">${items.map(item => `<button class="workbench-action-btn" data-prompt="${escapeHtml(item.prompt)}" onclick="runWorkbenchAction(this.dataset.prompt)">${escapeHtml(item.label)}</button>`).join('')}</div></section>`;
+  }
+  if (component.type === 'note') {
+    return `<section class="workbench-widget">${title}<div class="workbench-note">${escapeHtml(component.content)}</div></section>`;
+  }
+  return '';
+}
+
+function refreshWorkbenchApp() {
+  const frame = document.getElementById('contractWorkbenchFrame');
+  if (frame) frame.src = frame.src;
+}
+
+function toggleWorkbenchEditor(force) {
+  const editor = document.getElementById('workbenchEditor');
+  if (editor) editor.classList.toggle('hidden', force === false ? true : !editor.classList.contains('hidden'));
+}
+
+function runWorkbenchAction(prompt) {
+  navigateTo('chat');
+  const input = document.getElementById('userInput');
+  input.value = prompt || '';
+  input.focus();
+  handleInputChange();
+}
+
+async function saveEmpWorkbench() {
+  const emp = S.empDetail;
+  if (!emp) return;
+  let workbench;
+  try { workbench = JSON.parse(document.getElementById('workbenchJson').value); }
+  catch (e) { return showToast('JSON 格式错误：' + e.message, true); }
+  try {
+    const response = await fetch('/api/employees/' + emp.id, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workbench })
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) return showToast(result.error || '保存失败', true);
+    showToast('工作台配置已保存');
+    await showEmpDetail(emp.id);
+  } catch (e) { showToast('保存失败：' + e.message, true); }
+}
+
+async function resetEmpWorkbench() {
+  const emp = S.empDetail;
+  if (!emp || !await uiConfirm({ title: '恢复默认工作台', message: '将清除该员工的专属工作台配置，是否继续？' })) return;
+  try {
+    const response = await fetch('/api/employees/' + emp.id, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workbench: null })
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) return showToast(result.error || '恢复失败', true);
+    showToast('已恢复默认工作台');
+    await showEmpDetail(emp.id);
+  } catch (e) { showToast('恢复失败：' + e.message, true); }
 }
 
 function renderEmpConvTab(emp) {

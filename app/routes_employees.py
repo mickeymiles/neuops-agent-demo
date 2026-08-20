@@ -2,8 +2,10 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+
+from .routes_manage import _resolve_biz_public_base
 
 from .db import (
     db_delete_employee,
@@ -19,6 +21,110 @@ from .db import (
 )
 
 router = APIRouter()
+
+WORKBENCH_COMPONENT_TYPES = {"metric", "list", "action", "note", "business_app"}
+WORKBENCH_COMPONENT_KEYS = {"id", "type", "title", "items", "content"}
+WORKBENCH_ITEM_KEYS = {
+    "metric": {"label", "value", "trend"},
+    "list": {"label", "detail", "status"},
+    "action": {"label", "prompt"},
+}
+
+
+def _default_workbench(emp: dict) -> dict:
+    emp_type = emp.get("type", "通用")
+    presets = {
+        "运维巡检": (["健康实体", "待巡检", "高风险"], ["执行全域巡检", "查看异常实体"]),
+        "告警根因": (["活跃告警", "高危告警", "待确认"], ["分析未恢复告警", "生成根因报告"]),
+        "运维开发": (["错误日志", "待分析", "方案草稿"], ["分析系统错误", "生成排查脚本"]),
+        "经营分析": (["签单毛利率", "回款毛利率", "高风险合同"], ["分析经营指标", "探查合同明细"]),
+        "平台编辑": (["待审规则", "配置版本", "影响范围"], ["检查规则配置", "生成变更方案"]),
+        "项目治理": (["风险项目", "工时异常", "四算越界"], ["检查四算约束", "生成整改清单"]),
+        "售前投标": (["进行中方案", "待响应条款", "可复用模板"], ["组装技术方案", "生成点对点应答"]),
+    }
+    metric_labels, actions = presets.get(emp_type, (["待办事项", "运行任务", "可用技能"], ["开始业务分析", "查看工作摘要"]))
+    components = [
+        {
+            "id": "overview",
+            "type": "metric",
+            "title": "业务概览",
+            "items": [{"label": label, "value": "--", "trend": "待同步"} for label in metric_labels],
+        },
+        {
+            "id": "focus",
+            "type": "list",
+            "title": "重点关注",
+            "items": [{"label": "暂无待处理事项", "detail": "对话或业务数据将汇总到这里", "status": "正常"}],
+        },
+        {
+            "id": "actions",
+            "type": "action",
+            "title": "快捷操作",
+            "items": [{"label": label, "prompt": f"@{emp.get('name', '数字员工')} {label}"} for label in actions],
+        },
+    ]
+    if emp_type == "经营分析":
+        components.insert(0, {
+            "id": "contract-platform",
+            "type": "business_app",
+            "title": "合同经营分析平台",
+        })
+    return {
+        "title": f"{emp.get('name', '数字员工')}工作台",
+        "description": f"面向{emp_type}场景的业务视图，数据接入后将按配置自动刷新。",
+        "components": components,
+    }
+
+
+def _validate_workbench(workbench):
+    if workbench is None:
+        return None
+    if not isinstance(workbench, dict):
+        raise ValueError("workbench 必须是对象或 null")
+    if set(workbench) - {"title", "description", "components"}:
+        raise ValueError("workbench 包含不支持的字段")
+    for key in ("title", "description"):
+        if not isinstance(workbench.get(key, ""), str) or len(workbench.get(key, "")) > 120:
+            raise ValueError(f"workbench.{key} 必须是长度不超过 120 的字符串")
+    components = workbench.get("components")
+    if not isinstance(components, list) or not 1 <= len(components) <= 12:
+        raise ValueError("workbench.components 必须包含 1-12 个组件")
+    component_ids = set()
+    for component in components:
+        if not isinstance(component, dict) or set(component) - WORKBENCH_COMPONENT_KEYS:
+            raise ValueError("工作台组件结构无效")
+        component_id = component.get("id")
+        component_type = component.get("type")
+        if not isinstance(component_id, str) or not component_id or len(component_id) > 40 or component_id in component_ids:
+            raise ValueError("组件 id 必须唯一且长度不超过 40")
+        component_ids.add(component_id)
+        if component_type not in WORKBENCH_COMPONENT_TYPES:
+            raise ValueError("组件 type 不在白名单中")
+        if not isinstance(component.get("title", ""), str) or len(component.get("title", "")) > 60:
+            raise ValueError("组件 title 必须是长度不超过 60 的字符串")
+        if component_type == "business_app":
+            if "items" in component or "content" in component:
+                raise ValueError("业务系统组件不接受自定义地址或内容")
+            continue
+        if component_type == "note":
+            if not isinstance(component.get("content", ""), str) or len(component.get("content", "")) > 1000:
+                raise ValueError("说明组件 content 必须是长度不超过 1000 的字符串")
+            continue
+        items = component.get("items")
+        if not isinstance(items, list) or len(items) > 12:
+            raise ValueError("组件 items 最多包含 12 项")
+        allowed_keys = WORKBENCH_ITEM_KEYS[component_type]
+        for item in items:
+            if not isinstance(item, dict) or set(item) - allowed_keys:
+                raise ValueError("组件条目结构无效")
+            if any(not isinstance(value, str) or len(value) > 300 for value in item.values()):
+                raise ValueError("组件条目字段必须是长度不超过 300 的字符串")
+    return workbench
+
+
+@router.get("/api/workbench/config")
+async def get_workbench_config(request: Request):
+    return JSONResponse({"contract_base_url": _resolve_biz_public_base(request)})
 
 
 @router.get("/api/employees")
@@ -38,6 +144,8 @@ async def get_employee_full(emp_id: str):
     if not emp:
         return JSONResponse({"error": "数字员工不存在"}, status_code=404)
     emp_full = dict(emp)
+    emp_full["workbench_custom"] = emp.get("workbench") is not None
+    emp_full["workbench"] = emp.get("workbench") or _default_workbench(emp)
     # 技能详情（含员工侧启停状态 enabled）
     all_skills = db_list_skills()
     skill_states = emp.get("skill_states") or {}
@@ -116,6 +224,11 @@ async def patch_employee(emp_id: str, data: dict):
     emp = db_get_employee(emp_id)
     if not emp:
         return JSONResponse({"error": "数字员工不存在"}, status_code=404)
+    if "workbench" in data:
+        try:
+            data["workbench"] = _validate_workbench(data["workbench"])
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
     skill_states = data.pop("skill_states", None)
     link_skills = data.pop("link_skills", None)
     unlink_skills = data.pop("unlink_skills", None)
