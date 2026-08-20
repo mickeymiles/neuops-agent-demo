@@ -1,7 +1,7 @@
 # 提案：智能体拓扑依赖方向修正（MCP Server 承载 Tools / 向量数据库承载知识库）
 
 > 变更编号：`20260818-topo-layer-fix`
-> 作者：AI 助手 | 日期：2026-08-18 | 状态：已批准
+> 作者：AI 助手 | 日期：2026-08-18 | 状态：已完成
 
 ## 背景与问题
 
@@ -52,9 +52,9 @@
 
 ## 验收标准
 
-- [ ] `/api/monitor/topology` 返回边方向：`server → tool`、`agent → chroma`、`chroma → kb`，无旧方向边
-- [ ] 拓扑渲染后 向量数据库 与 MCP Server 同列、知识库 与 Tools 同列
-- [ ] `pytest -q` 全量回归通过
+- [x] `/api/monitor/topology` 返回边方向：`server → tool`、`agent → chroma`、`chroma → kb`，无旧方向边
+- [x] 拓扑渲染后 向量数据库 与 MCP Server 同列、知识库 与 Tools 同列
+- [x] `pytest -q` 全量回归通过
 
 ## 风险与兼容性
 

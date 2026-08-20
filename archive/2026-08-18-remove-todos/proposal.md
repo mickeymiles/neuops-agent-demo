@@ -56,10 +56,10 @@ GET  /api/todos/history
 
 ## 验收标准
 
-- [ ] `python3 -m py_compile` 全绿；`cd neuops-agent-demo && pytest -q` 全通过
-- [ ] `grep -rn "待办任务\|page-todos\|/api/todos\|db_list_todos\|todo_history\|MOCK_TODOS"` 无功能代码残留（历史文档示例除外）
-- [ ] 服务重启后工作台页面无"待办任务"菜单，无 404 报错
-- [ ] `specs/TRACEABILITY.md` 已更新变更登记
+- [x] `python3 -m py_compile` 全绿；`cd neuops-agent-demo && pytest -q` 全通过
+- [x] `grep -rn "待办任务\|page-todos\|/api/todos\|db_list_todos\|todo_history\|MOCK_TODOS"` 无功能代码残留（历史文档示例除外）
+- [x] 服务重启后工作台页面无"待办任务"菜单，无 404 报错
+- [x] `specs/TRACEABILITY.md` 已更新变更登记
 
 ## 风险与兼容性
 

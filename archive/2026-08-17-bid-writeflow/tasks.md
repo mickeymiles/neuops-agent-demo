@@ -24,4 +24,4 @@
 ## 收尾
 
 - [x] 更新 `specs/TRACEABILITY.md` 追踪矩阵
-- [ ] 归档：变更目录移入 `archive/2026-08-17-bid-writeflow/`，delta 合并回 `specs/` 主规格（主规格已合并，待目录移动）
+- [x] 归档：变更目录移入 `archive/2026-08-17-bid-writeflow/`，delta 合并回 `specs/` 主规格（主规格已合并，待目录移动）
