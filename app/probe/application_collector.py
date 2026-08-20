@@ -91,8 +91,9 @@ class ApplicationCollector(BaseCollector):
                     parts = line.split()
                     if len(parts) < 2:
                         continue
-                    name = parts[-1]
-                    m = re.search(r":(\d+)\s*$", name)
+                    # NAME 列形如 `TCP *:9007 (LISTEN)`（IPv6 为 `[::]:9007`），
+                    # 端口从整行提取，进程名取 COMMAND 列（parts[0]）
+                    m = re.search(r":(\d+)\s*(?:\(LISTEN\))?\s*$", line)
                     if not m:
                         continue
                     port = int(m.group(1))

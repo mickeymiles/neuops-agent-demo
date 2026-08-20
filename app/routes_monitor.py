@@ -374,8 +374,15 @@ async def monitor_topology():
         edges.append({"source": "hub", "target": e["id"], "type": "route", "label": "路由"})
     for es in emp_skills:
         edges.append({"source": es["employee_id"], "target": es["skill_id"], "type": "skill", "label": "使用"})
+    # MCP 链路逐级连线：skill 经其绑定工具归一到所属 Server（skill → server），再 server → tool（承载）
+    # skill_mcp.mcp_id 指向 mcp_tools.id，故经 mcp_tools.server_id 归一；按 (skill,server) 去重
+    tool_server = {t["id"]: t["server_id"] for t in tools if t.get("server_id")}
+    seen_sm = set()
     for sm in skill_mcp:
-        edges.append({"source": sm["skill_id"], "target": sm["mcp_id"], "type": "tool", "label": "调用"})
+        sid = tool_server.get(sm["mcp_id"])
+        if sid and (sm["skill_id"], sid) not in seen_sm:
+            seen_sm.add((sm["skill_id"], sid))
+            edges.append({"source": sm["skill_id"], "target": sid, "type": "mcp", "label": "调用"})
     for t in tools:
         if t.get("server_id"):
             edges.append({"source": t["server_id"], "target": t["id"], "type": "server", "label": "承载"})

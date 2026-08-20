@@ -2362,7 +2362,7 @@ const AG_NODE_COLOR = {
   kb: { c: "#f472b6", bg: "rgba(244,114,182,.14)" },
   vector_db: { c: "#fb923c", bg: "rgba(251,146,60,.14)" },
 };
-const AG_EDGE_COLOR = { route: "#fbbf24", skill: "#22d3ee", tool: "#4f8cff", server: "#34d399", kb: "#f472b6", vector: "#fb923c" };
+const AG_EDGE_COLOR = { route: "#fbbf24", skill: "#22d3ee", mcp: "#4f8cff", tool: "#4f8cff", server: "#34d399", kb: "#f472b6", vector: "#fb923c" };
 // 双链路平行布局：MCP 链路五层连续（hub→agent→skill→server→tool），
 // RAG 链路与 MCP 平级（vector_db 对齐 server、kb 对齐 tool），上下两排平行不交叉。
 // 横向列距拉开（相邻列 ≥13%）配合节点宽度自适应，避免边框与文字重叠。
@@ -2396,6 +2396,32 @@ async function AG_loadAgentTopo() {
     const d = $("ag-topo-detail");
     if (d) d.innerHTML = `<div class="empty">拓扑加载失败：${esc(e.message || e)}</div>`;
   }
+}
+let AG_topoNodes = [], AG_topoEdges = []; // 当前拓扑节点/边（供选中节点关联高亮）
+// 无向 BFS：返回与 seedId 通过边可达的全部节点 id（选中节点"有关联关系的都高亮"）
+function AG_topoReachable(seedId) {
+  const adj = {};
+  AG_topoEdges.forEach(e => { (adj[e.source] = adj[e.source] || []).push(e.target); (adj[e.target] = adj[e.target] || []).push(e.source); });
+  const seen = new Set([seedId]), q = [seedId];
+  while (q.length) { const cur = q.shift(); (adj[cur] || []).forEach(nb => { if (!seen.has(nb)) { seen.add(nb); q.push(nb); } }); }
+  return seen;
+}
+// 聚焦：相关节点/边高亮，无关淡化；seedId 为空时恢复全亮
+function AG_applyTopoFocus(seedId) {
+  const ch = getChart("ag-topo-chart"); if (!ch) return;
+  const focus = seedId ? AG_topoReachable(seedId) : null;
+  ch.setOption({
+    series: [{
+      data: AG_topoNodes.map(n => {
+        const dim = !!focus && !focus.has(n.id);
+        return { ...n, itemStyle: { ...n.itemStyle, opacity: dim ? 0.12 : 1 }, label: { ...n.label, opacity: dim ? 0.25 : 1 } };
+      }),
+      edges: AG_topoEdges.map(e => {
+        const dim = !!focus && !(focus.has(e.source) && focus.has(e.target));
+        return { ...e, lineStyle: { ...e.lineStyle, opacity: dim ? 0.05 : 0.9 } };
+      }),
+    }],
+  });
 }
 function AG_renderTopo(data) {
   const el = $("ag-topo-chart");
@@ -2445,6 +2471,7 @@ function AG_renderTopo(data) {
       nodes[i].y = Math.round(H * pct);
     });
   });
+  AG_topoNodes = nodes; AG_topoEdges = edges; // 供选中节点关联高亮使用
   const presentTypes = [...new Set((data.nodes || []).map(n => n.type))];
   const edges = (data.edges || []).map(e => ({
     source: e.source, target: e.target,
@@ -2493,7 +2520,7 @@ function AG_showTopoNode(n, edges) {
   const d = $("ag-topo-detail");
   if (!d || !n) return;
   const rels = (edges || []).filter(e => e.source === n.id || e.target === n.id);
-  const relTypeName = { route: "路由分配", skill: "使用技能", tool: "调用工具", server: "承载工具", kb: "检索", vector: "承载知识库" };
+  const relTypeName = { route: "路由分配", skill: "使用技能", mcp: "调用 MCP", tool: "调用工具", server: "承载工具", kb: "检索", vector: "承载知识库" };
   let html = `<h4>🕸 ${esc(n.name)} <span class="muted">· ${esc(n.subtype || AG_TYPE_NAME[n.type] || n.type)}</span></h4>
     <div class="row"><span class="k">类型</span><span>${esc(n.subtype || n.type)}</span></div>`;
   if (n.type === "server") {
