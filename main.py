@@ -28,6 +28,7 @@ from app import (
     routes_manage,
     routes_monitor,
     routes_ops,
+    routes_procurement_agent,
     routes_tasks,
     routes_workspace,
     traditional_pages,
@@ -82,6 +83,7 @@ app.include_router(routes_ops.router)
 app.include_router(routes_ops.page_router)
 app.include_router(routes_manage.page_router)
 app.include_router(bidding.router)
+app.include_router(routes_procurement_agent.router)
 
 # 静态资源
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

@@ -20,6 +20,16 @@ SKILLS = [
     {"id": "skill-20", "name": "项目管理与成本利润治理", "desc": "承接两单一物体系：里程碑跟进与逾期预警、日报工时合规质检、四算刚性约束校验（概算≥预算≥核算≥决算）、集团指标监控（人均效/元效/双按完成率）、工时→成本→利润闭环联动，全部只读研判+预警", "category": "custom", "tags": ["项目","四算","工时","成本","集团考核"], "enabled": True},
     # ── 售前投标域（知识库/模板，只生成不执行）──
     {"id": "skill-21", "name": "售前投标方案智能组装", "desc": "基于内部知识库、历史方案与标准模板库智能匹配，自动生成技术方案建议书/招标点对点应答/售前汇报PPT大纲/运维实施方案，规避过期口径，统一售前输出质量，只生成不执行", "category": "custom", "tags": ["售前","投标","方案","知识库"], "enabled": True},
+    # ── 备品备件采购询比价域（emp-008 真实对接 163 邮箱+飞书 API+9006 SQLite）──
+    {"id": "skill-proc-01", "name": "创建询比价任务", "desc": "校验主数据，生成 task_id，计算 reply_deadline，初始化询比价任务实例，状态=询比价进行中", "category": "custom", "tags": ["采购","询比价","备件","任务创建"], "enabled": True},
+    {"id": "skill-proc-02", "name": "组装&发送询价邮件", "desc": "套用模板组装询价邮件，调用 MCP 批量发送询价邮件给供应商；飞书通知项目经理任务已发起", "category": "custom", "tags": ["采购","询比价","邮件","通知"], "enabled": True},
+    {"id": "skill-proc-03", "name": "邮件报价解析监听", "desc": "监听供应商入站邮件，解析报价抽取供应商、品牌、型号、价格，回填 task 报价集合", "category": "custom", "tags": ["采购","询比价","邮件","报价解析"], "enabled": True},
+    {"id": "skill-proc-04", "name": "定时进度&告警", "desc": "依据 task 状态、截止时间生成进度/告警消息体，每小时进度推送、临期 30min 告警、截止超时清单", "category": "custom", "tags": ["采购","询比价","定时","告警"], "enabled": True},
+    {"id": "skill-proc-05", "name": "选型确认处理", "desc": "项目经理平台勾选供应商后，更新 task 状态为已选型确认，组装发送采购确认邮件给选中供应商", "category": "custom", "tags": ["采购","选型","确认","邮件"], "enabled": True},
+    {"id": "skill-proc-06", "name": "发货信息解析更新", "desc": "解析供应商发货邮件，回填发货时间、物流单号，切换任务状态为供应商发货中", "category": "custom", "tags": ["采购","发货","物流","邮件解析"], "enabled": True},
+    {"id": "skill-proc-07", "name": "测试结果录入处理", "desc": "项目经理录入测试结果，测试通过触发台账写入并闭环，失败标记异常状态告警", "category": "custom", "tags": ["采购","收货","测试","闭环"], "enabled": True},
+    {"id": "skill-proc-08", "name": "台账写入", "desc": "任务流程闭环，将 task 业务数据写入采购业务台账作为结算凭证", "category": "custom", "tags": ["采购","台账","结算","闭环"], "enabled": True},
+    {"id": "skill-proc-09", "name": "任务取消处理", "desc": "终止定时轮询，标记任务取消状态，记录取消原因，不写入台账", "category": "custom", "tags": ["采购","取消","流程"], "enabled": True},
 ]
 
 
@@ -45,6 +55,9 @@ MOCK_EMPLOYEES = [
     {"id": "emp-007", "name": "售前投标方案智能组装专家", "desc": "基于内部知识库、历史方案与标准模板库快速标准化产出投标材料：智能匹配历史方案、自动生成技术方案建议书/招标点对点应答/售前汇报PPT大纲/运维实施方案，统一售前输出质量、大幅降本提效，只生成不执行。", "type": "售前投标", "created": "2026-08-16", "updated": "2026-08-16",
      "skills": ["skill-21"],
      "rag_kb": "售前知识库-历史方案与中标库", "prompt": "你是一位售前投标方案智能组装专家，负责基于知识库快速标准化产出投标材料，只生成方案不执行任何操作。你的能力：①智能匹配——通过kb_knowledge_read检索内部知识库/历史方案/中标库，按行业与场景匹配最相关方案，剔除冗余、精准拼装（不堆砌）；②自动生成——生成技术方案建议书（完整版/简版）、招标文件点对点技术应答、售前汇报PPT大纲+正文、运维方案/实施方案/项目优势内容；③模板复用——通过bid_template_read读取投标标准模板库与技术规范模板，保证结构规范；④合规自检——自动规避过期口径、错误参数，标准化事业部售前话术；⑤客户化定制——支持按需生成客户化版本；⑥导出交付——通过doc_export生成结构化文档（Word/PPT大纲）供人工下载使用。红线：只生成方案与文档，不执行任何系统变更。", "model": "deepseek-v4"},
+    {"id": "emp-008", "name": "备品备件采购询比价专员", "desc": "面向项目现场备品备件采购询比价业务。项目经理发起询价 → 自动批量发送询价邮件给供应商 → 监听供应商报价邮件解析回填 → 每小时飞书推送进度/临期告警 → 平台选型确认 → 自动发采购确认邮件 → 解析发货物流 → 测试通过自动写入采购台账闭环。真实对接 163 邮箱（IMAP/SMTP）、飞书开放 API、9006 SQLite。", "type": "采购询比价", "created": "2026-08-21", "updated": "2026-08-21",
+     "skills": ["skill-proc-01","skill-proc-02","skill-proc-03","skill-proc-04","skill-proc-05","skill-proc-06","skill-proc-07","skill-proc-08","skill-proc-09"],
+     "rag_kb": "采购知识库-询比价流程与邮件模板", "prompt": "你是备品备件采购询比价专员（emp-008），负责询比价全流程的自动化执行与监控。你的能力：①创建询比价任务——校验主数据、生成 task_id、计算 reply_deadline、初始化任务实例；②组装&发送询价邮件——套用模板批量发送询价邮件给供应商、飞书通知项目经理任务已发起；③邮件报价解析监听——监听供应商入站邮件、解析报价抽取供应商/品牌/型号/价格、回填 task 报价集合；④定时进度&告警——每小时飞书推送进度、距截止 30min 高优告警、截止超时清单；⑤选型确认处理——项目经理勾选后更新状态、组装发送采购确认邮件；⑥发货信息解析更新——解析发货邮件回填发货时间/物流单号、切换状态为供应商发货中；⑦测试结果录入处理——测试通过触发台账写入并闭环、失败标记异常告警；⑧台账写入——任务闭环将数据写入采购台账；⑨任务取消处理——终止轮询、标记取消、不写台账。红线：①只做系统自动执行部分，选型确认/测试结果录入/任务取消由项目经理人工触发；②不解析现场工程师的需求邮件，仅作为项目经理参考；③异常状态不自动恢复，必须人工操作。", "model": "deepseek-v4"},
 ]
 
 
@@ -114,6 +127,61 @@ SKILL_DETAILS = {
         "prompt": "你是售前投标方案智能组装专家，负责基于知识库快速产出投标材料，只生成不执行。\n1、通过kb_knowledge_read检索内部知识库/历史方案/中标库，按行业与场景匹配最相关方案；\n2、通过bid_template_read读取投标标准模板库与技术规范模板；\n3、自动生成：技术方案建议书（完整版/简版）、招标点对点应答、售前汇报PPT大纲+正文、运维方案/实施方案；\n4、规避过期口径与错误参数，输出合规自检说明；\n5、通过doc_export生成结构化文档（Word/PPT大纲）供人工下载使用。",
         "tools": ["kb_knowledge_read", "bid_template_read", "doc_export"],
         "flow": "执行流程：\n1、接收投标需求（行业/场景/招标要点）\n2、检索匹配历史方案与模板\n3、拼装生成方案文档（建议书/应答/PPT大纲/实施方案）\n4、合规自检并输出结构化文档",
+    },
+    # ── 备品备件采购询比价 9 个 Skill（emp-008）──
+    "skill-proc-01": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是询比价任务创建 Skill。项目经理在 9006 平台提交询价表单后，由 routes_procurement_agent 触发你执行：\n1、校验主数据（项目/合同/备件/供应商配置表）是否齐全；\n2、生成 task_id（格式 PROC-YYYYMMDDHHmmss-XXXXXX）；\n3、按紧急等级（2h/4h/5h）计算 reply_deadline = create_time + 等级时长；\n4、初始化任务实例：状态=询比价进行中、replied_supplier_quotes=[]、no_reply_supplier=inquiry_supplier_list 全部、selected_supplier=null、test_result=null、ledger_written=0；\n5、通过 table_insert 写入 procurement_task 表；\n6、输出 task 完整实例给 skill-proc-02 使用。",
+        "tools": ["table_query", "table_insert"],
+        "flow": "执行流程：\n1、接收 form_input（master_id/spare_part_model/purchase_qty/emergency_level/inquiry_supplier_list）\n2、table_query 查询 procurement_master_data 校验主数据\n3、生成 task_id + 计算 reply_deadline\n4、table_insert 写入 procurement_task 表\n5、返回 task 完整实例",
+    },
+    "skill-proc-02": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是询价邮件组装&发送 Skill。skill-proc-01 创建任务后触发你执行：\n1、套用询价邮件模板（Subject：【备品备件询价】{project_name}｜合同号：{contract_no}｜任务ID:{task_id}）；\n2、替换模板变量（project_name/contract_no/spare_part_model/purchase_qty/reply_deadline）；\n3、调用 batch_send_mail 批量发送询价邮件给 inquiry_supplier_list 中每个供应商邮箱（独立发送非抄送）；\n4、调用 send_feishu_message 通知项目经理任务已发起（含 task_id/项目/合同/备件/数量/询价供应商/截止时间）；\n5、返回发送结果（成功数/失败列表）。",
+        "tools": ["batch_send_mail", "send_feishu_message"],
+        "flow": "执行流程：\n1、接收 task 完整实例\n2、组装询价邮件正文（套模板替换变量）\n3、batch_send_mail 批量发送给 inquiry_supplier_list\n4、send_feishu_message 通知项目经理任务发起\n5、返回发送结果统计",
+    },
+    "skill-proc-03": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是邮件报价解析监听 Skill。由定时调度器（procurement_scheduler）每隔几分钟触发你执行：\n1、通过 table_query 查询所有状态=询比价进行中 的 task，取每个 task 的 inquiry_supplier_list 邮箱作为 filter_sender_email_list；\n2、调用 read_inbox_mail 拉取自上次轮询时间以来的供应商入站邮件；\n3、用 LLM 解析邮件正文抽取报价字段（supplier_name/brand/model/unit_price）；\n4、调用 table_update 将报价追加到 task 的 replied_supplier_quotes，同步更新 no_reply_supplier；\n5、若全部供应商已回复，调用 send_feishu_message 推送收齐通知；\n6、如发现报价型号与需求备件不一致，飞书提醒项目经理核对，不纳入有效报价。",
+        "tools": ["read_inbox_mail", "table_query", "table_update", "send_feishu_message"],
+        "flow": "执行流程：\n1、table_query 查询进行中 task 列表\n2、read_inbox_mail 拉取供应商邮箱的新邮件\n3、LLM 解析抽取报价字段\n4、table_update 回填 task 报价集合\n5、全部回复则 send_feishu_message 推送收齐通知",
+    },
+    "skill-proc-04": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是定时进度&告警 Skill。由定时调度器每小时触发你执行：\n1、通过 table_query 查询所有状态=询比价进行中 的 task；\n2、对每个 task 计算 remain_sec = reply_deadline - now；\n3、每小时调用 send_feishu_message 推送进度（已回复/总家数/剩余时长）；\n4、若 0 < remain_sec <= 30min，高优先级飞书告警即将超时+列出未回复供应商；\n5、若 remain_sec <= 0，标记超时供应商、调用 table_update 更新状态为部分/全部供应商超时、飞书推送超时清单；\n6、区分部分超时（已回复>0）与全部超时（已回复=0）两种状态。",
+        "tools": ["table_query", "table_update", "send_feishu_message"],
+        "flow": "执行流程：\n1、table_query 查询进行中 task\n2、计算剩余时间，判断是否临期/超时\n3、send_feishu_message 推送进度/告警\n4、超时则 table_update 更新状态",
+    },
+    "skill-proc-05": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是选型确认处理 Skill。项目经理在 9006 平台勾选供应商、录入成交单价、点击确认采购后触发你执行：\n1、调用 table_update 更新 task 的 selected_supplier + deal_unit_price + task_status=已选型确认；\n2、套用采购确认邮件模板（Subject：【采购确认】任务ID:{task_id}｜{project_name} 备品备件确认采购）；\n3、调用 send_mail 发送采购确认邮件给选中供应商；\n4、调用 send_feishu_message 通知项目经理已下发采购确认。",
+        "tools": ["table_update", "send_mail", "send_feishu_message"],
+        "flow": "执行流程：\n1、接收 task_id/selected_supplier/deal_unit_price\n2、table_update 更新 task 状态与选中供应商\n3、组装采购确认邮件并 send_mail 发送\n4、send_feishu_message 通知项目经理",
+    },
+    "skill-proc-06": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是发货信息解析更新 Skill。由定时调度器触发你执行：\n1、通过 table_query 查询所有状态=已选型确认 的 task，取 selected_supplier.email 作为 filter_sender_email_list；\n2、调用 read_inbox_mail 拉取选中供应商的新邮件；\n3、用 LLM 解析邮件抽取发货时间（delivery_time）与物流单号（logistics_no）；\n4、调用 table_update 更新 task 的 delivery_time/logistics_no/task_status=供应商发货中；\n5、调用 send_feishu_message 推送发货信息给项目经理（提醒现场工程师留意收货测试）。",
+        "tools": ["read_inbox_mail", "table_query", "table_update", "send_feishu_message"],
+        "flow": "执行流程：\n1、table_query 查询已选型确认 task\n2、read_inbox_mail 拉取选中供应商邮件\n3、LLM 解析发货时间与物流单号\n4、table_update 更新 task 状态\n5、send_feishu_message 推送发货通知",
+    },
+    "skill-proc-07": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是测试结果录入处理 Skill。项目经理在 9006 平台录入测试结果后触发你执行：\n1、调用 table_update 写入 test_result + remark；\n2、若 test_result=通过，调用 skill-proc-08 触发台账写入，再调用 table_update 设 task_status=流程闭环/ledger_written=1，最后 send_feishu_message 通知台账更新完成；\n3、若 test_result=失败，调用 table_update 设 task_status=收货测试失败，send_feishu_message 高优告警项目经理人工处置（换货/重新询价）。",
+        "tools": ["table_update", "send_feishu_message"],
+        "flow": "执行流程：\n1、接收 task_id/test_result/remark\n2、table_update 写入测试结果\n3、通过则触发 skill-proc-08 写台账 + 闭环 + 通知\n4、失败则 table_update 标记异常 + 告警",
+    },
+    "skill-proc-08": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是台账写入 Skill。skill-proc-07 在测试通过后触发你执行：\n1、从 task 完整实例提取台账字段（task_id/project_id/project_name/contract_no/spare_part_model/purchase_qty/selected_supplier_name/deal_unit_price/delivery_time/logistics_no/test_result/task_close_time）；\n2、调用 table_insert 写入 procurement_ledger 表；\n3、返回 ledger_id；\n4、幂等保护：若 task.ledger_written=1 则不重写。",
+        "tools": ["table_insert"],
+        "flow": "执行流程：\n1、接收 task 完整实例\n2、提取台账字段\n3、table_insert 写入 procurement_ledger\n4、返回 ledger_id",
+    },
+    "skill-proc-09": {
+        "type": "Workflow业务编排技能",
+        "prompt": "你是任务取消处理 Skill。项目经理在 9006 平台执行取消任务（任意未闭环状态）后触发你执行：\n1、调用 table_update 更新 task_status=任务已取消 + cancel_reason + cancel_time；\n2、终止该 task 的定时轮询（由调度器按 task_status 过滤自然实现）；\n3、不写入台账（即使已闭环的也不可取消）；\n4、调用 send_feishu_message 通知项目经理任务已取消。",
+        "tools": ["table_update", "send_feishu_message"],
+        "flow": "执行流程：\n1、接收 task_id/cancel_reason\n2、table_update 设状态=任务已取消 + cancel_reason\n3、send_feishu_message 通知任务取消\n4、不写台账",
     },
 }
 

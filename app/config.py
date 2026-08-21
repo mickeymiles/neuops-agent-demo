@@ -120,3 +120,35 @@ PROBE_REPORT_URL = ""
 
 # 飞书告警（预留：webhook 从 settings 表读取，页面可配置）
 FEISHU_WEBHOOK_DEFAULT = ""
+
+# ═══════════════════════════════════════════
+# 备品备件采购询比价智能体（emp-008）配置
+# ═══════════════════════════════════════════
+# 邮件账号（IMAP 收件 + SMTP 发件），163 邮箱
+PROC_MAIL_USERNAME = os.getenv("PROC_MAIL_USERNAME", "")
+PROC_MAIL_PASSWORD = os.getenv("PROC_MAIL_PASSWORD", "")  # 163 邮箱授权码
+PROC_MAIL_IMAP_HOST = "imap.163.com"
+PROC_MAIL_IMAP_PORT = 993
+PROC_MAIL_SMTP_HOST = "smtp.163.com"
+PROC_MAIL_SMTP_PORT = 465
+
+# 飞书应用凭据（emp-008 发送飞书通知）
+PROC_FEISHU_APP_ID = os.getenv("PROC_FEISHU_APP_ID", "")
+PROC_FEISHU_APP_SECRET = os.getenv("PROC_FEISHU_APP_SECRET", "")
+# 项目经理飞书 open_id（接收消息的人，待用户提供）
+PROC_FEISHU_PM_OPEN_ID = os.getenv("PROC_FEISHU_PM_OPEN_ID", "")
+# 飞书多维表格 app_token（待用户提供；3 张表的 table_id 见下）
+PROC_FEISHU_BITABLE_APP_TOKEN = os.getenv("PROC_FEISHU_BITABLE_APP_TOKEN", "")
+PROC_FEISHU_BITABLE_TASK_TABLE_ID = os.getenv("PROC_FEISHU_BITABLE_TASK_TABLE_ID", "")
+PROC_FEISHU_BITABLE_LEDGER_TABLE_ID = os.getenv("PROC_FEISHU_BITABLE_LEDGER_TABLE_ID", "")
+
+# 9006 工程数据库（contract-compare-9006 SQLite，emp-008 直读采购任务/台账/主数据）
+# 注意：procurement_models.py 的 DB_PATH = contract-compare-9006/contract_compare.db（工程根目录，非 backend/）
+PROC_9006_DB_PATH = os.getenv(
+    "PROC_9006_DB_PATH",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                 "contract-compare-9006", "contract_compare.db"),
+)
+# 9006 后端 API（contract-compare-9006）
+PROC_9006_BASE = os.getenv("PROC_9006_BASE", "http://127.0.0.1:9006")
+
