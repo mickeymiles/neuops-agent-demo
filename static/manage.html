@@ -274,8 +274,9 @@
       <span style="cursor:pointer;font-size:16px;display:inline-flex;color:var(--c-text-secondary);" onclick="closeSkillDetail()"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
     </div>
     <div class="detail-body" id="skillDetailBody"></div>
-    <div class="modal-actions" style="padding:12px 20px;border-top:1px solid var(--c-border-light);margin-top:0;">
-      <button class="btn-confirm" style="background:var(--c-primary);" onclick="closeSkillDetail();openEditSkill(SKILL_DETAIL_ID)">编辑技能</button>
+    <div class="modal-actions" style="padding:12px 20px;border-top:1px solid var(--c-border-light);margin-top:0;display:flex;gap:8px;">
+      <button class="btn-confirm" style="background:#10b981;" onclick="closeSkillDetail();openJsonEditor(SKILL_DETAIL_ID)">JSON 编辑</button>
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="closeSkillDetail();openEditSkill(SKILL_DETAIL_ID)">基础信息编辑</button>
     </div>
   </div>
 </div>
@@ -327,6 +328,28 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeToolGroupModal()">取消</button>
       <button class="btn-confirm" style="background:var(--c-primary);" onclick="doSaveToolGroup()">确认保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Skill JSON 编辑器（后台专用） -->
+<div class="skill-detail-overlay hidden" id="skillJsonEditorModal">
+  <div class="skill-detail-box" style="max-width:900px;height:85vh;">
+    <div class="detail-header">
+      <span id="skillJsonEditorTitle">编辑 Skill JSON</span>
+      <span style="cursor:pointer;font-size:16px;display:inline-flex;color:var(--c-text-secondary);" onclick="closeJsonEditor()"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+    </div>
+    <div style="padding:16px 20px 0;display:flex;flex-direction:column;height:calc(100% - 52px);">
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+        <button class="card-btn" style="font-size:12px;" onclick="try { document.getElementById('skillJsonEditorArea').value = JSON.stringify(JSON.parse(document.getElementById('skillJsonEditorArea').value), null, 2); } catch(e){alert('JSON 格式错误: '+e.message)}">格式化</button>
+        <span id="skillJsonEditorError" style="color:#ff6b6b;font-size:12px;display:none;"></span>
+        <span style="margin-left:auto;font-size:12px;color:var(--c-text-time)">修改后点保存，立即热更新生效</span>
+      </div>
+      <textarea id="skillJsonEditorArea" spellcheck="false" style="flex:1;width:100%;min-height:0;background:#0E1626;color:#cbd5e1;border:1px solid #1E2A44;border-radius:8px;padding:14px 16px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:13px;line-height:1.6;resize:none;outline:none;"></textarea>
+    </div>
+    <div class="modal-actions" style="padding:12px 20px;border-top:1px solid var(--c-border-light);">
+      <button class="btn-cancel" onclick="closeJsonEditor()">取消</button>
+      <button class="btn-confirm" style="background:var(--c-primary);" onclick="saveSkillJson()">保存并热更新</button>
     </div>
   </div>
 </div>

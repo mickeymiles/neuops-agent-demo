@@ -5,6 +5,7 @@ FastAPI 后端 + Mock MCP 网关 + SSE 流式对话 + 统一监控探针 + 一�
 薄入口：组装 app、挂载路由与静态资源、初始化数据库、启动监控探针与告警引擎。
 业务逻辑按领域拆分于 app/ 包，保持与原单文件版本 100% 行为兼容。
 """
+import asyncio
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -25,6 +26,7 @@ from app import (
     bidding,
     routes_employees,
     routes_knowledge,
+    routes_local_tools,
     routes_manage,
     routes_monitor,
     routes_ops,
@@ -45,8 +47,26 @@ async def lifespan(app: FastAPI):
     pm.start()
     # 业务告警检测引擎（LLM APM + ops 真实指标，后续扩展）
     threading.Thread(target=_alert_engine_loop, daemon=True).start()
+    # 采购询比价自动调度：每 2 分钟拉 IMAP 邮件 + 进度/超时告警
+    proc_task = asyncio.create_task(_proc_scheduler_loop())
     yield
+    proc_task.cancel()
     pm.stop()
+
+
+async def _proc_scheduler_loop():
+    """采购询比价自动调度：每 2 分钟触发 IMAP 轮询（报价+发货）+ 进度告警"""
+    import httpx
+    await asyncio.sleep(30)  # 启动后等 30 秒再开始
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=quote", timeout=30)
+                await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=delivery", timeout=30)
+                await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=progress", timeout=30)
+        except Exception:
+            pass
+        await asyncio.sleep(120)  # 2 分钟
 
 
 app = FastAPI(title="NeuOps Agent Demo", lifespan=lifespan)
@@ -84,6 +104,7 @@ app.include_router(routes_ops.page_router)
 app.include_router(routes_manage.page_router)
 app.include_router(bidding.router)
 app.include_router(routes_procurement_agent.router)
+app.include_router(routes_local_tools.router)  # 本地 11 个 MCP Tool HTTP 端点
 
 # 静态资源
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

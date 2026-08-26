@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>道衍</title>
+<title>运维服务智能体平台</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 /* ═══════ DESIGN SYSTEM ═══════
@@ -1475,7 +1475,7 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
   <nav class="nav-sidebar">
     <div class="nav-brand">
       <span class="icon" style="display:inline-flex;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
-      <span>道衍</span>
+      <span>运维服务智能体平台</span>
     </div>
     <div class="nav-menu">
       <div class="nav-item active" data-page="chat" onclick="newConversation()">
@@ -1552,7 +1552,7 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
         <!-- Welcome -->
         <div id="welcomeArea" class="welcome-area">
           <div class="welcome-logo" style="display:inline-flex;"><svg class="svg-icon" style="width:44px;height:44px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
-          <div class="welcome-title">嗨，我是道衍</div>
+          <div class="welcome-title">嗨，我是运维服务智能体平台</div>
           <div class="welcome-desc">关于咨询，经营，项目管理，运维等问题，随时提问。<br>我的回答由 AI 生成，仅作为给你的参考。</div>
 
           <div class="quick-actions">
@@ -2858,6 +2858,126 @@ function empSkillCardHtml(s, emp) {
     </div>`;
 }
 
+/* 渲染 Skill 定义：结构化视图 + 原始 JSON */
+function renderSkillFlowSection(r) {
+  const sk = r.skill_json;
+  const parts = [];
+
+  // 有结构化数据：渲染字段模型 / 状态机 / 话术模板 / 函数绑定
+  if (r.is_structured && sk && Object.keys(sk).length) {
+    // 字段模型
+    const fm = sk.field_model || {};
+    const fmEntries = Object.entries(fm);
+    if (fmEntries.length) {
+      parts.push(`
+        <div style="margin-top:8px">
+          <div style="font-size:12px;color:var(--c-text-secondary);margin-bottom:6px;font-weight:500">字段模型（${fmEntries.length}个字段）</div>
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead><tr style="background:rgba(30,42,68,.5)">
+              <th style="padding:6px 8px;text-align:left;color:var(--c-text-secondary);font-weight:500">字段</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--c-text-secondary);font-weight:500">类型</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--c-text-secondary);font-weight:500">必填</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--c-text-secondary);font-weight:500">说明</th>
+            </tr></thead>
+            <tbody>
+              ${fmEntries.map(([k, v]) => {
+                const type = v.type || 'string';
+                const required = v.required ? '<span style="color:#ff6b6b">是</span>' : '否';
+                const desc = (v.desc || '').substring(0, 80);
+                const options = v.options && v.options.length ? `<div style="color:#7ec8e3;font-size:11px;margin-top:2px">选项: ${v.options.join(', ')}</div>` : '';
+                return `<tr style="border-bottom:1px solid var(--c-border-light)">
+                  <td style="padding:6px 8px;font-family:monospace;color:#7ec8e3">${k}</td>
+                  <td style="padding:6px 8px">${type}</td>
+                  <td style="padding:6px 8px">${required}</td>
+                  <td style="padding:6px 8px;color:var(--c-text-secondary);font-size:11px">${desc}${options}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>`);
+    }
+
+    // 状态机
+    let states = [];
+    if (Array.isArray(sk.state_machine)) {
+      states = sk.state_machine.map(s => ({ name: s.state, desc: s.desc, next: s.next, action: s.action }));
+    } else if (sk.state_machine && sk.state_machine.states) {
+      states = sk.state_machine.states;
+    }
+    if (states.length) {
+      parts.push(`
+        <div style="margin-top:14px">
+          <div style="font-size:12px;color:var(--c-text-secondary);margin-bottom:6px;font-weight:500">状态机（${states.length}个状态）</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${states.map(s => {
+              const cls = s.is_initial ? 'background:#2563eb' : (s.is_final ? 'background:#10b981' : 'background:rgba(56,72,108,.6)');
+              const tag = s.is_initial ? ' ◀起始' : (s.is_final ? ' ■终结' : '');
+              const nextInfo = s.next ? `<span style="color:var(--c-text-time);font-size:10px"> → ${s.next}</span>` : '';
+              const actionInfo = s.action ? `<span style="color:#ffd166;font-size:10px;margin-left:4px">⟶ ${s.action}</span>` : '';
+              return `<div style="padding:4px 10px;border-radius:12px;font-size:12px;color:#fff;${cls};cursor:pointer" title="${(s.desc || '').replace(/"/g, '&quot;')}">${s.name || s.state || '?'}${tag}${nextInfo}${actionInfo}</div>`;
+            }).join('')}
+          </div>
+        </div>`);
+    }
+
+    // 话术模板
+    const tt = sk.dialog_templates || sk.talk_templates || {};
+    const ttEntries = Object.entries(tt);
+    if (ttEntries.length) {
+      parts.push(`
+        <div style="margin-top:14px">
+          <div style="font-size:12px;color:var(--c-text-secondary);margin-bottom:6px;font-weight:500">话术模板（${ttEntries.length}条）</div>
+          ${ttEntries.map(([k, v]) => {
+            const templates = Array.isArray(v) ? v : (v.templates || [v]);
+            const joined = templates.map(t => `<div style="padding:6px 10px;background:rgba(14,22,38,.6);border-left:2px solid #7ec8e3;font-size:12px;color:var(--c-text-body);margin-bottom:4px;border-radius:4px;white-space:pre-wrap">${String(t).replace(/\n/g, '<br>')}</div>`).join('');
+            return `<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--c-primary);font-weight:500;margin-bottom:4px">▸ ${k}</div>${joined}</div>`;
+          }).join('')}
+        </div>`);
+    }
+
+    // 函数绑定
+    const fb = sk.function_binding || sk.function_bindings;
+    if (fb) {
+      let fbHtml = '';
+      if (Array.isArray(fb)) {
+        fbHtml = fb.map(f => `<div style="padding:6px 10px;background:rgba(14,22,38,.6);border-radius:4px;margin-bottom:6px"><div style="font-size:12px;color:#ffd166;font-weight:500">${f.function_id || f.name || '?'} ${f.tool_id ? '→ ' + f.tool_id : ''}</div><div style="font-size:11px;color:var(--c-text-secondary)">${f.desc || ''}</div></div>`).join('');
+      } else if (typeof fb === 'object') {
+        fbHtml = `<div style="padding:8px 12px;background:rgba(14,22,38,.6);border-radius:6px;margin-bottom:6px">
+          <div style="font-size:12px;color:#ffd166;font-weight:500">${fb.function_id || fb.name || '函数绑定'}</div>
+          <div style="font-size:11px;color:var(--c-text-secondary);margin-top:4px">${fb.desc || ''}</div>
+          ${fb.pass_data ? `<div style="font-size:11px;color:#7ec8e3;margin-top:2px">传递数据: <code>${fb.pass_data}</code></div>` : ''}
+          ${fb.note ? `<div style="font-size:11px;color:var(--c-text-time);margin-top:2px">备注: ${fb.note}</div>` : ''}
+        </div>`;
+      }
+      if (fbHtml) {
+        parts.push(`<div style="margin-top:14px">
+          <div style="font-size:12px;color:var(--c-text-secondary);margin-bottom:6px;font-weight:500">函数绑定</div>
+          ${fbHtml}
+        </div>`);
+      }
+    }
+  }
+
+  // 追加：原始 JSON 文本（可折叠）
+  if (sk && Object.keys(sk).length) {
+    const jsonStr = JSON.stringify(sk, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt');
+    parts.push(`
+      <div style="margin-top:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <div style="font-size:12px;color:var(--c-text-secondary);font-weight:500">原始配置（JSON）</div>
+          <button onclick="var el=document.getElementById('skillJsonRaw');el.style.display=el.style.display==='none'?'block':'none';this.textContent=el.style.display==='none'?'▶ 展开':'▼ 收起'" style="font-size:11px;background:rgba(56,72,108,.4);color:var(--c-text-body);border:1px solid var(--c-border-light);border-radius:4px;padding:2px 8px;cursor:pointer;">▼ 收起</button>
+          <button onclick="var ta=document.createElement('textarea');ta.value=document.getElementById('skillJsonRaw').textContent;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);this.textContent='✓ 已复制';setTimeout(()=>this.textContent='复制',1500)" style="font-size:11px;background:rgba(56,72,108,.4);color:var(--c-text-body);border:1px solid var(--c-border-light);border-radius:4px;padding:2px 8px;cursor:pointer;">复制</button>
+        </div>
+        <pre id="skillJsonRaw" style="max-height:400px;overflow:auto;background:#0a0f1a;border:1px solid #1E2A44;border-radius:6px;padding:12px 14px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.6;color:#a5d6e7;margin:0;white-space:pre;tab-size:2">${jsonStr}</pre>
+      </div>`);
+  }
+
+  if (!parts.length) {
+    return `<div style="font-size:13px;line-height:1.8;color:var(--c-text-body);white-space:pre-wrap;background:#0E1626;border:1px solid #1E2A44;border-radius:6px;padding:12px 16px">${r.flow || '暂无流程说明'}</div>`;
+  }
+  return parts.join('');
+}
+
 async function showSkillDetail(id) {
   try {
     const r = await fetch('/api/skills/' + id + '/detail').then(x => x.json());
@@ -2884,7 +3004,7 @@ async function showSkillDetail(id) {
       </div>
       <div class="detail-section">
         <div class="ds-title" style="display:flex;align-items:center;gap:6px;">${icon('clipboard')} 执行流程</div>
-        <div style="font-size:13px;line-height:1.8;color:var(--c-text-body);white-space:pre-wrap;background:#0E1626;border:1px solid #1E2A44;border-radius:6px;padding:12px 16px">${r.flow || '暂无流程说明'}</div>
+        ${renderSkillFlowSection(r)}
       </div>`;
     document.getElementById('skillDetailModal').classList.remove('hidden');
   } catch (e) {
@@ -3295,7 +3415,7 @@ function renderSnapshotBody(t) {
 // ═══════════ DOC ═══════════
 function openDocModal() {
   document.getElementById('docBody').innerHTML = `
-    <h2>道衍</h2>
+    <h2>运维服务智能体平台</h2>
     <p>新一代 <strong>AgenticOps 对话式运维工作台</strong>原型 Demo。以「对话」为一级入口，通过 <strong>Skill 技能体系</strong> + <strong>Agent 自主调度运维工具</strong>，实现「问一句 → Agent 拆解 → 自动调用工具 → 输出结论」的智能运维体验，区别于传统运维平台「菜单导航 + 内嵌 AI 助手」的模式。</p>
     <blockquote>Demo 说明：仅验证产品交互形态，全部采用 Mock 数据，不对接真实运维平台。</blockquote>
 

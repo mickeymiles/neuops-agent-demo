@@ -186,6 +186,17 @@ async def get_employee_full(emp_id: str):
     mock_convs = mock_convs_by_id.get(emp_id, [])
     deleted_mock = set(db_get_deleted_mock_convs())
     emp_full["conversations"] = [c for c in mock_convs if c["id"] not in deleted_mock]
+
+    # 对于没有 mock 对话的员工，从真实会话库查询
+    if not emp_full["conversations"]:
+        try:
+            from app.db.sessions import db_get_employee_conversations
+            real_convs = db_get_employee_conversations(emp_id)
+            if real_convs:
+                emp_full["conversations"] = real_convs
+        except Exception:
+            pass  # 会话库不可用时保持空列表
+
     return JSONResponse(emp_full)
 
 @router.post("/api/employees")

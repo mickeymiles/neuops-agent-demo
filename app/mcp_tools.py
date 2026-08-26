@@ -158,20 +158,38 @@ def _parse_mail_body(msg) -> str:
         return ""
 
 
-def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = None) -> dict:
+def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = None,
+                         exclude_sender_email_list: list = None,
+                         match_in_reply_to_msg_ids: list = None) -> dict:
     """读取 163 邮箱收件箱入站邮件（IMAP 真实拉取）
 
     Args:
         since_timestamp: Unix 时间戳，读取该时间之后的邮件（必填）
-        filter_sender_email_list: 可选，按发件人邮箱过滤；为空则不过滤
+        filter_sender_email_list: 可选，按发件人邮箱白名单过滤；为空则不过滤
+        exclude_sender_email_list: 可选，按发件人邮箱黑名单过滤（采购方自己的邮箱）
+        match_in_reply_to_msg_ids: 可选，只读取 In-Reply-To / References 命中
+            这些 RFC Message-ID 的邮件（用于精确匹配到某封询价邮件的回复，避免串任务）
     Returns:
-        邮件报文列表
+        邮件报文列表，含 in_reply_to / references 字段用于线程匹配
     """
     import imaplib
+    import re  # 【修复 2026-08-24】原代码使用了 re.split/re.sub/re.match 但未导入 re，导致 NameError: name 're' is not defined
 
     if not _proc_cfg.PROC_MAIL_PASSWORD:
         return {"tool": "read_inbox_mail", "success": False,
                 "error": "PROC_MAIL_PASSWORD 未配置（163 邮箱授权码）", "mails": []}
+
+    # 黑名单默认：采购方自己的 163 邮箱（防止 Sent 副本/自己发的询价邮件误当供应商回复）
+    if exclude_sender_email_list is None:
+        exclude_sender_email_list = []
+    exclude_set = {str(e).lower().strip() for e in exclude_sender_email_list if e}
+    if _proc_cfg.PROC_MAIL_USERNAME:
+        exclude_set.add(str(_proc_cfg.PROC_MAIL_USERNAME).lower().strip())
+
+    # 询价函关键字（采购方模板：询价函开头一定会出现的语句）——如果原文里出现这些，
+    # 直接判为采购方询价函，不是供应商的报价回复
+    INQUIRY_KEYWORDS = ("尊敬的供应商", "现就以下备品备件进行询价", "烦请贵司于", "报价截止",
+                        "请在回复邮件中注明产品型号、单价", "备品备件询价")
 
     try:
         imap = imaplib.IMAP4_SSL(_proc_cfg.PROC_MAIL_IMAP_HOST, _proc_cfg.PROC_MAIL_IMAP_PORT)
@@ -199,6 +217,15 @@ def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = 
             return {"tool": "read_inbox_mail", "success": False,
                     "error": f"IMAP search 失败: {status}", "mails": []}
 
+        # RFC Message-ID 规范化（剥掉前后 <>），用于 References/In-Reply-To 比较
+        def _norm_mid(m):
+            if not m: return ""
+            s = str(m).strip()
+            while s.startswith("<"): s = s[1:]
+            while s.endswith(">"): s = s[:-1]
+            return s.strip()
+        match_set = {_norm_mid(m) for m in (match_in_reply_to_msg_ids or []) if m}
+
         mail_ids = data[0].split()
         out = []
         for mid in mail_ids:
@@ -225,16 +252,47 @@ def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = 
             # 二次过滤：按 since_timestamp 过滤
             if recv_ts and recv_ts < since_timestamp:
                 continue
-            # 按发件人过滤
+            # 黑名单：排除采购方自己的邮箱（防止把 Sent 副本当成供应商回复）
+            if from_email.lower() in exclude_set:
+                continue
+            # 白名单：按发件人过滤
             if filter_sender_email_list:
                 if from_email.lower() not in [e.lower() for e in filter_sender_email_list]:
                     continue
 
             body = _parse_mail_body(msg)
             rfc_msg_id = msg.get("Message-ID", "")
+            in_reply_to = msg.get("In-Reply-To", "") or ""
+            references = msg.get("References", "") or ""
+
+            # —— 过滤 1：如果提供了"询价邮件 msg_id 集合"，只处理对应线程的回复 ——
+            if match_set:
+                hit_ids = set()
+                for raw_ref in [in_reply_to, references]:
+                    if raw_ref:
+                        # References 可能是一串用空格/换行分隔的 <msg-id>
+                        for part in re.split(r"\s+", str(raw_ref).strip()):
+                            n = _norm_mid(part)
+                            if n and n in match_set:
+                                hit_ids.add(n)
+                if not hit_ids:
+                    # 没有命中线程 → 直接丢弃（避免供应商对其他无关邮件的回复串进来）
+                    continue
+
+            # —— 过滤 2：询价函关键字（采购方发的邮件正文一定是询价函模板，供应商回复不会重复这些）——
+            body_nolabel = re.sub(r"\s+", "", body or "")[:1200]
+            if body_nolabel and any(re.sub(r"\s+", "", k) in body_nolabel for k in INQUIRY_KEYWORDS):
+                # 极端情况：供应商直接原文回复"尊敬的供应商：..."可能也被误杀，
+                # 但同时带 Re:/回复： 的放行（真实报价回复）
+                is_reply = bool(re.match(r"^\s*(re|回复|fw|转发)\s*[:：]", subject, re.I))
+                if not is_reply:
+                    continue
+
             out.append({
                 "mail_id": mid.decode() if isinstance(mid, bytes) else str(mid),
                 "message_id": rfc_msg_id,  # RFC 2822 Message-ID，用于邮件线程回复
+                "in_reply_to": in_reply_to,
+                "references": references,
                 "subject": subject,
                 "from_email": from_email,
                 "from_name": from_full.replace(f"<{from_email}>", "").strip().strip('"'),
@@ -254,10 +312,11 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
                    reply_to_mail_id: str = None) -> dict:
     """发送单封邮件（SMTP 真实发送，163 邮箱）
     reply_to_mail_id: 邮件线程 Message-ID，设置后邮件为该邮件的回复（In-Reply-To+References）
-    """
+    【修复 2026-08-24】显式调用 email.utils.make_msgid() 生成 Message-ID 并写入邮件头，
+    以便返回给调用方用于后续 In-Reply-To 匹配；之前未写入该头导致返回空 message_id="""
     import smtplib
     from email.mime.text import MIMEText
-    from email.utils import formataddr
+    from email.utils import formataddr, make_msgid
 
     if not _proc_cfg.PROC_MAIL_PASSWORD:
         return {"tool": "send_mail", "success": False,
@@ -268,12 +327,20 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
         msg["Subject"] = subject
         msg["From"] = formataddr(("备品备件采购智能体", _proc_cfg.PROC_MAIL_USERNAME))
         msg["To"] = ",".join(to)
+        # 【关键修复】必须在 sendmail 之前显式生成并写入 Message-ID，
+        # 否则 msg["Message-ID"] 读出来是空字符串，后续回写的 _sent_ok 恒为 False。
+        msg["Message-ID"] = make_msgid()
         if cc:
             msg["Cc"] = ",".join(cc)
         # 邮件线程化：回复时设置 In-Reply-To + References
         if reply_to_mail_id:
             msg["In-Reply-To"] = reply_to_mail_id
-            msg["References"] = reply_to_mail_id
+            # 合并到 References（已有就追加，没有就用回复的 msg_id 初始化）
+            existing_refs = msg.get("References", "")
+            if existing_refs:
+                msg["References"] = f"{existing_refs} {reply_to_mail_id}"
+            else:
+                msg["References"] = reply_to_mail_id
 
         recipients = list(to) + (cc or [])
         with smtplib.SMTP_SSL(_proc_cfg.PROC_MAIL_SMTP_HOST, _proc_cfg.PROC_MAIL_SMTP_PORT) as smtp:
@@ -289,13 +356,19 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
                 "error": f"SMTP 异常: {type(e).__name__}: {e}"}
 
 
-def tool_batch_send_mail(receiver_email_list: list, subject: str, body_text: str) -> dict:
-    """批量发送相同内容邮件给多个收件人（独立发送，非抄送）"""
-    fail_list, ok_count = [], 0
+def tool_batch_send_mail(receiver_email_list: list, subject: str, body_text: str,
+                         cc: list = None, reply_to_mail_id: str = None) -> dict:
+    """批量发送相同内容邮件给多个收件人（独立发送，非群发；每封邮件都带同样的 CC）
+    返回 sent 列表，含每个收件人的 message_id（用于后续按邮件线程匹配供应商回复）
+    """
+    fail_list, ok_count, sent_list = [], 0, []
     for addr in receiver_email_list:
-        r = tool_send_mail(to=[addr], subject=subject, body_text=body_text)
+        r = tool_send_mail(to=[addr], subject=subject, body_text=body_text, cc=cc,
+                           reply_to_mail_id=reply_to_mail_id)
         if r.get("success"):
             ok_count += 1
+            sent_list.append({"email": addr, "message_id": r.get("message_id") or "",
+                              "subject": subject})
         else:
             fail_list.append({"email": addr, "error": r.get("error", "unknown")})
     return {
@@ -303,6 +376,8 @@ def tool_batch_send_mail(receiver_email_list: list, subject: str, body_text: str
         "total_count": len(receiver_email_list),
         "success_count": ok_count,
         "fail_email_list": fail_list,
+        "cc": cc or [],
+        "sent": sent_list,
     }
 
 
@@ -361,9 +436,13 @@ def tool_send_feishu_message(receiver_feishu_open_id: str, content: str, is_aler
 
 
 def tool_send_feishu_card(receiver_feishu_open_id: str, card: dict) -> dict:
-    """向飞书用户发送 Interactive Card（交互卡片，带按钮等元素）
-    card 结构参考飞书消息卡片 JSON Schema:
-    {config, header:{title,template}, elements:[{tag:div|action|...}]}
+    """向飞书用户发送 Interactive Card（schema 2.0 = type:raw 格式）
+    飞书卡片回调（card.action.trigger）响应要求两端使用同一 schema：
+      - 【发送卡片】content 必须是 json.dumps({"type":"raw", "data": <原始卡片 dict>})
+      - 【回调响应】返回的 card 字段也必须是 {"type":"raw", "data": <更新后卡片 dict>}
+    如果发送端用旧版裸 card、回调端用新版 type:raw（或反过来），会触发 200341 卡片解析失败。
+
+    入参 card：原始卡片结构 {config, header:{title,template}, elements:[...]}
     """
     token = _get_feishu_token()
     if not token:
@@ -372,13 +451,15 @@ def tool_send_feishu_card(receiver_feishu_open_id: str, card: dict) -> dict:
         return {"tool": "send_feishu_card", "success": False, "error": "open_id 未提供"}
 
     try:
+        # 统一 schema 2.0：把原始卡片包一层 type:raw，才能确保按钮回调能以 type:raw 方式返回更新卡片
+        content_payload = {"type": "raw", "data": card}
         r = httpx.post(
             "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "receive_id": receiver_feishu_open_id,
                 "msg_type": "interactive",
-                "content": json.dumps(card),
+                "content": json.dumps(content_payload, ensure_ascii=False),
             }, timeout=10)
         d = r.json()
         if d.get("code") == 0:
@@ -406,27 +487,65 @@ _PROC_TABLE_MAP = {
     "procurement_master_data": "procurement_master_data",
     "procurement_ledger": "procurement_ledger",
     "procurement_op_log": "procurement_op_log",
+    "procurement_supplier": "procurement_supplier",
+    "procurement_contract": "procurement_contract",
+    "procurement_contract_supplier": "procurement_contract_supplier",
+    "procurement_mail_cc": "procurement_mail_cc",
+    "procurement_spare_part": "procurement_spare_part",  # 备件库（skill-proc-chat 对话选型用）
     "project_contract_master": "procurement_master_data",  # 兼容业务文档命名
     "task_table": "procurement_task",  # 兼容设计文档伪代码命名
     "ledger_table": "procurement_ledger",
 }
 
 
-def tool_table_query(table_key: str, filter: dict = None, page_size: int = 100) -> dict:
-    """查询 9006 SQLite 表数据"""
+def _pick_pk(table_name: str) -> str:
+    """按表给主键名，支持 INSERT/UPDATE/UPSERT 的 WHERE 子句"""
+    mapping = {
+        "procurement_task": "task_id",
+        "procurement_ledger": "ledger_id",
+        "procurement_master_data": "id",
+        "procurement_op_log": "id",
+        "procurement_supplier": "id",
+        "procurement_contract": "id",
+        "procurement_contract_supplier": "id",
+        "procurement_mail_cc": "id",
+        "procurement_spare_part": "id",
+    }
+    return mapping.get(table_name, "id")
+
+
+def tool_table_query(table_key: str, filter: dict = None, page_size: int = 100,
+                     keyword: str = "", keyword_fields: list = None) -> dict:
+    """查询 9006 SQLite 表数据。
+    keyword: 可选的关键字模糊搜索（对 keyword_fields 做 LIKE %kw% 匹配）。
+    keyword_fields: 可选的搜索字段列表（不传时默认为表中所有 TEXT 列）。
+    """
     tname = _PROC_TABLE_MAP.get(table_key, table_key)
     try:
         conn = _proc_db_conn()
         cur = conn.cursor()
         sql = f"SELECT * FROM {tname}"
         params = []
+        wheres = []
         if filter:
-            wheres = []
             for k, v in filter.items():
                 wheres.append(f"{k} = ?")
                 params.append(v)
-            if wheres:
-                sql += " WHERE " + " AND ".join(wheres)
+        # 关键字模糊搜索
+        if keyword and keyword.strip():
+            like = f"%{keyword.strip()}%"
+            if keyword_fields:
+                search_cols = keyword_fields
+            else:
+                # 自动探测 TEXT 列作为搜索字段
+                cur.execute(f"PRAGMA table_info({tname})")
+                search_cols = [row[1] for row in cur.fetchall() if row[2].upper() == "TEXT"]
+            if search_cols:
+                kw_clauses = [f"{c} LIKE ?" for c in search_cols]
+                wheres.append("(" + " OR ".join(kw_clauses) + ")")
+                params.extend([like] * len(kw_clauses))
+        if wheres:
+            sql += " WHERE " + " AND ".join(wheres)
         sql += f" LIMIT {int(page_size)}"
         cur.execute(sql, params)
         rows = [dict(r) for r in cur.fetchall()]
@@ -457,22 +576,260 @@ def tool_table_insert(table_key: str, data: dict) -> dict:
 
 
 def tool_table_update(table_key: str, record_id: str, data: dict) -> dict:
-    """更新 9006 SQLite 表指定行"""
+    """更新 9006 SQLite 表指定行。自动过滤不存在的列，防止静默失败。"""
     tname = _PROC_TABLE_MAP.get(table_key, table_key)
     try:
         conn = _proc_db_conn()
         cur = conn.cursor()
-        sets = ",".join([f"{k} = ?" for k in data.keys()])
-        params = list(data.values()) + [record_id]
-        # 主键策略：procurement_task/ledger 用 task_id/ledger_id；master_data 用 id
-        pk = "task_id" if tname == "procurement_task" else ("ledger_id" if tname == "procurement_ledger" else "id")
+        # 自动过滤不存在的列，防止 UPDATE 因列不存在而整体失败
+        existing_cols = {c[1] for c in cur.execute(f"PRAGMA table_info({tname})").fetchall()}
+        filtered = {k: v for k, v in data.items() if k in existing_cols}
+        skipped = [k for k in data.keys() if k not in existing_cols]
+        if not filtered:
+            conn.close()
+            return {"tool": "table_update", "success": False, "affected": 0,
+                    "error": f"无有效列可更新（{len(data)}个字段均不存在于表 {tname}）"}
+        sets = ",".join([f"{k} = ?" for k in filtered.keys()])
+        params = list(filtered.values()) + [record_id]
+        pk = _pick_pk(tname)
         sql = f"UPDATE {tname} SET {sets} WHERE {pk} = ?"
         cur.execute(sql, params)
         conn.commit()
         affected = cur.rowcount
         conn.close()
-        return {"tool": "table_update", "success": affected > 0, "affected": affected}
+        result = {"tool": "table_update", "success": affected > 0, "affected": affected}
+        if skipped:
+            result["skipped_cols"] = skipped  # 告知调用方哪些列被跳过了
+        return result
     except Exception as e:
         return {"tool": "table_update", "success": False,
                 "error": f"SQLite 更新失败: {type(e).__name__}: {e}"}
+
+
+def tool_table_upsert(table_key: str, record_id: str, data: dict) -> dict:
+    """表幂等插入或更新：主键存在则更新，不存在则插入"""
+    tname = _PROC_TABLE_MAP.get(table_key, table_key)
+    pk = _pick_pk(tname)
+    try:
+        conn = _proc_db_conn()
+        cur = conn.cursor()
+        cur.execute(f"SELECT 1 FROM {tname} WHERE {pk} = ? LIMIT 1", (record_id,))
+        exists = cur.fetchone() is not None
+        if exists:
+            sets = ",".join([f"{k} = ?" for k in data.keys()])
+            params = list(data.values()) + [record_id]
+            cur.execute(f"UPDATE {tname} SET {sets} WHERE {pk} = ?", params)
+            mode = "update"
+        else:
+            merged = dict(data)
+            merged[pk] = record_id
+            cols = list(merged.keys())
+            placeholders = ",".join(["?"] * len(cols))
+            cur.execute(
+                f"INSERT INTO {tname} ({','.join(cols)}) VALUES ({placeholders})",
+                list(merged.values()),
+            )
+            mode = "insert"
+        conn.commit()
+        conn.close()
+        return {"tool": "table_upsert", "success": True, "mode": mode, "record_id": record_id}
+    except Exception as e:
+        return {"tool": "table_upsert", "success": False,
+                "error": f"SQLite upsert 失败: {type(e).__name__}: {e}"}
+
+
+def tool_procurement_parse_quote(body: str, expected_qty: int = None, spare_part_model: str = "") -> dict:
+    """MCP 包装：6 层加固供应商报价解析"""
+    from .routes_procurement_agent import robust_parse_supplier_quote
+    return {"tool": "procurement_parse_quote", "success": True,
+            "result": robust_parse_supplier_quote(body, expected_qty=expected_qty,
+                                                  spare_part_model=spare_part_model)}
+
+
+def tool_procurement_parse_logistics(body: str) -> dict:
+    """MCP 包装：3 层物流单号解析"""
+    from .routes_procurement_agent import robust_parse_logistics_info
+    return {"tool": "procurement_parse_logistics", "success": True,
+            "result": robust_parse_logistics_info(body)}
+
+
+def tool_procurement_create_task(*, project_id: str = "", project_name: str = "",
+                                 contract_no: str = "",
+                                 spare_part_model: str, purchase_qty: float,
+                                 emergency_level: str,
+                                 inquiry_supplier_list: list = None,
+                                 creator: str = "agent") -> dict:
+    """MCP 工具：创建询比价采购任务（对话入口专用）。
+
+    不走直连 SQLite，而是调 9006 的 POST /api/procurement/tasks/agent：
+    - 保证 task_id 格式（PROC-YYYYMMDDHHMMSS-XXXXXX）
+    - 自动计算 reply_deadline、写操作日志
+    - 自动 trigger_neuops → flow-proc-01/02（询价邮件+飞书通知）
+
+    inquiry_supplier_list 语义：
+    - None（默认）→ 9006 后端自动带全量资源池（3家默认供应商）
+    - 空列表 [] → 同上，自动带全量资源池
+    - 有元素的列表 → 使用指定供应商（资源池供应商+临时供应商混合传也可以，9006 create_task 会按 email 反查补 id）
+    """
+    try:
+        url = f"{_proc_cfg.PROC_9006_BASE}/api/procurement/tasks/agent"
+        payload = {
+            "project_id": project_id,
+            "project_name": project_name,
+            "contract_no": contract_no,
+            "spare_part_model": spare_part_model,
+            "purchase_qty": float(purchase_qty),
+            "emergency_level": emergency_level,
+            "creator": creator,
+        }
+        # inquiry_supplier_list: None 和 [] 统一不传，让 9006 后端走自动带池分支
+        if inquiry_supplier_list:
+            payload["inquiry_supplier_list"] = inquiry_supplier_list
+        with httpx.Client(timeout=30.0) as client:
+            r = client.post(url, json=payload)
+        if r.status_code != 200:
+            return {"tool": "procurement_create_task", "success": False,
+                    "error": f"9006 创建任务失败 HTTP {r.status_code}: {r.text[:300]}"}
+        data = r.json()
+        if not data.get("success"):
+            return {"tool": "procurement_create_task", "success": False,
+                    "error": data.get("error", "9006 返回失败")}
+        task = data.get("data") or {}
+        return {
+            "tool": "procurement_create_task",
+            "success": True,
+            "task_id": task.get("task_id"),
+            "task": task,
+            "agent_trigger": data.get("agent_trigger"),
+            "reply_deadline": task.get("reply_deadline"),
+            "task_status": task.get("task_status"),
+        }
+    except Exception as e:
+        return {"tool": "procurement_create_task", "success": False,
+                "error": f"创建任务异常: {type(e).__name__}: {e}"}
+
+
+# ════════════════════════════════════════════════════════════════
+# 采购对话辅助查询工具（给 skill-proc-chat 用，LLM 对话式收集信息时调用）
+# ════════════════════════════════════════════════════════════════
+
+def tool_procurement_query_contract(keyword: str = "") -> dict:
+    """查询可用合同列表（用于对话中给用户列出选项）。
+    keyword: 可选的合同编号/名称关键字（模糊匹配）。空则返回全部合同。
+    返回: {contract_no, contract_name, pm_name, pm_email, receiver_name, receiver_phone, receiver_address}
+    """
+    try:
+        conn = _proc_db_conn()
+        cur = conn.cursor()
+        if keyword and keyword.strip():
+            like = f"%{keyword.strip()}%"
+            cur.execute("""
+                SELECT id, contract_no, contract_name, pm_name, pm_email,
+                       receiver_name, receiver_phone, receiver_address
+                FROM procurement_contract
+                WHERE contract_no LIKE ? OR contract_name LIKE ?
+                ORDER BY id LIMIT 20
+            """, (like, like))
+        else:
+            cur.execute("""
+                SELECT id, contract_no, contract_name, pm_name, pm_email,
+                       receiver_name, receiver_phone, receiver_address
+                FROM procurement_contract
+                ORDER BY id LIMIT 20
+            """)
+        rows = []
+        for r in cur.fetchall():
+            rows.append({
+                "id": r[0],
+                "contract_no": r[1],
+                "contract_name": r[2],
+                "pm_name": r[3],
+                "pm_email": r[4],
+                "receiver_name": r[5] or "",
+                "receiver_phone": r[6] or "",
+                "receiver_address": r[7] or "",
+            })
+        conn.close()
+        return {"tool": "procurement_query_contract", "success": True, "records": rows, "total": len(rows)}
+    except Exception as e:
+        return {"tool": "procurement_query_contract", "success": False,
+                "error": f"查询合同失败: {type(e).__name__}: {e}", "records": [], "total": 0}
+
+
+def tool_procurement_query_spare_part(keyword: str = "") -> dict:
+    """查询可用备件型号列表（用于对话中给用户列出选项）。
+    keyword: 可选的备件名称/型号/品牌关键字（模糊匹配）。空则返回全部备件。
+    返回: {part_code, part_name, spec_model, brand, unit, category, condition}
+    """
+    try:
+        conn = _proc_db_conn()
+        cur = conn.cursor()
+        if keyword and keyword.strip():
+            like = f"%{keyword.strip()}%"
+            cur.execute("""
+                SELECT id, part_code, part_name, spec_model, brand, unit, category, condition
+                FROM procurement_spare_part
+                WHERE part_name LIKE ? OR spec_model LIKE ? OR brand LIKE ? OR part_code LIKE ?
+                ORDER BY id LIMIT 20
+            """, (like, like, like, like))
+        else:
+            cur.execute("""
+                SELECT id, part_code, part_name, spec_model, brand, unit, category, condition
+                FROM procurement_spare_part
+                ORDER BY id LIMIT 20
+            """)
+        rows = []
+        for r in cur.fetchall():
+            rows.append({
+                "id": r[0],
+                "part_code": r[1],
+                "part_name": r[2],
+                "spec_model": r[3],
+                "brand": r[4],
+                "unit": r[5],
+                "category": r[6],
+                "condition": r[7] or "",
+            })
+        conn.close()
+        return {"tool": "procurement_query_spare_part", "success": True, "records": rows, "total": len(rows)}
+    except Exception as e:
+        return {"tool": "procurement_query_spare_part", "success": False,
+                "error": f"查询备件失败: {type(e).__name__}: {e}", "records": [], "total": 0}
+
+
+def tool_procurement_query_supplier(keyword: str = "") -> dict:
+    """查询资源池供应商列表（用于对话中给用户列出选项）。
+    keyword: 可选的供应商名称/邮箱关键字（模糊匹配）。空则返回全部供应商。
+    返回: {id, name, email, capability}
+    """
+    try:
+        conn = _proc_db_conn()
+        cur = conn.cursor()
+        if keyword and keyword.strip():
+            like = f"%{keyword.strip()}%"
+            cur.execute("""
+                SELECT id, name, email, capability
+                FROM procurement_supplier
+                WHERE name LIKE ? OR email LIKE ?
+                ORDER BY id LIMIT 20
+            """, (like, like))
+        else:
+            cur.execute("""
+                SELECT id, name, email, capability
+                FROM procurement_supplier
+                ORDER BY id LIMIT 20
+            """)
+        rows = []
+        for r in cur.fetchall():
+            rows.append({
+                "id": r[0],
+                "name": r[1],
+                "email": r[2],
+                "capability": r[3] or "",
+            })
+        conn.close()
+        return {"tool": "procurement_query_supplier", "success": True, "records": rows, "total": len(rows)}
+    except Exception as e:
+        return {"tool": "procurement_query_supplier", "success": False,
+                "error": f"查询供应商失败: {type(e).__name__}: {e}", "records": [], "total": 0}
 

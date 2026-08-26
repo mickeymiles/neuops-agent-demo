@@ -1,0 +1,264 @@
+{
+  "skill_id": "skill-proc-chat",
+  "name": "备件采购任务创建",
+  "version": "V2.0.0",
+  "trigger_intent": "用户发起备件采购申请（采购/询价/备件/买/购买 等关键词）",
+  "exit_condition": "用户明确取消 | 会话超时 | API调用成功返回",
+  "owner": "运维平台战队",
+  "biz_domain": "备件采购",
+  "field_model": {
+    "spare_model": {
+      "type": "string",
+      "required": "must",
+      "constraint": "非空",
+      "editable": true,
+      "label": "备件型号",
+      "description": "用户提到的备件型号，如 '内存条 DDR4 32GB'"
+    },
+    "spare_count": {
+      "type": "integer",
+      "required": "must",
+      "constraint": ">0 正整数",
+      "editable": true,
+      "label": "采购数量",
+      "description": "采购件数，必须大于0的整数",
+      "validation": "isinstance(value, int) and value > 0"
+    },
+    "emergency_level": {
+      "type": "enum",
+      "required": "must",
+      "values": [
+        "2h",
+        "4h",
+        "5h"
+      ],
+      "display_mapping": {
+        "2h": "2小时",
+        "4h": "4小时",
+        "5h": "5小时"
+      },
+      "editable": true,
+      "label": "紧急等级",
+      "validation": "value in ['2h','4h','5h']"
+    },
+    "contract_id": {
+      "type": "string",
+      "required": "conditional",
+      "condition": "emergency_level == '2h'",
+      "constraint": "2h紧急等级时不可为空",
+      "editable": true,
+      "label": "关联合同",
+      "description": "仅2h高紧急等级时必须采集"
+    },
+    "project_id": {
+      "type": "string",
+      "required": "optional",
+      "default": "",
+      "editable": true,
+      "label": "项目ID",
+      "description": "选填，不问用户"
+    },
+    "supplier_list": {
+      "type": "array",
+      "required": "optional",
+      "default": [],
+      "editable": true,
+      "label": "询价供应商",
+      "description": "不问用户。默认全量资源池，仅追加临时供应商时采集"
+    }
+  },
+  "state_machine": [
+    {
+      "state": "INIT",
+      "action": "extract_context_fields",
+      "next": "CHK_MISSING",
+      "desc": "从用户自然语言提取已知字段"
+    },
+    {
+      "state": "CHK_MISSING",
+      "action": "check_required_fields",
+      "transitions": [
+        {
+          "condition": "all_fields_present",
+          "next": "CONFIRM_SUMMARY"
+        },
+        {
+          "condition": "missing_spare_model",
+          "next": "ASK_SPARE_MODEL"
+        },
+        {
+          "condition": "missing_spare_count",
+          "next": "ASK_SPARE_COUNT"
+        },
+        {
+          "condition": "missing_emergency",
+          "next": "ASK_EMERGENCY"
+        },
+        {
+          "condition": "missing_contract",
+          "next": "ASK_CONTRACT_ID"
+        }
+      ],
+      "desc": "检查必填字段是否齐备，决定追问方向"
+    },
+    {
+      "state": "ASK_SPARE_MODEL",
+      "action": "call_query_tool_and_render",
+      "retry": {
+        "max": 2,
+        "on_fail": "ASK_SPARE_MODEL_MANUAL"
+      },
+      "query_tool": "procurement_query_spare_part",
+      "desc": "调查询Tool获取备件列表，渲染选项"
+    },
+    {
+      "state": "ASK_SPARE_MODEL_MANUAL",
+      "action": "render_template",
+      "retry": {
+        "max": 2
+      },
+      "desc": "查询无结果时，要求用户手动输入型号"
+    },
+    {
+      "state": "ASK_SPARE_COUNT",
+      "action": "render_template",
+      "retry": {
+        "max": 2
+      },
+      "desc": "追问采购数量"
+    },
+    {
+      "state": "ASK_EMERGENCY",
+      "action": "render_template",
+      "retry": {
+        "max": 2
+      },
+      "desc": "追问紧急等级（列选项）"
+    },
+    {
+      "state": "ASK_CONTRACT_ID",
+      "action": "call_query_tool_and_render",
+      "retry": {
+        "max": 1
+      },
+      "query_tool": "procurement_query_contract",
+      "desc": "仅2h紧急时追问合同"
+    },
+    {
+      "state": "CONFIRM_SUMMARY",
+      "action": "render_template",
+      "transitions": [
+        {
+          "condition": "user_confirmed",
+          "next": "INVOKE_FUNCTION"
+        },
+        {
+          "condition": "user_corrected",
+          "next": "CHK_MISSING"
+        },
+        {
+          "condition": "user_canceled",
+          "next": "FINISH_CANCEL"
+        }
+      ],
+      "desc": "结构化摘要确认"
+    },
+    {
+      "state": "INVOKE_FUNCTION",
+      "action": "call_external_function",
+      "next": "WAIT_FUNCTION_RETURN",
+      "desc": "绑定函数调用，Skill 不控制重试/超时"
+    },
+    {
+      "state": "WAIT_FUNCTION_RETURN",
+      "action": "handle_function_result",
+      "transitions": [
+        {
+          "condition": "result_success",
+          "next": "FINISH_SUCCESS"
+        },
+        {
+          "condition": "result_failed",
+          "next": "ERROR_HANDLE"
+        }
+      ],
+      "desc": "处理函数返回结果"
+    },
+    {
+      "state": "FINISH_SUCCESS",
+      "action": "render_template",
+      "desc": "创建成功，返回任务报告"
+    },
+    {
+      "state": "FINISH_CANCEL",
+      "action": "render_template",
+      "desc": "用户取消"
+    },
+    {
+      "state": "ERROR_HANDLE",
+      "action": "render_template",
+      "desc": "创建失败，友好提示"
+    }
+  ],
+  "dialog_templates": {
+    "ASK_SPARE_MODEL": "请选择需要采购的备件型号：\n{options}\n请回复序号；若为库里没有的新型号，请直接输入完整型号描述。",
+    "ASK_SPARE_MODEL_MANUAL": "系统中未找到匹配的备件型号。请直接输入完整型号描述（如：DDR4 32GB 3200MHz 内存条）。",
+    "ASK_SPARE_COUNT": "需要采购多少？（如 2 个、5 条、10 块）",
+    "ASK_EMERGENCY": "请选择紧急等级：\n  ① 2小时\n  ② 4小时\n  ③ 5小时\n回复序号即可。",
+    "ASK_CONTRACT_ID": "本次为2小时紧急采购，需关联合同。请选择：\n{options}\n回复序号；若无关联合同则无法以2h紧急等级创建，可降为4h。",
+    "CONFIRM_SUMMARY": "请确认采购信息：\n  备件：{spare_model}\n  数量：{spare_count}\n  紧急等级：{emergency_level_display}\n  合同：{contract_id_display}\n  询价供应商：默认全量资源池（3家）{supplier_extra}\n确认无误请回复「确认」或「创建」。",
+    "SUCCESS_TIP": "✅ 已创建询比价任务 {task_id}\n  备件：{spare_model} × {spare_count}\n  紧急等级：{emergency_level_display}\n  截止时间：{reply_deadline}\n  已向资源池供应商发送询价邮件，收到回复后将自动汇总报价。",
+    "FAIL_TIP": "⚠️ 采购任务创建失败：{error_msg}\n请稍后重试，或手动在采购平台创建。",
+    "CANCEL_TIP": "已取消本次备件采购申请。如有需要请重新发起。",
+    "VALIDATE_ERROR_NUM": "采购数量必须是大于0的整数，请重新输入。",
+    "VALIDATE_ERROR_EMERGENCY": "紧急等级无效，请选择：① 2小时 ② 4小时 ③ 5小时"
+  },
+  "function_binding": {
+    "function_id": "procurement_create_task",
+    "pass_data": "full_collected_fields",
+    "desc": "Tool 层负责参数映射、字段过滤、HTTP 调用、错误处理",
+    "note": "Skill 完全不传 inquiry_supplier_list，由 Tool 层处理默认带全量资源池"
+  },
+  "logging": {
+    "points": [
+      "state_enter",
+      "state_exit",
+      "user_input",
+      "function_invoke"
+    ],
+    "mask_fields": [
+      "contract_id"
+    ],
+    "persist_session": true,
+    "note": "会话埋点归属 Skill；工具埋点（request/response/http）归属 Tool 层"
+  },
+  "test_cases": {
+    "positive": [
+      "用户:'帮我买2条内存条' → 提取{型号,数量} → 问紧急等级 → 确认 → 创建成功",
+      "用户:'买DDR4 32GB 3200MHz 2个' → 查库命中 → 问紧急 → 确认 → 创建",
+      "用户:'我要采购10块硬盘，明天要' → 识别2h紧急 → 问合同 → 确认 → 创建",
+      "用户:'买3个内存条' → 查库多条 → 列出选项 → 用户选序号 → 继续采集"
+    ],
+    "negative": [
+      "用户:'买0个' → 校验拦截 → 重试追问数量",
+      "用户:'买内存条' → 查库无匹配 → 手动输入 → 继续采集",
+      "用户:'4h' → 紧急等级合法 → 继续",
+      "用户:'快速' → 紧急等级非法 → 追问重试"
+    ],
+    "boundary": [
+      "用户:'买1个内存条，2h紧急' → 缺合同 → 追问合同 → 用户说'无' → 拒绝创建建议降4h",
+      "用户:'帮我买东西' → 缺型号+数量+紧急 → 依次追问",
+      "用户:'确认' → 创建成功 → 返回报告",
+      "用户:'取消' → FINISH_CANCEL"
+    ]
+  },
+  "tools_section": "- 备件查询: procurement_query_spare_part(keyword) → 在 ASK_SPARE_MODEL 状态调用\n- 合同查询: procurement_query_contract() → 仅在 2h 紧急等级时的 ASK_CONTRACT_ID 状态调用\n- 供应商查询: procurement_query_supplier() → 仅当用户主动询问时调用\n- 进度查询: table_query(table_key=\"procurement_task\", filter={\"task_id\":\"xxx\"}) → 用户问进度时调用",
+  "tools": [
+    "procurement_query_contract",
+    "procurement_query_spare_part",
+    "procurement_query_supplier",
+    "procurement_create_task",
+    "table_query",
+    "read_inbox_mail"
+  ]
+} 

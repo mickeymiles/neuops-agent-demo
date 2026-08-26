@@ -20,16 +20,12 @@ SKILLS = [
     {"id": "skill-20", "name": "项目管理与成本利润治理", "desc": "承接两单一物体系：里程碑跟进与逾期预警、日报工时合规质检、四算刚性约束校验（概算≥预算≥核算≥决算）、集团指标监控（人均效/元效/双按完成率）、工时→成本→利润闭环联动，全部只读研判+预警", "category": "custom", "tags": ["项目","四算","工时","成本","集团考核"], "enabled": True},
     # ── 售前投标域（知识库/模板，只生成不执行）──
     {"id": "skill-21", "name": "售前投标方案智能组装", "desc": "基于内部知识库、历史方案与标准模板库智能匹配，自动生成技术方案建议书/招标点对点应答/售前汇报PPT大纲/运维实施方案，规避过期口径，统一售前输出质量，只生成不执行", "category": "custom", "tags": ["售前","投标","方案","知识库"], "enabled": True},
-    # ── 备品备件采购询比价域（emp-008 真实对接 163 邮箱+飞书 API+9006 SQLite）──
-    {"id": "skill-proc-01", "name": "创建询比价任务", "desc": "校验主数据，生成 task_id，计算 reply_deadline，初始化询比价任务实例，状态=询比价进行中", "category": "custom", "tags": ["采购","询比价","备件","任务创建"], "enabled": True},
-    {"id": "skill-proc-02", "name": "组装&发送询价邮件", "desc": "套用模板组装询价邮件，调用 MCP 批量发送询价邮件给供应商；飞书通知项目经理任务已发起", "category": "custom", "tags": ["采购","询比价","邮件","通知"], "enabled": True},
-    {"id": "skill-proc-03", "name": "邮件报价解析监听", "desc": "监听供应商入站邮件，解析报价抽取供应商、品牌、型号、价格，回填 task 报价集合", "category": "custom", "tags": ["采购","询比价","邮件","报价解析"], "enabled": True},
-    {"id": "skill-proc-04", "name": "定时进度&告警", "desc": "依据 task 状态、截止时间生成进度/告警消息体，每小时进度推送、临期 30min 告警、截止超时清单", "category": "custom", "tags": ["采购","询比价","定时","告警"], "enabled": True},
-    {"id": "skill-proc-05", "name": "选型确认处理", "desc": "项目经理平台勾选供应商后，更新 task 状态为已选型确认，组装发送采购确认邮件给选中供应商", "category": "custom", "tags": ["采购","选型","确认","邮件"], "enabled": True},
-    {"id": "skill-proc-06", "name": "发货信息解析更新", "desc": "解析供应商发货邮件，回填发货时间、物流单号，切换任务状态为供应商发货中", "category": "custom", "tags": ["采购","发货","物流","邮件解析"], "enabled": True},
-    {"id": "skill-proc-07", "name": "测试结果录入处理", "desc": "项目经理录入测试结果，测试通过触发台账写入并闭环，失败标记异常状态告警", "category": "custom", "tags": ["采购","收货","测试","闭环"], "enabled": True},
-    {"id": "skill-proc-08", "name": "台账写入", "desc": "任务流程闭环，将 task 业务数据写入采购业务台账作为结算凭证", "category": "custom", "tags": ["采购","台账","结算","闭环"], "enabled": True},
-    {"id": "skill-proc-09", "name": "任务取消处理", "desc": "终止定时轮询，标记任务取消状态，记录取消原因，不写入台账", "category": "custom", "tags": ["采购","取消","流程"], "enabled": True},
+    # ── 备品备件采购询比价域（emp-008，三层架构：认知Skill + 流程Flow + 原子Tool）──
+    # 原 skill-proc-01~09 已重构为 Flow 步骤（确定性流程编排，不需要 LLM）
+    # 新增 3 个真正的认知 Skill（需要 LLM 理解/生成/决策）：
+    {"id": "skill-proc-chat", "name": "采购询比价对话编排", "desc": "对话入口：理解用户采购需求，追问缺失必填项（合同/备件/供应商/紧急等级），校验主数据，触发采购流程并反馈进度", "category": "custom", "tags": ["采购","对话","意图识别","追问"], "enabled": True},
+    {"id": "skill-proc-mail-compose", "name": "采购邮件内容组装", "desc": "根据任务上下文组装询价邮件/采购确认邮件/验收通知邮件的正文与主题，需要模型理解业务字段并措辞", "category": "custom", "tags": ["采购","邮件","内容生成"], "enabled": True},
+    {"id": "skill-proc-parse", "name": "供应商邮件智能解析", "desc": "解析供应商回复邮件中的报价/发货信息，正则Tool处理80%标准格式，LLM兜底处理20%非标长尾格式", "category": "custom", "tags": ["采购","解析","报价","物流"], "enabled": True},
 ]
 
 
@@ -56,8 +52,8 @@ MOCK_EMPLOYEES = [
      "skills": ["skill-21"],
      "rag_kb": "售前知识库-历史方案与中标库", "prompt": "你是一位售前投标方案智能组装专家，负责基于知识库快速标准化产出投标材料，只生成方案不执行任何操作。你的能力：①智能匹配——通过kb_knowledge_read检索内部知识库/历史方案/中标库，按行业与场景匹配最相关方案，剔除冗余、精准拼装（不堆砌）；②自动生成——生成技术方案建议书（完整版/简版）、招标文件点对点技术应答、售前汇报PPT大纲+正文、运维方案/实施方案/项目优势内容；③模板复用——通过bid_template_read读取投标标准模板库与技术规范模板，保证结构规范；④合规自检——自动规避过期口径、错误参数，标准化事业部售前话术；⑤客户化定制——支持按需生成客户化版本；⑥导出交付——通过doc_export生成结构化文档（Word/PPT大纲）供人工下载使用。红线：只生成方案与文档，不执行任何系统变更。", "model": "deepseek-v4"},
     {"id": "emp-008", "name": "备品备件采购询比价专员", "desc": "面向项目现场备品备件采购询比价业务。项目经理发起询价 → 自动批量发送询价邮件给供应商 → 监听供应商报价邮件解析回填 → 每小时飞书推送进度/临期告警 → 平台选型确认 → 自动发采购确认邮件 → 解析发货物流 → 测试通过自动写入采购台账闭环。真实对接 163 邮箱（IMAP/SMTP）、飞书开放 API、9006 SQLite。", "type": "采购询比价", "created": "2026-08-21", "updated": "2026-08-21",
-     "skills": ["skill-proc-01","skill-proc-02","skill-proc-03","skill-proc-04","skill-proc-05","skill-proc-06","skill-proc-07","skill-proc-08","skill-proc-09"],
-     "rag_kb": "采购知识库-询比价流程与邮件模板", "prompt": "你是备品备件采购询比价专员（emp-008），负责询比价全流程的自动化执行与监控。你的能力：①创建询比价任务——校验主数据、生成 task_id、计算 reply_deadline、初始化任务实例；②组装&发送询价邮件——套用模板批量发送询价邮件给供应商、飞书通知项目经理任务已发起；③邮件报价解析监听——监听供应商入站邮件、解析报价抽取供应商/品牌/型号/价格、回填 task 报价集合；④定时进度&告警——每小时飞书推送进度、距截止 30min 高优告警、截止超时清单；⑤选型确认处理——项目经理勾选后更新状态、组装发送采购确认邮件；⑥发货信息解析更新——解析发货邮件回填发货时间/物流单号、切换状态为供应商发货中；⑦测试结果录入处理——测试通过触发台账写入并闭环、失败标记异常告警；⑧台账写入——任务闭环将数据写入采购台账；⑨任务取消处理——终止轮询、标记取消、不写台账。红线：①只做系统自动执行部分，选型确认/测试结果录入/任务取消由项目经理人工触发；②不解析现场工程师的需求邮件，仅作为项目经理参考；③异常状态不自动恢复，必须人工操作。", "model": "deepseek-v4"},
+     "skills": ["skill-proc-chat","skill-proc-mail-compose","skill-proc-parse"],
+     "rag_kb": "采购知识库-询比价流程与邮件模板", "prompt": "你是备品备件采购询比价专员（emp-008），通过三个认知 Skill 完成采购全流程：\n\n【Skill-1：采购询比价对话编排（skill-proc-chat）】\n你是用户对话入口。当用户说「我要采购」「帮我询个价」「备件XXX需要买」时：\n①意图识别——判断这是采购请求，提取已知字段（备件型号/数量/合同名或号/紧急等级/供应商）\n②追问补全——对照必填清单{合同名/号,备件型号,采购数量,紧急等级(2h/4h/5h),询价供应商列表}，逐个追问缺失项\n③校验——调 table_query 查 procurement_contract 表验证合同号存在；调 table_query 查 procurement_supplier 表验证供应商邮箱\n④触发流程——信息齐全后确认「已为你创建询比价任务PROC-xxx，已向N家供应商发送询价邮件，截止时间XX」，系统自动触发 Flow（创建任务+发送询价+飞书通知）\n⑤进度查询——用户问「报价情况」「到哪步了」时，调 table_query 查 procurement_task 返回进度并组织语言回答\n⑥异常提醒——报价型号不匹配/超时未回复时主动告知用户\n\n【Skill-2：采购邮件内容组装（skill-proc-mail-compose）】\n根据任务上下文组装邮件正文（不负责发送，发送是Flow调用Tool完成的）：\n①询价邮件——输入{项目名,备件型号,数量,截止时间,任务ID}→输出{subject,body}，措辞专业、简洁，不含合同号（隐私）\n②采购确认邮件——输入{供应商名,备件型号,数量,成交单价,任务ID}→输出{subject,body}\n③验收通知邮件——输入{备件型号,数量,任务ID}→输出{subject,body}\n\n【Skill-3：供应商邮件智能解析（skill-proc-parse）】\n解析供应商回复邮件，正则Tool做80%标准格式兜底，你做20%非标长尾：\n①报价解析——调 procurement_parse_quote Tool 先试正则（6层策略）；如果策略=P6_need_manual（完全无法解析），你用LLM理解邮件正文提取{单价,总价,品牌,型号,货期}\n②物流解析——调 procurement_parse_logistics Tool 先试正则（3层策略）；如果返回空，你用LLM从邮件正文提取{物流单号,承运商,发货日期}\n\n红线：选型确认/测试结果录入/任务取消由项目经理人工触发，你不自动执行。异常状态不自动恢复。", "model": "deepseek-v4"},
 ]
 
 
@@ -71,6 +67,324 @@ MOCK_BG_TASKS = [
     {"id": "bgt-4", "name": "AI 自监控巡检", "status": "running", "desc": "9007 监控数字员工任务/调用/长任务，异常自动告警"},
     {"id": "bgt-5", "name": "代码变更回归检查", "status": "paused", "desc": "9006 代码变更后自动跑测试，失败升级人工处理"},
 ]
+
+
+# ═══════════════════════════════════════════════════════════════
+# 结构化 Skill 定义（V2 规范版）
+#
+# 设计原则：
+#   Skill 层只负责：对话采集、状态流转、会话侧轻量字段校验、话术渲染、函数绑定声明
+#   Tool 层负责：API调用、DB查询、邮件发送、HTTP重试、错误码翻译、持久化
+#
+# 参考：团队标准 Skill 规范 V1.0
+# ═══════════════════════════════════════════════════════════════
+
+STRUCTURED_SKILLS = {
+    "skill-proc-chat": {
+        "skill_id": "skill-proc-chat",
+        "name": "备件采购任务创建",
+        "version": "V2.0.0",
+        "trigger_intent": "用户发起备件采购申请（采购/询价/备件/买/购买 等关键词）",
+        "exit_condition": "用户明确取消 | 会话超时 | API调用成功返回",
+        "owner": "运维平台战队",
+        "biz_domain": "备件采购",
+
+        # ── 字段模型：会话侧校验规则（Tool 层有兜底硬校验） ──
+        "field_model": {
+            "spare_model": {
+                "type": "string", "required": "must", "constraint": "非空",
+                "editable": True, "label": "备件型号",
+                "description": "用户提到的备件型号，如 '内存条 DDR4 32GB'"
+            },
+            "spare_count": {
+                "type": "integer", "required": "must", "constraint": ">0 正整数",
+                "editable": True, "label": "采购数量",
+                "description": "采购件数，必须大于0的整数",
+                "validation": "isinstance(value, int) and value > 0"
+            },
+            "emergency_level": {
+                "type": "enum", "required": "must",
+                "values": ["2h", "4h", "5h"],
+                "display_mapping": {"2h": "2小时", "4h": "4小时", "5h": "5小时"},
+                "editable": True, "label": "紧急等级",
+                "validation": "value in ['2h','4h','5h']"
+            },
+            "contract_id": {
+                "type": "string", "required": "conditional",
+                "condition": "emergency_level == '2h'",
+                "constraint": "2h紧急等级时不可为空",
+                "editable": True, "label": "关联合同",
+                "description": "仅2h高紧急等级时必须采集"
+            },
+            "project_id": {
+                "type": "string", "required": "optional",
+                "default": "", "editable": True, "label": "项目ID",
+                "description": "选填，不问用户"
+            },
+            "supplier_list": {
+                "type": "array", "required": "optional",
+                "default": [], "editable": True, "label": "询价供应商",
+                "description": "不问用户。默认全量资源池，仅追加临时供应商时采集"
+            }
+        },
+
+        # ── 状态机：显式状态流转 + 交互重试 ──
+        "state_machine": [
+            {"state": "INIT", "action": "extract_context_fields", "next": "CHK_MISSING",
+             "desc": "从用户自然语言提取已知字段"},
+            {"state": "CHK_MISSING", "action": "check_required_fields",
+             "transitions": [
+                 {"condition": "all_fields_present", "next": "CONFIRM_SUMMARY"},
+                 {"condition": "missing_spare_model", "next": "ASK_SPARE_MODEL"},
+                 {"condition": "missing_spare_count", "next": "ASK_SPARE_COUNT"},
+                 {"condition": "missing_emergency", "next": "ASK_EMERGENCY"},
+                 {"condition": "missing_contract", "next": "ASK_CONTRACT_ID"}
+             ],
+             "desc": "检查必填字段是否齐备，决定追问方向"},
+            {"state": "ASK_SPARE_MODEL", "action": "call_query_tool_and_render",
+             "retry": {"max": 2, "on_fail": "ASK_SPARE_MODEL_MANUAL"},
+             "query_tool": "procurement_query_spare_part",
+             "desc": "调查询Tool获取备件列表，渲染选项"},
+            {"state": "ASK_SPARE_MODEL_MANUAL", "action": "render_template",
+             "retry": {"max": 2},
+             "desc": "查询无结果时，要求用户手动输入型号"},
+            {"state": "ASK_SPARE_COUNT", "action": "render_template",
+             "retry": {"max": 2},
+             "desc": "追问采购数量"},
+            {"state": "ASK_EMERGENCY", "action": "render_template",
+             "retry": {"max": 2},
+             "desc": "追问紧急等级（列选项）"},
+            {"state": "ASK_CONTRACT_ID", "action": "call_query_tool_and_render",
+             "retry": {"max": 1},
+             "query_tool": "procurement_query_contract",
+             "desc": "仅2h紧急时追问合同"},
+            {"state": "CONFIRM_SUMMARY", "action": "render_template",
+             "transitions": [
+                 {"condition": "user_confirmed", "next": "INVOKE_FUNCTION"},
+                 {"condition": "user_corrected", "next": "CHK_MISSING"},
+                 {"condition": "user_canceled", "next": "FINISH_CANCEL"}
+             ],
+             "desc": "结构化摘要确认"},
+            {"state": "INVOKE_FUNCTION", "action": "call_external_function",
+             "next": "WAIT_FUNCTION_RETURN",
+             "desc": "绑定函数调用，Skill 不控制重试/超时"},
+            {"state": "WAIT_FUNCTION_RETURN", "action": "handle_function_result",
+             "transitions": [
+                 {"condition": "result_success", "next": "FINISH_SUCCESS"},
+                 {"condition": "result_failed", "next": "ERROR_HANDLE"}
+             ],
+             "desc": "处理函数返回结果"},
+            {"state": "FINISH_SUCCESS", "action": "render_template",
+             "desc": "创建成功，返回任务报告"},
+            {"state": "FINISH_CANCEL", "action": "render_template",
+             "desc": "用户取消"},
+            {"state": "ERROR_HANDLE", "action": "render_template",
+             "desc": "创建失败，友好提示"}
+        ],
+
+        # ── 话术模板：精确到变量占位符 ──
+        "dialog_templates": {
+            "ASK_SPARE_MODEL": (
+                "请选择需要采购的备件型号：\n"
+                "{options}\n"
+                "请回复序号；若为库里没有的新型号，请直接输入完整型号描述。"
+            ),
+            "ASK_SPARE_MODEL_MANUAL": (
+                "系统中未找到匹配的备件型号。请直接输入完整型号描述"
+                "（如：DDR4 32GB 3200MHz 内存条）。"
+            ),
+            "ASK_SPARE_COUNT": (
+                "需要采购多少？（如 2 个、5 条、10 块）"
+            ),
+            "ASK_EMERGENCY": (
+                "请选择紧急等级：\n"
+                "  ① 2小时\n"
+                "  ② 4小时\n"
+                "  ③ 5小时\n"
+                "回复序号即可。"
+            ),
+            "ASK_CONTRACT_ID": (
+                "本次为2小时紧急采购，需关联合同。请选择：\n"
+                "{options}\n"
+                "回复序号；若无关联合同则无法以2h紧急等级创建，可降为4h。"
+            ),
+            "CONFIRM_SUMMARY": (
+                "请确认采购信息：\n"
+                "  备件：{spare_model}\n"
+                "  数量：{spare_count}\n"
+                "  紧急等级：{emergency_level_display}\n"
+                "  合同：{contract_id_display}\n"
+                "  询价供应商：默认全量资源池（3家）{supplier_extra}\n"
+                "确认无误请回复「确认」或「创建」。"
+            ),
+            "SUCCESS_TIP": (
+                "✅ 已创建询比价任务 {task_id}\n"
+                "  备件：{spare_model} × {spare_count}\n"
+                "  紧急等级：{emergency_level_display}\n"
+                "  截止时间：{reply_deadline}\n"
+                "  已向资源池供应商发送询价邮件，收到回复后将自动汇总报价。"
+            ),
+            "FAIL_TIP": (
+                "⚠️ 采购任务创建失败：{error_msg}\n"
+                "请稍后重试，或手动在采购平台创建。"
+            ),
+            "CANCEL_TIP": (
+                "已取消本次备件采购申请。如有需要请重新发起。"
+            ),
+            "VALIDATE_ERROR_NUM": (
+                "采购数量必须是大于0的整数，请重新输入。"
+            ),
+            "VALIDATE_ERROR_EMERGENCY": (
+                "紧急等级无效，请选择：① 2小时 ② 4小时 ③ 5小时"
+            )
+        },
+
+        # ── 函数绑定声明（Skill 不实现函数，只声明绑定） ──
+        "function_binding": {
+            "function_id": "procurement_create_task",
+            "pass_data": "full_collected_fields",
+            "desc": "Tool 层负责参数映射、字段过滤、HTTP 调用、错误处理",
+            "note": "Skill 完全不传 inquiry_supplier_list，由 Tool 层处理默认带全量资源池"
+        },
+
+        # ── 会话侧埋点（Tool 层埋点由 mcp_tools 统一实现） ──
+        "logging": {
+            "points": ["state_enter", "state_exit", "user_input", "function_invoke"],
+            "mask_fields": ["contract_id"],
+            "persist_session": True,
+            "note": "会话埋点归属 Skill；工具埋点（request/response/http）归属 Tool 层"
+        },
+
+        # ── 测试用例（仅会话交互用例） ──
+        "test_cases": {
+            "positive": [
+                "用户:'帮我买2条内存条' → 提取{型号,数量} → 问紧急等级 → 确认 → 创建成功",
+                "用户:'买DDR4 32GB 3200MHz 2个' → 查库命中 → 问紧急 → 确认 → 创建",
+                "用户:'我要采购10块硬盘，明天要' → 识别2h紧急 → 问合同 → 确认 → 创建",
+                "用户:'买3个内存条' → 查库多条 → 列出选项 → 用户选序号 → 继续采集"
+            ],
+            "negative": [
+                "用户:'买0个' → 校验拦截 → 重试追问数量",
+                "用户:'买内存条' → 查库无匹配 → 手动输入 → 继续采集",
+                "用户:'4h' → 紧急等级合法 → 继续",
+                "用户:'快速' → 紧急等级非法 → 追问重试"
+            ],
+            "boundary": [
+                "用户:'买1个内存条，2h紧急' → 缺合同 → 追问合同 → 用户说'无' → 拒绝创建建议降4h",
+                "用户:'帮我买东西' → 缺型号+数量+紧急 → 依次追问",
+                "用户:'确认' → 创建成功 → 返回报告",
+                "用户:'取消' → FINISH_CANCEL"
+            ]
+        }
+    }
+}
+
+
+def _build_skill_prompt(skill_id: str) -> str:
+    """把结构化 Skill 定义转译为 LLM 可读的 system prompt 文本。
+
+    设计要点：
+    - 只转译 Skill 层允许的内容（字段模型/状态机/话术模板/函数绑定）
+    - 绝不包含 Tool 层细节（HTTP地址/错误码/字段映射/DB实现）
+    - 用清晰的 markdown 分节，LLM 易于理解和遵循
+    """
+    sk = STRUCTURED_SKILLS.get(skill_id)
+    if not sk:
+        return ""
+
+    lines = []
+    meta = sk
+
+    # ── 头部：Skill 元信息 ──
+    lines.append(f"# Skill: {meta['name']} ({meta['skill_id']})")
+    lines.append(f"版本: {meta['version']}")
+    lines.append(f"触发意图: {meta['trigger_intent']}")
+    lines.append(f"退出条件: {meta['exit_condition']}")
+    lines.append("")
+
+    # ── 字段模型 ──
+    lines.append("## 字段模型（会话侧校验）")
+    lines.append("")
+    lines.append("### 必填字段（必须采集）")
+    fm = meta["field_model"]
+    for fname, fdef in fm.items():
+        if fdef.get("required") in ("must",):
+            lines.append(f"- **{fname}** ({fdef.get('label', fname)}): {fdef.get('type')}, 约束: {fdef.get('constraint', '')}")
+    lines.append("")
+
+    lines.append("### 条件触发字段")
+    for fname, fdef in fm.items():
+        if fdef.get("required") == "conditional":
+            lines.append(f"- **{fname}** ({fdef.get('label', fname)}): 当 {fdef.get('condition', '')} 时采集")
+    lines.append("")
+
+    lines.append("### 选填字段（不问用户）")
+    for fname, fdef in fm.items():
+        if fdef.get("required") == "optional":
+            lines.append(f"- **{fname}** ({fdef.get('label', fname)}): {fdef.get('description', '')}")
+    lines.append("")
+
+    # ── 状态机 ──
+    lines.append("## 状态机（严格按此流转）")
+    lines.append("")
+    lines.append("### 状态流转表")
+    lines.append("| 状态 | 动作 | 流转条件 | 下一状态 |")
+    lines.append("|------|------|---------|---------|")
+    for st in meta["state_machine"]:
+        state = st["state"]
+        action = st.get("action", "")
+        if "transitions" in st:
+            for tr in st["transitions"]:
+                cond = tr["condition"]
+                nxt = tr["next"]
+                lines.append(f"| {state} | {action} | {cond} | {nxt} |")
+        else:
+            nxt = st.get("next", "")
+            lines.append(f"| {state} | {action} | - | {nxt} |")
+    lines.append("")
+
+    # ── 话术模板 ──
+    lines.append("## 话术模板（必须原样使用，变量用 {xxx} 占位）")
+    lines.append("")
+    for tname, tpl in meta["dialog_templates"].items():
+        lines.append(f"### {tname}")
+        # 转义 markdown
+        escaped = tpl.replace("\n", "<br>").replace("|", "\\|")
+        lines.append(f"{tpl}")
+        lines.append("")
+
+    # ── 函数绑定 ──
+    fb = meta.get("function_binding", {})
+    if fb:
+        lines.append("## 函数绑定（Skill 只声明，不实现）")
+        lines.append("")
+        lines.append(f"- 绑定函数: **{fb['function_id']}**")
+        lines.append(f"- 传递数据: {fb['pass_data']}")
+        lines.append(f"- 注意: {fb.get('note', '')}")
+        lines.append("")
+
+    # ── 红线 ──
+    lines.append("## 红线（违反即出错）")
+    lines.append("")
+    lines.append("- ❌ 一次性列出多个缺失项追问 → 必须分轮，每次只问1项")
+    lines.append("- ❌ 追问用户选择供应商 → 默认带全量资源池，不问")
+    lines.append("- ❌ 追问 project_id / project_name → 绝对禁止，Tool 层处理")
+    lines.append("- ❌ 用自然语言自由发挥追问 → 必须用话术模板")
+    lines.append("- ❌ 编造字段值 → 取不到就问，不猜")
+    lines.append("- ❌ 在 Skill 中实现 HTTP/DB/SMTP 调用 → 全部下沉 Tool 层")
+    lines.append("- ❌ 解析原始 HTTP 错误码 → Tool 层已封装为 {success, msg, data}")
+    lines.append("")
+
+    # ── 查询工具调用规则 ──
+    lines.append("## 查询工具调用（Skill 声明调用，Tool 层实现）")
+    lines.append("")
+    lines.append("- 备件查询: `procurement_query_spare_part(keyword)` → 在 ASK_SPARE_MODEL 状态调用")
+    lines.append("- 合同查询: `procurement_query_contract()` → 仅在 2h 紧急等级时的 ASK_CONTRACT_ID 状态调用")
+    lines.append("- 供应商查询: `procurement_query_supplier()` → 仅当用户主动询问时调用")
+    lines.append("- 进度查询: `table_query(table_key='procurement_task', filter={'task_id':'xxx'})` → 用户问进度时调用")
+    lines.append("")
+
+    return "\n".join(lines)
 
 
 SKILL_DETAILS = {
@@ -128,60 +442,26 @@ SKILL_DETAILS = {
         "tools": ["kb_knowledge_read", "bid_template_read", "doc_export"],
         "flow": "执行流程：\n1、接收投标需求（行业/场景/招标要点）\n2、检索匹配历史方案与模板\n3、拼装生成方案文档（建议书/应答/PPT大纲/实施方案）\n4、合规自检并输出结构化文档",
     },
-    # ── 备品备件采购询比价 9 个 Skill（emp-008）──
-    "skill-proc-01": {
-        "type": "Workflow业务编排技能",
-        "prompt": "你是询比价任务创建 Skill。项目经理在 9006 平台提交询价表单后，由 routes_procurement_agent 触发你执行：\n1、校验主数据（项目/合同/备件/供应商配置表）是否齐全；\n2、生成 task_id（格式 PROC-YYYYMMDDHHmmss-XXXXXX）；\n3、按紧急等级（2h/4h/5h）计算 reply_deadline = create_time + 等级时长；\n4、初始化任务实例：状态=询比价进行中、replied_supplier_quotes=[]、no_reply_supplier=inquiry_supplier_list 全部、selected_supplier=null、test_result=null、ledger_written=0；\n5、通过 table_insert 写入 procurement_task 表；\n6、输出 task 完整实例给 skill-proc-02 使用。",
-        "tools": ["table_query", "table_insert"],
-        "flow": "执行流程：\n1、接收 form_input（master_id/spare_part_model/purchase_qty/emergency_level/inquiry_supplier_list）\n2、table_query 查询 procurement_master_data 校验主数据\n3、生成 task_id + 计算 reply_deadline\n4、table_insert 写入 procurement_task 表\n5、返回 task 完整实例",
+    # ── 备品备件采购询比价域：3 个认知 Skill（emp-008）
+    # 原 skill-proc-01~09 的机械流程逻辑已降为 Flow 步骤，在 routes_procurement_agent.py 的 _flow_proc_XX 函数中实现
+    "skill-proc-chat": {
+        "type": "认知技能-对话编排",
+        "prompt": _build_skill_prompt("skill-proc-chat"),
+        "tools": ["procurement_query_contract", "procurement_query_spare_part", "procurement_query_supplier",
+                   "procurement_create_task", "table_query", "read_inbox_mail"],
+        "flow": "状态机流程：\n1. 提取已知字段\n2. 按顺序追问必采集缺失项（备件型号→数量→紧急等级），每项用指定模板\n3. 选填字段（合同/项目ID/供应商）不问或条件触发\n4. 所有必填齐备→结构化摘要确认\n5. 用户确认→调procurement_create_task\n6. 返回结果报告",
     },
-    "skill-proc-02": {
-        "type": "Workflow业务编排技能",
-        "prompt": "你是询价邮件组装&发送 Skill。skill-proc-01 创建任务后触发你执行：\n1、套用询价邮件模板（Subject：【备品备件询价】{project_name}｜合同号：{contract_no}｜任务ID:{task_id}）；\n2、替换模板变量（project_name/contract_no/spare_part_model/purchase_qty/reply_deadline）；\n3、调用 batch_send_mail 批量发送询价邮件给 inquiry_supplier_list 中每个供应商邮箱（独立发送非抄送）；\n4、调用 send_feishu_message 通知项目经理任务已发起（含 task_id/项目/合同/备件/数量/询价供应商/截止时间）；\n5、返回发送结果（成功数/失败列表）。",
-        "tools": ["batch_send_mail", "send_feishu_message"],
-        "flow": "执行流程：\n1、接收 task 完整实例\n2、组装询价邮件正文（套模板替换变量）\n3、batch_send_mail 批量发送给 inquiry_supplier_list\n4、send_feishu_message 通知项目经理任务发起\n5、返回发送结果统计",
+    "skill-proc-mail-compose": {
+        "type": "认知技能-内容生成",
+        "prompt": "你是采购邮件内容组装 Skill（skill-proc-mail-compose），根据任务上下文生成邮件正文与主题。\n\n你只负责组装内容（subject + body_text），不负责发送——发送是 Flow 调用 Tool（batch_send_mail/send_mail）完成的。\n\n【输出格式强制要求】必须严格按下列模板逐字输出，不得改词、增删、换行或加寒暄，只把大括号占位替换为上下文对应值：\n\n①询价邮件（输入：contract_no, contract_name, spare_part_model, part_type, part_brand, part_pn, part_spec, part_condition, purchase_qty, reply_deadline）\n  subject = \"{contract_no}（{contract_name}）-{spare_part_model}型号备件询价邮件\"\n  body_text =\n\"\"\"您好，请于{reply_deadline}前回复符合以下条件的备件价格\n类型：{part_type}\n品牌：{part_brand}\n型号（PN）：{part_pn}\n规格：{part_spec}\n成色：{part_condition}\n数量：{purchase_qty}\"\"\"\n\n②采购确认邮件（输入：contract_no, contract_name, spare_part_model, purchase_qty, delivery_deadline, receiver_name, receiver_phone, receiver_address, task_id, supplier_name）\n  subject = \"【采购确认】{task_id}｜{contract_name} {spare_part_model} 备品备件确认采购\"\n  body_text =\n\"\"\"我司采购如下备件{purchase_qty}个，请于{delivery_deadline}前测试完好后发到如下地址（提供测试报告），寄出请告知单号，谢谢。\n部件型号: {spare_part_model}  数量:{purchase_qty}\n\n邮寄地址：\n{receiver_address}\n收件人：{receiver_name}  联系方式：{receiver_phone}\"\"\"\n\n③验收通知邮件（输入：spare_part_model, purchase_qty, task_id）——通知到货验收、说明验收流程和联系方式，措辞正式。\n\n红线：只替换占位符，严格输出模板原文；措辞用中文商务正式风格。",
+        "tools": ["table_query"],
+        "flow": "执行流程：\n1、接收任务上下文（task 字段）\n2、判断邮件类型（询价/确认/验收）\n3、组装 subject + body_text\n4、返回内容，由 Flow 层调用 Tool 发送",
     },
-    "skill-proc-03": {
-        "type": "Workflow业务编排技能",
-        "prompt": "你是邮件报价解析监听 Skill。由定时调度器（procurement_scheduler）每隔几分钟触发你执行：\n1、通过 table_query 查询所有状态=询比价进行中 的 task，取每个 task 的 inquiry_supplier_list 邮箱作为 filter_sender_email_list；\n2、调用 read_inbox_mail 拉取自上次轮询时间以来的供应商入站邮件；\n3、用 LLM 解析邮件正文抽取报价字段（supplier_name/brand/model/unit_price）；\n4、调用 table_update 将报价追加到 task 的 replied_supplier_quotes，同步更新 no_reply_supplier；\n5、若全部供应商已回复，调用 send_feishu_message 推送收齐通知；\n6、如发现报价型号与需求备件不一致，飞书提醒项目经理核对，不纳入有效报价。",
-        "tools": ["read_inbox_mail", "table_query", "table_update", "send_feishu_message"],
-        "flow": "执行流程：\n1、table_query 查询进行中 task 列表\n2、read_inbox_mail 拉取供应商邮箱的新邮件\n3、LLM 解析抽取报价字段\n4、table_update 回填 task 报价集合\n5、全部回复则 send_feishu_message 推送收齐通知",
-    },
-    "skill-proc-04": {
-        "type": "Workflow业务编排技能",
-        "prompt": "你是定时进度&告警 Skill。由定时调度器每小时触发你执行：\n1、通过 table_query 查询所有状态=询比价进行中 的 task；\n2、对每个 task 计算 remain_sec = reply_deadline - now；\n3、每小时调用 send_feishu_message 推送进度（已回复/总家数/剩余时长）；\n4、若 0 < remain_sec <= 30min，高优先级飞书告警即将超时+列出未回复供应商；\n5、若 remain_sec <= 0，标记超时供应商、调用 table_update 更新状态为部分/全部供应商超时、飞书推送超时清单；\n6、区分部分超时（已回复>0）与全部超时（已回复=0）两种状态。",
-        "tools": ["table_query", "table_update", "send_feishu_message"],
-        "flow": "执行流程：\n1、table_query 查询进行中 task\n2、计算剩余时间，判断是否临期/超时\n3、send_feishu_message 推送进度/告警\n4、超时则 table_update 更新状态",
-    },
-    "skill-proc-05": {
-        "type": "Workflow业务编排技能",
-        "prompt": "你是选型确认处理 Skill。项目经理在 9006 平台勾选供应商、录入成交单价、点击确认采购后触发你执行：\n1、调用 table_update 更新 task 的 selected_supplier + deal_unit_price + task_status=已选型确认；\n2、套用采购确认邮件模板（Subject：【采购确认】任务ID:{task_id}｜{project_name} 备品备件确认采购）；\n3、调用 send_mail 发送采购确认邮件给选中供应商；\n4、调用 send_feishu_message 通知项目经理已下发采购确认。",
-        "tools": ["table_update", "send_mail", "send_feishu_message"],
-        "flow": "执行流程：\n1、接收 task_id/selected_supplier/deal_unit_price\n2、table_update 更新 task 状态与选中供应商\n3、组装采购确认邮件并 send_mail 发送\n4、send_feishu_message 通知项目经理",
-    },
-    "skill-proc-06": {
-        "type": "Workflow业务编排技能",
-        "prompt": "你是发货信息解析更新 Skill。由定时调度器触发你执行：\n1、通过 table_query 查询所有状态=已选型确认 的 task，取 selected_supplier.email 作为 filter_sender_email_list；\n2、调用 read_inbox_mail 拉取选中供应商的新邮件；\n3、用 LLM 解析邮件抽取发货时间（delivery_time）与物流单号（logistics_no）；\n4、调用 table_update 更新 task 的 delivery_time/logistics_no/task_status=供应商发货中；\n5、调用 send_feishu_message 推送发货信息给项目经理（提醒现场工程师留意收货测试）。",
-        "tools": ["read_inbox_mail", "table_query", "table_update", "send_feishu_message"],
-        "flow": "执行流程：\n1、table_query 查询已选型确认 task\n2、read_inbox_mail 拉取选中供应商邮件\n3、LLM 解析发货时间与物流单号\n4、table_update 更新 task 状态\n5、send_feishu_message 推送发货通知",
-    },
-    "skill-proc-07": {
-        "type": "Workflow业务编排技能",
-        "prompt": "你是测试结果录入处理 Skill。项目经理在 9006 平台录入测试结果后触发你执行：\n1、调用 table_update 写入 test_result + remark；\n2、若 test_result=通过，调用 skill-proc-08 触发台账写入，再调用 table_update 设 task_status=流程闭环/ledger_written=1，最后 send_feishu_message 通知台账更新完成；\n3、若 test_result=失败，调用 table_update 设 task_status=收货测试失败，send_feishu_message 高优告警项目经理人工处置（换货/重新询价）。",
-        "tools": ["table_update", "send_feishu_message"],
-        "flow": "执行流程：\n1、接收 task_id/test_result/remark\n2、table_update 写入测试结果\n3、通过则触发 skill-proc-08 写台账 + 闭环 + 通知\n4、失败则 table_update 标记异常 + 告警",
-    },
-    "skill-proc-08": {
-        "type": "Workflow业务编排技能",
-        "prompt": "你是台账写入 Skill。skill-proc-07 在测试通过后触发你执行：\n1、从 task 完整实例提取台账字段（task_id/project_id/project_name/contract_no/spare_part_model/purchase_qty/selected_supplier_name/deal_unit_price/delivery_time/logistics_no/test_result/task_close_time）；\n2、调用 table_insert 写入 procurement_ledger 表；\n3、返回 ledger_id；\n4、幂等保护：若 task.ledger_written=1 则不重写。",
-        "tools": ["table_insert"],
-        "flow": "执行流程：\n1、接收 task 完整实例\n2、提取台账字段\n3、table_insert 写入 procurement_ledger\n4、返回 ledger_id",
-    },
-    "skill-proc-09": {
-        "type": "Workflow业务编排技能",
-        "prompt": "你是任务取消处理 Skill。项目经理在 9006 平台执行取消任务（任意未闭环状态）后触发你执行：\n1、调用 table_update 更新 task_status=任务已取消 + cancel_reason + cancel_time；\n2、终止该 task 的定时轮询（由调度器按 task_status 过滤自然实现）；\n3、不写入台账（即使已闭环的也不可取消）；\n4、调用 send_feishu_message 通知项目经理任务已取消。",
-        "tools": ["table_update", "send_feishu_message"],
-        "flow": "执行流程：\n1、接收 task_id/cancel_reason\n2、table_update 设状态=任务已取消 + cancel_reason\n3、send_feishu_message 通知任务取消\n4、不写台账",
+    "skill-proc-parse": {
+        "type": "认知技能-智能解析",
+        "prompt": "你是供应商邮件智能解析 Skill（skill-proc-parse）。核心职责：阅读供应商回复邮件正文，理解其意图（报价 / 发货 / 两者皆有 / 无关），并提取结构化业务字段。\n\n【设计原则】你是认知主体，不是流程脚本：\n - 不预设\"先调 Tool 再 LLM 兜底\"的固定顺序\n - 你自己读懂邮件，决定要不要调用辅助 Tool\n - 标准格式邮件（如 \"单价: ¥3200 总价: 9600 顺丰SF1234567890\"）可直接提取，无需调 Tool\n - 长尾/非标/模糊表达（口语化、表格混排、多段叙述）你直接用语言理解能力提取，比正则更准\n - 仅当邮件正文很长且结构规整时，可考虑调 procurement_parse_quote / procurement_parse_logistics 作为辅助参考；调完仍由你判断是否采纳\n\n【解析目标字段】依据邮件内容判断提取哪些：\n 报价类：unit_price(单价,数字)、total_price(总价,数字)、brand(品牌)、model(型号规格)、lead_time(货期/交货期,如 \"7天\"\"3-5天\"\"次日达\"\"2026-08-25前\")\n 物流类：tracking_no(物流/快递单号)、carrier(承运商,如 顺丰/中通/京东/EMS)、delivery_date(发货日期,格式 YYYY-MM-DD)\n\n【输入上下文】每次调用会附带：mail_body(邮件正文)、expected_qty(询价数量,用于区分单价/总价)、spare_part_model(备件型号,可作 model 字段参考)、parse_mode(\"quote\"仅解析报价 / \"logistics\"仅解析物流)\n\n【输出格式】必须返回纯 JSON（无 markdown 代码块、无解释文字），字段：\n{\n  \"mail_type\": \"quote|delivery|both|unknown\",\n  \"unit_price\": 0.0,\n  \"total_price\": 0.0,\n  \"brand\": \"\",\n  \"model\": \"\",\n  \"lead_time\": \"\",\n  \"tracking_no\": \"\",\n  \"carrier\": \"\",\n  \"delivery_date\": \"\",\n  \"parse_strategy\": \"llm_direct|tool_assisted|llm_with_tool_ref|failed\",\n  \"note\": \"可选,仅当有需要人工复核的判断时填写\",\n  \"raw_reply_excerpt\": \"邮件正文前300字\"\n}\n\n【字段规则】\n - parse_mode=logistics 时，报价类字段填 0 或空字符串\n - parse_mode=quote 时，物流类字段填空字符串\n - 价格统一为浮点数（去除 ¥/,/元 等符号）\n - 无法提取的字段填空值，不要编造\n - 若 parse_mode 范围内所有字段都提取不到，parse_strategy=\"failed\"，note 说明原因\n\n【红线】\n - 不输出任何除 JSON 外的文字（包括解释、问候、确认语）\n - 不编造邮件里没有的数据\n - parse_strategy 字段标注你用了什么手段，便于审计",
+        "tools": ["procurement_parse_quote", "procurement_parse_logistics"],
+        "flow": "认知流程（由 LLM 自主决定）：\n1、阅读 mail_body，判断邮件类型（报价回复 / 发货通知 / 两者皆有 / 无关）\n2、依据 parse_mode 决定提取哪些字段（quote→报价类；logistics→物流类）\n3、标准格式可直接提取；非标格式用语言理解提取；可选调 procurement_parse_quote / procurement_parse_logistics Tool 作为参考\n4、Tool 返回结果仅供参考，由 LLM 决定是否采纳或修正\n5、输出统一 JSON，parse_strategy 标注解析手段\n6、无法解析的字段填空值，parse_strategy=failed 时由 Flow 层标记 need_manual 通知人工\n\n调用方：Flow 层 _flow_proc_03（报价解析）和 _flow_proc_06（物流解析）通过 invoke_skill_parse() 同步桥调用本 Skill。",
     },
 }
 
@@ -518,6 +798,151 @@ MCP_TOOL_SEED = [
          {"name": "doc_type", "type": "string", "required": True, "desc": "文档类型：tech_proposal/response/ppt_outline/impl_plan"},
          {"name": "title", "type": "string", "required": False, "desc": "文档标题"},
      ]},
+
+    # =====================================================================
+    # 通讯类 - 邮件（独立MCP Tools，可被任意 Skill 复用）
+    # =====================================================================
+    {"id": "send_mail", "name": "邮件单发", "icon": "📧", "tag": "外呼写入", "danger": 1, "category": "通讯",
+     "desc": "发送单封邮件（支持 TO + 抄送 CC + 回复线程 Message-ID，用于采购确认/验收通知等单发场景）",
+     "method": "POST", "path": "/local/tools/send_mail", "server_id": "neuops-local", "group": "通讯-邮件",
+     "params_schema": [
+         {"name": "to", "type": "array[string]", "required": True, "desc": "收件人邮箱列表（如 [\"a@x.com\"]）"},
+         {"name": "subject", "type": "string", "required": True, "desc": "邮件主题"},
+         {"name": "body_text", "type": "string", "required": True, "desc": "邮件正文纯文本/HTML"},
+         {"name": "cc", "type": "array[string]", "required": False, "desc": "抄送邮箱列表（全局邮件抄送由调用方注入）"},
+         {"name": "reply_to_message_id", "type": "string", "required": False, "desc": "回复到某封邮件的 Message-ID（形成邮件线程）"},
+     ]},
+    {"id": "batch_send_mail", "name": "邮件批量发送", "icon": "📬", "tag": "外呼写入", "danger": 1, "category": "通讯",
+     "desc": "批量发送邮件（每个收件人 1 封，统一主题+正文+统一抄送），用于询价群发",
+     "method": "POST", "path": "/local/tools/batch_send_mail", "server_id": "neuops-local", "group": "通讯-邮件",
+     "params_schema": [
+         {"name": "receiver_email_list", "type": "array[string]", "required": True, "desc": "收件人邮箱列表"},
+         {"name": "subject", "type": "string", "required": True, "desc": "统一邮件主题"},
+         {"name": "body_text", "type": "string", "required": True, "desc": "统一邮件正文"},
+         {"name": "cc", "type": "array[string]", "required": False, "desc": "每封邮件统一抄送邮箱列表"},
+     ]},
+    {"id": "read_inbox_mail", "name": "读取收件箱邮件", "icon": "📥", "tag": "只读查询", "danger": 0, "category": "通讯",
+     "desc": "按时间窗口+指定发件人过滤，读取收件箱 IMAP 邮件，返回 message_id/发件人/正文文本/附件摘要",
+     "method": "POST", "path": "/local/tools/read_inbox_mail", "server_id": "neuops-local", "group": "通讯-邮件",
+     "params_schema": [
+         {"name": "since_timestamp", "type": "integer", "required": True, "desc": "Unix 秒级时间戳，只读取这之后收到的邮件"},
+         {"name": "filter_sender_email_list", "type": "array[string]", "required": False, "desc": "发件人白名单；为空则返回全部"},
+     ]},
+
+    # =====================================================================
+    # 通讯类 - 飞书（独立MCP Tools，可被任意 Skill 复用）
+    # =====================================================================
+    {"id": "send_feishu_message", "name": "飞书消息推送", "icon": "💬", "tag": "外呼写入", "danger": 1, "category": "通讯",
+     "desc": "给指定飞书用户发一条纯文本消息（支持 is_alert 加急），用于任务进度通知/告警",
+     "method": "POST", "path": "/local/tools/send_feishu_message", "server_id": "neuops-local", "group": "通讯-飞书",
+     "params_schema": [
+         {"name": "receiver_feishu_open_id", "type": "string", "required": True, "desc": "飞书 Open ID（ou_xxx）"},
+         {"name": "content", "type": "string", "required": True, "desc": "消息正文（支持飞书 markdown）"},
+         {"name": "is_alert", "type": "boolean", "required": False, "desc": "是否加急推送（默认 false）"},
+     ]},
+    {"id": "send_feishu_card", "name": "飞书卡片推送", "icon": "🎴", "tag": "外呼写入", "danger": 1, "category": "通讯",
+     "desc": "给指定飞书用户发交互卡片（schema 2.0 格式），用于报价确认/审批/发货通知等交互场景",
+     "method": "POST", "path": "/local/tools/send_feishu_card", "server_id": "neuops-local", "group": "通讯-飞书",
+     "params_schema": [
+         {"name": "receiver_feishu_open_id", "type": "string", "required": True, "desc": "飞书 Open ID（ou_xxx）"},
+         {"name": "card", "type": "object", "required": True, "desc": "飞书卡片 JSON（符合 schema 2.0，会自动包 raw 层）"},
+     ]},
+
+    # =====================================================================
+    # 数据操作类 - 表 CRUD（独立MCP Tools，可被任意 Skill 复用）
+    # =====================================================================
+    {"id": "table_query", "name": "表查询", "icon": "🔍", "tag": "只读查询", "danger": 0, "category": "数据",
+     "desc": "按条件查询业务表（采购任务/台账/供应商/合同/项目主数据等），支持 where 过滤+limit+排序+关键字模糊搜索",
+     "method": "POST", "path": "/local/tools/table_query", "server_id": "neuops-local", "group": "数据-表操作",
+     "params_schema": [
+         {"name": "table_key", "type": "string", "required": True, "desc": "业务表标识，如 procurement_task/procurement_ledger/procurement_contract/procurement_spare_part"},
+         {"name": "filters", "type": "object", "required": False, "desc": "{字段: 值} 精确匹配过滤，如 {\"contract_no\": \"IDZB..\"}"},
+         {"name": "keyword", "type": "string", "required": False, "desc": "关键字模糊搜索（对表中所有TEXT列做LIKE匹配，如 keyword='内存'）"},
+         {"name": "keyword_fields", "type": "array", "required": False, "desc": "指定搜索列（可选，不传则自动搜索所有TEXT列）"},
+         {"name": "limit", "type": "integer", "required": False, "desc": "返回条数上限（默认 100）"},
+     ]},
+    {"id": "table_insert", "name": "表插入", "icon": "➕", "tag": "高危写入", "danger": 1, "category": "数据",
+     "desc": "向业务表插入一条记录（自动写 created_at），返回新 id",
+     "method": "POST", "path": "/local/tools/table_insert", "server_id": "neuops-local", "group": "数据-表操作",
+     "params_schema": [
+         {"name": "table_key", "type": "string", "required": True, "desc": "业务表标识"},
+         {"name": "record_id", "type": "string", "required": False, "desc": "主键 ID（不填则自动生成）"},
+         {"name": "data", "type": "object", "required": True, "desc": "要插入的 {字段: 值}"},
+     ]},
+    {"id": "table_update", "name": "表更新", "icon": "✏️", "tag": "高危写入", "danger": 1, "category": "数据",
+     "desc": "按主键 ID 更新业务表记录（自动更新 updated_at）",
+     "method": "POST", "path": "/local/tools/table_update", "server_id": "neuops-local", "group": "数据-表操作",
+     "params_schema": [
+         {"name": "table_key", "type": "string", "required": True, "desc": "业务表标识"},
+         {"name": "record_id", "type": "string", "required": True, "desc": "主键 ID"},
+         {"name": "data", "type": "object", "required": True, "desc": "要更新的 {字段: 值}"},
+     ]},
+    {"id": "table_upsert", "name": "表幂等插入或更新", "icon": "🔁", "tag": "高危写入", "danger": 1, "category": "数据",
+     "desc": "主键存在则更新，不存在则插入（表级幂等），用于定时 tick 不重复写数据",
+     "method": "POST", "path": "/local/tools/table_upsert", "server_id": "neuops-local", "group": "数据-表操作",
+     "params_schema": [
+         {"name": "table_key", "type": "string", "required": True, "desc": "业务表标识"},
+         {"name": "record_id", "type": "string", "required": True, "desc": "主键 ID"},
+         {"name": "data", "type": "object", "required": True, "desc": "要写入/更新的 {字段: 值}"},
+     ]},
+
+    # =====================================================================
+    # 业务解析类 - 采购询比价（独立MCP Tools，可被其他采购类 Skill 复用）
+    # =====================================================================
+    {"id": "procurement_parse_quote", "name": "供应商报价邮件解析", "icon": "💴", "tag": "只读查询", "danger": 0, "category": "解析",
+     "desc": "6 层加固解析供应商报价邮件正文：兼容\"只回一个数字\"、带¥3200元、乘法式(3×3200=9600)、漏关键字等场景，返回单价/总价/品牌/型号/货期 + 解析策略标记",
+     "method": "POST", "path": "/local/tools/procurement_parse_quote", "server_id": "neuops-local", "group": "业务解析-采购",
+     "params_schema": [
+         {"name": "body", "type": "string", "required": True, "desc": "邮件原文正文"},
+         {"name": "expected_qty", "type": "integer", "required": False, "desc": "预期采购数量（用于反推单/总价）"},
+         {"name": "spare_part_model", "type": "string", "required": False, "desc": "备件型号（没有解析到型号时的默认值）"},
+     ]},
+    {"id": "procurement_parse_logistics", "name": "供应商发货邮件解析", "icon": "📦", "tag": "只读查询", "danger": 0, "category": "解析",
+     "desc": "3 层加固解析供应商发货邮件：兼容\"顺丰 123456\"、\"单号 SF123\"、\"SF1234567890\"、13 位纯数字民营单号等；返回单号/载体/发货日期/原文片段",
+     "method": "POST", "path": "/local/tools/procurement_parse_logistics", "server_id": "neuops-local", "group": "业务解析-采购",
+     "params_schema": [
+         {"name": "body", "type": "string", "required": True, "desc": "邮件原文正文"},
+     ]},
+
+    # =====================================================================
+    # 采购业务动作类（智能体对话入口，走 9006 标准流程，保证数据一致+自动触发Flow）
+    # =====================================================================
+    {"id": "procurement_create_task", "name": "创建询比价采购任务", "icon": "📝", "tag": "业务写入", "danger": 1, "category": "采购",
+     "desc": "【对话入口专用】创建询比价采购任务。自动生成task_id、计算deadline、写操作日志、触发询价邮件+飞书通知。重要：project_id/project_name/inquiry_supplier_list 全部可选，对话中绝对不要向用户追问这3个参数！",
+     "method": "POST", "path": "/local/tools/procurement_create_task", "server_id": "neuops-local", "group": "业务动作-采购",
+     "params_schema": [
+         {"name": "project_id", "type": "string", "required": False, "desc": "⚠️ 不要向用户追问此项！传空字符串即可。"},
+         {"name": "project_name", "type": "string", "required": False, "desc": "⚠️ 不要向用户追问此项！传空字符串即可。"},
+         {"name": "contract_no", "type": "string", "required": False, "desc": "合同编号。用户主动提到合同时才追问，否则传空字符串。"},
+         {"name": "spare_part_model", "type": "string", "required": True, "desc": "备件型号（必填，如 'DDR4 32GB 3200MHz'）"},
+         {"name": "purchase_qty", "type": "number", "required": True, "desc": "采购数量（必填，正整数或小数）"},
+         {"name": "emergency_level", "type": "string", "required": True, "desc": "紧急等级（必填，枚举：2h / 4h / 5h）"},
+         {"name": "inquiry_supplier_list", "type": "array", "required": False,
+          "desc": "⚠️ 不要向用户追问此项！不传时系统自动带全量资源池3家。仅当用户主动要求追加临时供应商时才传 [{name,email}]。"},
+         {"name": "creator", "type": "string", "required": False, "desc": "创建人，默认 agent"},
+     ]},
+
+    # =====================================================================
+    # 采购对话辅助查询类（skill-proc-chat 专用，LLM 对话式收集信息时调用，列出选项给用户选）
+    # =====================================================================
+    {"id": "procurement_query_contract", "name": "查询可用合同", "icon": "📋", "tag": "只读查询", "danger": 0, "category": "采购-对话辅助",
+     "desc": "查询可用合同列表（用于对话中给用户列出选项）。支持 keyword 关键字模糊匹配合同编号/名称，返回 id/contract_no/contract_name/pm_name/pm_email。",
+     "method": "POST", "path": "/local/tools/procurement_query_contract", "server_id": "neuops-local", "group": "对话辅助-采购",
+     "params_schema": [
+         {"name": "keyword", "type": "string", "required": False, "desc": "合同编号或名称关键字（模糊匹配，可空=返回全部）"},
+     ]},
+    {"id": "procurement_query_spare_part", "name": "查询备件型号", "icon": "🔧", "tag": "只读查询", "danger": 0, "category": "采购-对话辅助",
+     "desc": "查询可用备件型号列表（用于对话中给用户列出选项）。支持 keyword 关键字模糊匹配备件名称/型号/品牌/编码，返回 id/part_code/part_name/spec_model/brand/unit/category。",
+     "method": "POST", "path": "/local/tools/procurement_query_spare_part", "server_id": "neuops-local", "group": "对话辅助-采购",
+     "params_schema": [
+         {"name": "keyword", "type": "string", "required": False, "desc": "备件名称/型号/品牌关键字（模糊匹配，可空=返回全部）"},
+     ]},
+    {"id": "procurement_query_supplier", "name": "查询资源池供应商", "icon": "🏢", "tag": "只读查询", "danger": 0, "category": "采购-对话辅助",
+     "desc": "查询资源池供应商列表（用于对话中展示可选供应商/确认默认资源池内容）。支持 keyword 关键字模糊匹配供应商名称/邮箱，返回 id/name/email/capability。",
+     "method": "POST", "path": "/local/tools/procurement_query_supplier", "server_id": "neuops-local", "group": "对话辅助-采购",
+     "params_schema": [
+         {"name": "keyword", "type": "string", "required": False, "desc": "供应商名称或邮箱关键字（模糊匹配，可空=返回全部）"},
+     ]},
 ]
 
 
@@ -527,8 +952,19 @@ MCP_SERVER_SEED = [
         "id": "mcp-gateway",
         "name": "NeuOps MCP 工具网关",
         "desc": "统一 MCP 工具网关（/tools 工具发现端点），承载运维/经营/研发/项目管理/售前投标全部 34 个工具",
-        "base_url": "http://127.0.0.1:9010",
+        "base_url": "http://122.51.98.98:9010",
         "type": "gateway",
+        "auth": "",
+        "status": "online",
+        "last_sync": "",
+    },
+    # 本地 Python 工具集：承载邮件/飞书/表 CRUD/业务解析等本地 Python 实现的 MCP 工具（无需 MCP Server 网关转发）
+    {
+        "id": "neuops-local",
+        "name": "NeuOps 本地 Python 工具集",
+        "desc": "承载邮件发送/飞书消息/表 CRUD/业务解析等本地 Python 实现的 MCP 工具（直接调用本地函数，无需网关转发）",
+        "base_url": "local://python",
+        "type": "local",
         "auth": "",
         "status": "online",
         "last_sync": "",

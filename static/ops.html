@@ -2471,12 +2471,12 @@ function AG_renderTopo(data) {
       nodes[i].y = Math.round(H * pct);
     });
   });
-  AG_topoNodes = nodes; AG_topoEdges = edges; // 供选中节点关联高亮使用
-  const presentTypes = [...new Set((data.nodes || []).map(n => n.type))];
   const edges = (data.edges || []).map(e => ({
     source: e.source, target: e.target,
     lineStyle: { color: AG_EDGE_COLOR[e.type] || "#24324d", opacity: 0.7, width: 1.5 },
   }));
+  AG_topoNodes = nodes; AG_topoEdges = edges; // 供选中节点关联高亮使用（必须在 edges 声明之后赋值，否则 TDZ 报错）
+  const presentTypes = [...new Set((data.nodes || []).map(n => n.type))];
   ch.off("click");
   ch.setOption({
     backgroundColor: "transparent",

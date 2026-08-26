@@ -5,6 +5,25 @@
 """
 import os
 
+# ── .env 自动加载（无需 python-dotenv 依赖）────────────────────────
+def _load_env_file():
+    """从项目根目录 .env 文件加载环境变量（已 gitignore，不推 GitHub）"""
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, val = line.partition("=")
+                key, val = key.strip(), val.strip()
+                if key and key not in os.environ:
+                    os.environ[key] = val
+
+_load_env_file()
+
 # 项目根目录（neuops-agent-demo/）
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -33,7 +52,7 @@ BIZ_9006_PUBLIC_BASE = os.getenv("BIZ_9006_PUBLIC_BASE", "http://122.51.98.98:90
 
 # DeepSeek 真实 LLM 调用层
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEEPSEEK_MODEL = "deepseek-v4-pro"
+DEEPSEEK_MODEL = "deepseek-v4-flash"
 
 # ═══════════════════════════════════════════
 # DSH 内核引擎（DeepSeek Harness）配置
@@ -147,7 +166,7 @@ PROC_FEISHU_BITABLE_LEDGER_TABLE_ID = os.getenv("PROC_FEISHU_BITABLE_LEDGER_TABL
 PROC_9006_DB_PATH = os.getenv(
     "PROC_9006_DB_PATH",
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                 "contract-compare-9006", "contract_compare.db"),
+                 "contract-compare", "contract_compare.db"),
 )
 # 9006 后端 API（contract-compare-9006）
 PROC_9006_BASE = os.getenv("PROC_9006_BASE", "http://127.0.0.1:9006")

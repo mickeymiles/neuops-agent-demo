@@ -134,6 +134,38 @@ def sync_seed_employees():
                         "INSERT OR IGNORE INTO employee_skills (employee_id, skill_id) VALUES (?,?)",
                         (e["id"], sid),
                     )
+            # ========== 幂等同步 MCP 官方工具（邮件/飞书/表操作/业务解析 11 个） ==========
+            # 即使旧库已有 meta.config_seeded=1，也能补进 mcp_tools 表，后台工具中心重启即可见
+            try:
+                # 确保有 neuops-local 虚拟 server（承载本地 Python 实现的工具）
+                conn.execute("""
+                    INSERT OR IGNORE INTO mcp_servers (id, name, desc, base_url, enabled, created_at)
+                    VALUES ('neuops-local', 'NeuOps 本地 Python 工具集',
+                            '承载邮件/飞书/表 CRUD/业务解析等本地 Python 实现的 MCP 工具（无需 MCP Server 网关转发）',
+                            'local://python', 1, datetime('now','localtime'))
+                """)
+            except Exception:
+                # mcp_servers 列结构不同或不存在，忽略（兼容更旧的库）
+                pass
+            # 把 seed_data.MCP_TOOL_SEED 全部幂等写入 mcp_tools（仅 server_id/group 补默认值，不覆盖用户已改的 name/desc）
+            from seed_data import MCP_TOOL_SEED as _ALL_TOOLS
+            for t in _ALL_TOOLS:
+                # INSERT OR IGNORE：若用户已存在同 id 工具，完全不动（保留用户改的 name/desc/group）
+                server_id = t.get("server_id", "") or "neuops-local"
+                try:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO mcp_tools "
+                        "(id, name, desc, icon, tag, danger, category, `group`, server_id, method, path, params_schema) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (t["id"], t["name"], t.get("desc", ""), t.get("icon", ""),
+                         t.get("tag", ""), int(t.get("danger", 0)), t.get("category", ""),
+                         t.get("group", ""), server_id,
+                         t.get("method", "POST"), t.get("path", ""),
+                         json.dumps(t.get("params_schema", []), ensure_ascii=False)),
+                    )
+                except Exception:
+                    # 列结构不兼容（老库缺 group/server_id 等列），忽略
+                    pass
             conn.commit()
         finally:
             conn.close()
@@ -162,22 +194,29 @@ def ensure_mcp_server_mapping():
             )
             for t in MCP_TOOL_SEED:
                 params_json = json.dumps(t.get("params_schema", []), ensure_ascii=False)
+                # server_id 尊重 seed_data 里的值（邮件/飞书/表操作/业务解析 11 工具 = neuops-local，
+                # 运维/经营/研发等网关工具 = mcp-gateway），只在缺省时回填 mcp-gateway
+                server_id = t.get("server_id") or "mcp-gateway"
                 # 幂等补回缺失的 seed 工具（如被误删），不覆盖已存在的记录
                 conn.execute(
                     "INSERT OR IGNORE INTO mcp_tools "
                     "(id, name, desc, icon, tag, danger, category, server_id, method, path, params_schema) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                    (t["id"], t["name"], t["desc"], t.get("icon", "🔧"), t.get("tag", ""),
-                     1 if t.get("danger") else 0, t.get("category", ""), "mcp-gateway",
+                    (t["id"], t["name"], t.get("desc", ""), t.get("icon", "🔧"), t.get("tag", ""),
+                     1 if t.get("danger") else 0, t.get("category", ""), server_id,
                      t.get("method", "POST"), t.get("path", ""), params_json),
                 )
+                # method/path/params_schema 只在为空时回填；server_id 若和 seed 不一致
+                #（老库被之前逻辑强制写成 mcp-gateway 的情况），纠正为 seed 里的 server_id
                 conn.execute(
                     "UPDATE mcp_tools SET "
+                    "server_id=CASE WHEN server_id<>? AND ?<>'mcp-gateway' THEN ? ELSE server_id END, "
                     "method=CASE WHEN method='' OR method IS NULL THEN ? ELSE method END, "
                     "path=CASE WHEN path='' OR path IS NULL THEN ? ELSE path END, "
                     "params_schema=CASE WHEN params_schema='[]' OR params_schema='' OR params_schema IS NULL THEN ? ELSE params_schema END "
                     "WHERE id=?",
-                    (t.get("method", "POST"), t.get("path", ""), params_json, t["id"]),
+                    (server_id, server_id, server_id,
+                     t.get("method", "POST"), t.get("path", ""), params_json, t["id"]),
                 )
             # 幂等补回 seed 技能的 skill_mcp 绑定（仅缺失时），兼容旧库
             for s in SKILLS:

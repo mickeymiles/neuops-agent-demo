@@ -235,10 +235,46 @@ async def get_bg_tasks():
 
 @router.get("/api/skills/{skill_id}/detail")
 async def get_skill_detail(skill_id: str):
+    """获取 Skill 详情，优先从 JSON 配置文件加载（热更新），降级到 DB。"""
+    from app.skill_loader import load_skill
+    from app.db.seed import db_list_mcp_tools
+
+    # 1. 优先从 JSON 文件加载
+    json_skill = load_skill(skill_id)
+    if json_skill:
+        sk = json_skill["skill"]
+        # 工具 ID → 完整工具对象（前端期望 {name, desc} 格式）
+        all_tools = {t["id"]: t for t in db_list_mcp_tools()}
+        raw_tools = json_skill.get("tools", [])
+        resolved_tools = []
+        for t in raw_tools:
+            if isinstance(t, dict):
+                resolved_tools.append(t)
+            elif isinstance(t, str) and t in all_tools:
+                resolved_tools.append({
+                    "id": all_tools[t]["id"],
+                    "name": all_tools[t]["name"],
+                    "desc": all_tools[t]["desc"],
+                })
+        return JSONResponse({
+            "name": sk.get("name", skill_id),
+            "desc": f"{sk.get('version', '')} {sk.get('trigger_intent', '')}".strip(),
+            "type": sk.get("type", sk.get("skill_type", "")),
+            "category": sk.get("category", ""),
+            "tags": sk.get("tags", []),
+            "prompt": json_skill["prompt"],
+            "flow": sk.get("flow", f"状态机驱动，参考 {skill_id}.json"),
+            "tools": resolved_tools,
+            "source": json_skill["source"],
+            "version": sk.get("version", ""),
+            "skill_json": sk,  # 完整结构化定义，前端渲染用
+            "is_structured": bool(sk.get("field_model")),  # 是否为 V2 结构化 Skill
+        })
+
+    # 2. 降级：从 DB 读取
     skill = db_get_skill(skill_id)
     if not skill:
         return JSONResponse({"error": "Skill not found"}, status_code=404)
-    # 兼容前端 SKILL_DETAILS 结构：name/desc/type/prompt/tools/flow
     all_tools = {t["id"]: t for t in db_list_mcp_tools()}
     tools = [all_tools[mid] for mid in skill.get("mcp_tools", []) if mid in all_tools]
     return JSONResponse({
@@ -250,8 +286,37 @@ async def get_skill_detail(skill_id: str):
         "prompt": skill.get("prompt", ""),
         "flow": skill.get("flow", ""),
         "tools": tools,
+        "source": "db",
+        "is_structured": False,
+        "skill_json": {},
     })
 
+
+@router.put("/api/skills/{skill_id}/json")
+async def save_skill_json(skill_id: str, body: dict):
+    """保存 Skill 的 JSON 结构化定义到配置文件（后台编辑用）。"""
+    from app.skill_loader import save_skill_json as _save, clear_cache
+    skill_def = body.get("skill_json") or body
+    if not isinstance(skill_def, dict):
+        return JSONResponse({"error": "skill_json 必须是对象"}, status_code=400)
+    # 确保 skill_id 匹配
+    if not skill_def.get("skill_id"):
+        skill_def["skill_id"] = skill_id
+    ok = _save(skill_id, skill_def)
+    if ok:
+        clear_cache(skill_id)
+        return JSONResponse({"ok": True, "skill_id": skill_id, "version": skill_def.get("version", "")})
+    return JSONResponse({"error": "保存失败"}, status_code=500)
+
+
+@router.get("/api/skills/{skill_id}/json")
+async def get_skill_json(skill_id: str):
+    """获取 Skill 的 JSON 定义（后台编辑用）。"""
+    from app.skill_loader import load_skill
+    sk = load_skill(skill_id)
+    if sk:
+        return JSONResponse({"ok": True, "skill_json": sk["skill"], "source": sk.get("source", "")})
+    return JSONResponse({"error": "Skill not found"}, status_code=404)
 
 
 @router.get("/api/conversations/{conv_id}/messages")
@@ -294,13 +359,14 @@ async def get_mcp_servers():
 
 @router.post("/api/mcp-servers")
 async def create_mcp_server(req: Request):
-    """添加外部 MCP Server：name / base_url / type / auth / desc"""
+    """添加外部 MCP Server：name / base_url / type / auth / desc / id（可选，指定后可预置 neuops-local/mcp-gateway 等固定 ID）"""
     body = await req.json()
     name = (body.get("name") or "").strip()
     base_url = (body.get("base_url") or "").strip().rstrip("/")
     if not name or not base_url:
         return JSONResponse({"success": False, "error": "名称和 Base URL 不能为空"}, status_code=400)
-    server_id = "mcp-" + str(uuid.uuid4())[:8]
+    # 允许调用方显式指定 id（用于写入 neuops-local / mcp-gateway 等固定 server）
+    server_id = (body.get("id") or "").strip() or "mcp-" + str(uuid.uuid4())[:8]
     server = {
         "id": server_id,
         "name": name,
@@ -309,8 +375,8 @@ async def create_mcp_server(req: Request):
         "type": body.get("type", "gateway"),
         "auth": json.dumps(body.get("auth", {}), ensure_ascii=False) if isinstance(body.get("auth"), (dict, list)) else (body.get("auth") or ""),
         "group": body.get("group", ""),
-        "status": "online",
-        "last_sync": "",
+        "status": body.get("status", "online"),
+        "last_sync": body.get("last_sync", ""),
     }
     db_upsert_mcp_server(server)
     return JSONResponse({"success": True, "server": server})

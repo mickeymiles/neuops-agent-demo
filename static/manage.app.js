@@ -581,9 +581,157 @@ async function showSkillDetail(id) {
     </div>
     <div class="detail-section">
       <div class="ds-title" style="display:flex;align-items:center;gap:6px;">${icon('clipboard')} 执行流程</div>
-      <div style="font-size:13px;line-height:1.8;color:var(--c-text-body);white-space:pre-wrap;background:#0E1626;border:1px solid #1E2A44;border-radius:6px;padding:12px 16px">${r.flow || '暂无流程说明'}</div>
+      ${renderSkillFlowSection(r)}
+    </div>
+    <div class="detail-section" style="margin-top:auto;padding-top:12px;border-top:1px dashed var(--c-border-light);">
+      <button class="card-btn" onclick="openJsonEditor('${id}')" style="background:rgba(37,99,235,.15);border:1px solid rgba(37,99,235,.4);color:#7ec8e3;">${icon('edit')} 查看/编辑 JSON 配置</button>
     </div>`;
   document.getElementById('skillDetailModal').classList.remove('hidden');
+}
+
+/* ---------- Skill 流程渲染（与 index.html 保持一致） ---------- */
+function renderSkillFlowSection(r) {
+  if (!r.is_structured || !r.skill_json) {
+    return `<div style="font-size:13px;line-height:1.8;color:var(--c-text-body);white-space:pre-wrap;background:#0E1626;border:1px solid #1E2A44;border-radius:6px;padding:12px 16px">${r.flow || '暂无流程说明'}</div>`;
+  }
+  const sk = r.skill_json;
+  const parts = [];
+  // 字段模型
+  const fm = sk.field_model || {};
+  const fmEntries = Object.entries(fm);
+  if (fmEntries.length) {
+    parts.push(`
+      <div style="margin-top:8px">
+        <div style="font-size:12px;color:var(--c-text-secondary);margin-bottom:6px;font-weight:500">字段模型（${fmEntries.length}个字段）</div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <thead><tr style="background:rgba(30,42,68,.5)">
+            <th style="padding:6px 8px;text-align:left;color:var(--c-text-secondary);font-weight:500">字段</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--c-text-secondary);font-weight:500">类型</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--c-text-secondary);font-weight:500">必填</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--c-text-secondary);font-weight:500">说明</th>
+          </tr></thead>
+          <tbody>${fmEntries.map(([k, v]) => {
+            const type = v.type || 'string';
+            const required = v.required ? '<span style="color:#ff6b6b">是</span>' : '否';
+            const desc = (v.desc || '').substring(0, 80);
+            const options = v.options && v.options.length ? `<div style="color:#7ec8e3;font-size:11px;margin-top:2px">选项: ${v.options.join(', ')}</div>` : '';
+            return `<tr style="border-bottom:1px solid var(--c-border-light)">
+              <td style="padding:6px 8px;font-family:monospace;color:#7ec8e3">${k}</td>
+              <td style="padding:6px 8px">${type}</td>
+              <td style="padding:6px 8px">${required}</td>
+              <td style="padding:6px 8px;color:var(--c-text-secondary);font-size:11px">${desc}${options}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`);
+  }
+  // 状态机（列表式 [{state,action,next,desc}]）
+  let states = [];
+  if (Array.isArray(sk.state_machine)) {
+    states = sk.state_machine.map(s => ({ name: s.state, is_initial: false, is_final: false, desc: s.desc, next: s.next, action: s.action }));
+  } else if (sk.state_machine && sk.state_machine.states) {
+    states = sk.state_machine.states;
+  }
+  if (states.length) {
+    parts.push(`
+      <div style="margin-top:14px">
+        <div style="font-size:12px;color:var(--c-text-secondary);margin-bottom:6px;font-weight:500">状态机（${states.length}个状态）</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${states.map(s => {
+            const cls = s.is_initial ? 'background:#2563eb' : (s.is_final ? 'background:#10b981' : 'background:rgba(56,72,108,.6)');
+            const tag = s.is_initial ? ' ◀起始' : (s.is_final ? ' ■终结' : '');
+            const nextInfo = s.next ? `<span style="color:var(--c-text-time);font-size:10px"> → ${s.next}</span>` : '';
+            const actionInfo = s.action ? `<span style="color:#ffd166;font-size:10px;margin-left:4px">⟶ ${s.action}</span>` : '';
+            return `<div style="padding:4px 10px;border-radius:12px;font-size:12px;color:#fff;${cls};cursor:pointer" title="${(s.desc || '').replace(/"/g, '&quot;')}">${s.name || s.state || '?'}${tag}${nextInfo}${actionInfo}</div>`;
+          }).join('')}
+        </div>
+      </div>`);
+  }
+  // 话术模板（dialog_templates）
+  const tt = sk.dialog_templates || sk.talk_templates || {};
+  const ttEntries = Object.entries(tt);
+  if (ttEntries.length) {
+    parts.push(`
+      <div style="margin-top:14px">
+        <div style="font-size:12px;color:var(--c-text-secondary);margin-bottom:6px;font-weight:500">话术模板（${ttEntries.length}条）</div>
+        ${ttEntries.map(([k, v]) => {
+          const templates = Array.isArray(v) ? v : (v.templates || [v]);
+          const joined = templates.map(t => `<div style="padding:6px 10px;background:rgba(14,22,38,.6);border-left:2px solid #7ec8e3;font-size:12px;color:var(--c-text-body);margin-bottom:4px;border-radius:4px;white-space:pre-wrap">${String(t).replace(/\n/g, '<br>')}</div>`).join('');
+          return `<div style="margin-bottom:8px"><div style="font-size:11px;color:var(--c-primary);font-weight:500;margin-bottom:4px">▸ ${k}</div>${joined}</div>`;
+        }).join('')}
+      </div>`);
+  }
+  // 函数绑定
+  const fb = sk.function_binding || sk.function_bindings;
+  if (fb) {
+    let fbHtml = '';
+    if (Array.isArray(fb)) {
+      fbHtml = fb.map(f => `<div style="padding:6px 10px;background:rgba(14,22,38,.6);border-radius:4px;margin-bottom:6px"><div style="font-size:12px;color:#ffd166;font-weight:500">${f.function_id || f.name || '?'} ${f.tool_id ? '→ ' + f.tool_id : ''}</div><div style="font-size:11px;color:var(--c-text-secondary)">${f.desc || ''}</div></div>`).join('');
+    } else if (typeof fb === 'object') {
+      fbHtml = `<div style="padding:8px 12px;background:rgba(14,22,38,.6);border-radius:6px;margin-bottom:6px">
+        <div style="font-size:12px;color:#ffd166;font-weight:500">${fb.function_id || fb.name || '函数绑定'}</div>
+        <div style="font-size:11px;color:var(--c-text-secondary);margin-top:4px">${fb.desc || ''}</div>
+        ${fb.pass_data ? `<div style="font-size:11px;color:#7ec8e3;margin-top:2px">传递数据: <code>${fb.pass_data}</code></div>` : ''}
+        ${fb.note ? `<div style="font-size:11px;color:var(--c-text-time);margin-top:2px">备注: ${fb.note}</div>` : ''}
+      </div>`;
+    }
+    if (fbHtml) {
+      parts.push(`<div style="margin-top:14px">
+        <div style="font-size:12px;color:var(--c-text-secondary);margin-bottom:6px;font-weight:500">函数绑定</div>
+        ${fbHtml}
+      </div>`);
+    }
+  }
+  if (!parts.length) {
+    return `<div style="font-size:13px;color:var(--c-text-secondary)">结构化 Skill，但未配置字段模型/状态机等内容</div>`;
+  }
+  return parts.join('');
+}
+
+/* ---------- Skill JSON 编辑器（后台专用） ---------- */
+let SKILL_JSON_EDIT_ID = null;
+async function openJsonEditor(id) {
+  SKILL_JSON_EDIT_ID = id;
+  try {
+    const r = await fetch('/api/skills/' + id + '/json').then(x => x.json());
+    if (!r.ok) throw new Error(r.error || '加载失败');
+    document.getElementById('skillJsonEditorTitle').textContent = '编辑 Skill JSON · ' + id;
+    document.getElementById('skillJsonEditorArea').value = JSON.stringify(r.skill_json, null, 2);
+    document.getElementById('skillJsonEditorError').style.display = 'none';
+    document.getElementById('skillJsonEditorModal').classList.remove('hidden');
+  } catch (e) {
+    uiAlert({ title: '加载 JSON 失败', message: e.message, type: 'error' });
+  }
+}
+function closeJsonEditor() {
+  document.getElementById('skillJsonEditorModal').classList.add('hidden');
+  SKILL_JSON_EDIT_ID = null;
+}
+async function saveSkillJson() {
+  const id = SKILL_JSON_EDIT_ID;
+  if (!id) return;
+  const raw = document.getElementById('skillJsonEditorArea').value;
+  let obj;
+  try { obj = JSON.parse(raw); }
+  catch (e) {
+    document.getElementById('skillJsonEditorError').textContent = 'JSON 解析错误：' + e.message;
+    document.getElementById('skillJsonEditorError').style.display = 'block';
+    return;
+  }
+  try {
+    const r = await fetch('/api/skills/' + id + '/json', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skill_json: obj })
+    }).then(x => x.json());
+    if (!r.ok) throw new Error(r.error || '保存失败');
+    uiAlert({ title: '保存成功', message: 'Skill 定义已保存，立即热更新', type: 'success' });
+    closeJsonEditor();
+    // 刷新详情页
+    if (SKILL_DETAIL_ID === id) showSkillDetail(id);
+  } catch (e) {
+    uiAlert({ title: '保存失败', message: e.message, type: 'error' });
+  }
 }
 
 function closeSkillDetail() { document.getElementById('skillDetailModal').classList.add('hidden'); }

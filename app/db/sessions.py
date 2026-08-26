@@ -253,6 +253,36 @@ def db_share_conversation(conv_id: str) -> str:
     return share_id
 
 
+def db_get_employee_conversations(emp_id: str) -> list:
+    """获取指定员工的关联对话列表。
+
+    由于 conversations 表无 employee_id 列，此处返回最近的 N 条会话
+    （按 updated_at 倒序），供员工详情页展示。格式兼容前端预期：
+    {id, title, start_time, message_count}
+    """
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT c.id, c.title, c.updated_at AS start_time,
+                          (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count
+                   FROM conversations c
+                   ORDER BY c.updated_at DESC
+                   LIMIT 20"""
+            ).fetchall()
+            return [
+                {
+                    "id": r["id"],
+                    "title": r["title"],
+                    "start_time": r["start_time"] or "",
+                    "message_count": r["message_count"],
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+
 def db_get_conversation_share(conv_id: str) -> str:
     with _db_lock:
         conn = _get_conn()

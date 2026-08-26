@@ -843,7 +843,7 @@ def _render_docx_with_template(md_path: str, out_path: str, proj: dict,
         anchor.addnext(new_p)
         np = Paragraph(new_p, anchor.getparent())
         if text:
-            run = np.add_run(text)
+            np.add_run(text)
         if style:
             try:
                 np.style = style
@@ -1321,8 +1321,6 @@ def _llm_mockup_html(proj: dict, prd: dict, report: dict) -> str:
     - 零外部依赖，可 file:// 直接打开；内容由 PRD + 拆标技术参数驱动
     - LLM 不可用/输出非完整 HTML → 返回 ""，由规则版 _build_demo_html 兜底
     """
-    pages = prd.get("pages") or []
-    features = prd.get("features") or []
     sys_p = (
         "你是资深前端设计工程师。请为投标演示生成**完整自包含的单文件 HTML 页面**（可直接 file:// 打开，零外部依赖）。\n"
         "硬性要求：\n"
@@ -1577,7 +1575,7 @@ def _fallback_chapter(ch: dict, report: dict) -> str:
             lines.append(f"- {item}（{p.get('requirement', '待补充')}）→ 我方业绩：【待补充材料】")
     else:
         lines.append(f"【待补充材料】本章「{title}」需依据拆标报告与项目实际资料补充编写。")
-    lines += ["", f"> 本章由投标工作台按规则模板生成（LLM 不可用），请人工复核后使用。"]
+    lines += ["", "> 本章由投标工作台按规则模板生成（LLM 不可用），请人工复核后使用。"]
     return "\n".join(lines)
 
 

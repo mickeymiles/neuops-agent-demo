@@ -9,7 +9,7 @@
 """
 import os
 
-from . import config, db, knowledge
+from . import db, knowledge
 
 # 投标知识库预置定义：name -> 示例文档（title, body）
 BID_KB_SEED = {

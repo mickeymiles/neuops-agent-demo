@@ -660,8 +660,6 @@ def sse_event(event: str, data):
 # DeepSeek 真实 LLM 调用层（真实 AgenticOps）
 # ═══════════════════════════════════════════
 
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-DEEPSEEK_MODEL = "deepseek-v4-pro"
 _DEEPSEEK_KEY = ""
 
 
@@ -894,29 +892,77 @@ def build_employee_tools(emp_id: str) -> list:
 
 async def execute_configured_tool(tool_id: str, args: dict) -> dict:
     """按 mcp_tools 配置的 method/path + 所属 MCP Server 的 base_url 动态执行。
-    与 9010 mcp-gateway 协议一致：POST {base}/tools/{name}（或 GET）。"""
+    与 9010 mcp-gateway 协议一致：POST {base}/tools/{name}（或 GET）。
+
+    三路径调度（优先级从高到低）：
+      1) base_url = local://python    → 直接调用本地 Python 函数（仅测试/无HTTP网关场景使用）
+      2) base_url = http(s)://...     → 通过 HTTP 转发（复用 routes_local_tools / mcp_gateway 的 BaseModel 校验与参数映射）
+      3) Server 记录缺失             → 兜底：neuops-local → 9007 HTTP，mcp-gateway → 9010 HTTP
+    """
     t = db_get_mcp_tool(tool_id)
-    if not t or not t.get("server_id"):
-        return {"error": f"工具 {tool_id} 不存在或未绑定 MCP Server"}
-    server = db_get_mcp_server(t["server_id"])
+    if not t:
+        return {"error": f"工具 {tool_id} 不存在"}
+    server_id = t.get("server_id") or "neuops-local"
+    server = db_get_mcp_server(server_id)
     if not server:
-        return {"error": f"工具 {tool_id} 所属 MCP Server 不存在"}
+        # Server 缺失兜底：统一走 HTTP 转发（避免因 Server 未注册导致工具完全不可用）
+        fallback_base = "http://127.0.0.1:9010" if server_id == "mcp-gateway" else "http://127.0.0.1:9007"
+        server = {"id": server_id, "name": server_id, "base_url": fallback_base, "type": "gateway"}
     base = (server.get("base_url") or "").rstrip("/")
     path = t.get("path") or f"/tools/{tool_id}"
-    url = f"{base}{path}"
     method = (t.get("method") or "POST").upper()
+
+    # ── 仅当显式声明 local://python 协议时走本地函数调用（其他场景走HTTP，复用BaseModel校验/映射）──
+    if base == "local://python":
+        try:
+            from app import mcp_tools as _mt
+            fn_map = {
+                "table_query": _mt.tool_table_query,
+                "table_insert": _mt.tool_table_insert,
+                "table_update": _mt.tool_table_update,
+                "table_upsert": _mt.tool_table_upsert,
+                "send_mail": _mt.tool_send_mail,
+                "batch_send_mail": _mt.tool_batch_send_mail,
+                "read_inbox_mail": _mt.tool_read_inbox_mail,
+                "send_feishu_message": _mt.tool_send_feishu_message,
+                "send_feishu_card": _mt.tool_send_feishu_card,
+                "procurement_parse_quote": _mt.tool_procurement_parse_quote,
+                "procurement_parse_logistics": _mt.tool_procurement_parse_logistics,
+                "procurement_create_task": _mt.tool_procurement_create_task,
+                "procurement_query_contract": _mt.tool_procurement_query_contract,
+                "procurement_query_spare_part": _mt.tool_procurement_query_spare_part,
+                "procurement_query_supplier": _mt.tool_procurement_query_supplier,
+            }
+            fn = fn_map.get(tool_id)
+            if not fn:
+                return {"error": f"本地工具 {tool_id} 未注册执行函数，请补齐 fn_map"}
+            return fn(**args)
+        except TypeError as e:
+            return {"error": f"调用 {tool_id} 参数不匹配: {e}"}
+        except Exception as e:
+            return {"error": f"调用本地工具 {tool_id} 失败: {type(e).__name__}: {e}"}
+
+    # ── 网关型工具：走 HTTP 转发 ──
+    url = f"{base}{path}"
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             if method == "GET":
                 r = await client.get(url, params=args)
+            elif method == "PUT":
+                r = await client.put(url, json=args)
+            elif method == "PATCH":
+                r = await client.patch(url, json=args)
+            elif method == "DELETE":
+                r = await client.request("DELETE", url, json=args)
             else:
-                r = await client.post(url, params=args)
+                # POST 默认用 JSON body（兼容 /local/tools/* BaseModel 路由与 mcp-gateway 路由）
+                r = await client.post(url, json=args)
             try:
                 return r.json()
             except Exception:
                 return {"content": r.text[:8000]}
     except Exception as e:
-        return {"error": f"调用 {server['name']} 失败: {e}"}
+        return {"error": f"调用 {server.get('name', server_id)} 失败: {e}"}
 
 
 def build_employee_prompt(emp_id: str) -> str:
