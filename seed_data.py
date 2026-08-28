@@ -26,6 +26,8 @@ SKILLS = [
     {"id": "skill-proc-chat", "name": "采购询比价对话编排", "desc": "对话入口：理解用户采购需求，追问缺失必填项（合同/备件/供应商/紧急等级），校验主数据，触发采购流程并反馈进度", "category": "custom", "tags": ["采购","对话","意图识别","追问"], "enabled": True},
     {"id": "skill-proc-mail-compose", "name": "采购邮件内容组装", "desc": "根据任务上下文组装询价邮件/采购确认邮件/验收通知邮件的正文与主题，需要模型理解业务字段并措辞", "category": "custom", "tags": ["采购","邮件","内容生成"], "enabled": True},
     {"id": "skill-proc-parse", "name": "供应商邮件智能解析", "desc": "解析供应商回复邮件中的报价/发货信息，正则Tool处理80%标准格式，LLM兜底处理20%非标长尾格式", "category": "custom", "tags": ["采购","解析","报价","物流"], "enabled": True},
+    # ── 备件邮件询价域（emp-mail-inquiry，邮件驱动全流程自动化）──
+    {"id": "skill-proc-mail-inquiry", "name": "备件邮件询价全流程", "desc": "工程师邮件发起询价→自动生成任务号→发送询价邮件→收集报价→计算最低价→汇总邮件抄送审批人→审批人确认→下达订货邮件。静态配置（模板/审批人/供应商池）通过 JSON 热加载", "category": "custom", "tags": ["采购","邮件","询价","自动化"], "enabled": True},
 ]
 
 
@@ -54,6 +56,9 @@ MOCK_EMPLOYEES = [
     {"id": "emp-008", "name": "备品备件采购询比价专员", "desc": "面向项目现场备品备件采购询比价业务。项目经理发起询价 → 自动批量发送询价邮件给供应商 → 监听供应商报价邮件解析回填 → 每小时飞书推送进度/临期告警 → 平台选型确认 → 自动发采购确认邮件 → 解析发货物流 → 测试通过自动写入采购台账闭环。真实对接 163 邮箱（IMAP/SMTP）、飞书开放 API、9006 SQLite。", "type": "采购询比价", "created": "2026-08-21", "updated": "2026-08-21",
      "skills": ["skill-proc-chat","skill-proc-mail-compose","skill-proc-parse"],
      "rag_kb": "采购知识库-询比价流程与邮件模板", "prompt": "你是备品备件采购询比价专员（emp-008），通过三个认知 Skill 完成采购全流程：\n\n【Skill-1：采购询比价对话编排（skill-proc-chat）】\n你是用户对话入口。当用户说「我要采购」「帮我询个价」「备件XXX需要买」时：\n①意图识别——判断这是采购请求，提取已知字段（备件型号/数量/合同名或号/紧急等级/供应商）\n②追问补全——对照必填清单{合同名/号,备件型号,采购数量,紧急等级(2h/4h/5h),询价供应商列表}，逐个追问缺失项\n③校验——调 table_query 查 procurement_contract 表验证合同号存在；调 table_query 查 procurement_supplier 表验证供应商邮箱\n④触发流程——信息齐全后确认「已为你创建询比价任务PROC-xxx，已向N家供应商发送询价邮件，截止时间XX」，系统自动触发 Flow（创建任务+发送询价+飞书通知）\n⑤进度查询——用户问「报价情况」「到哪步了」时，调 table_query 查 procurement_task 返回进度并组织语言回答\n⑥异常提醒——报价型号不匹配/超时未回复时主动告知用户\n\n【Skill-2：采购邮件内容组装（skill-proc-mail-compose）】\n根据任务上下文组装邮件正文（不负责发送，发送是Flow调用Tool完成的）：\n①询价邮件——输入{项目名,备件型号,数量,截止时间,任务ID}→输出{subject,body}，措辞专业、简洁，不含合同号（隐私）\n②采购确认邮件——输入{供应商名,备件型号,数量,成交单价,任务ID}→输出{subject,body}\n③验收通知邮件——输入{备件型号,数量,任务ID}→输出{subject,body}\n\n【Skill-3：供应商邮件智能解析（skill-proc-parse）】\n解析供应商回复邮件，正则Tool做80%标准格式兜底，你做20%非标长尾：\n①报价解析——调 procurement_parse_quote Tool 先试正则（6层策略）；如果策略=P6_need_manual（完全无法解析），你用LLM理解邮件正文提取{单价,总价,品牌,型号,货期}\n②物流解析——调 procurement_parse_logistics Tool 先试正则（3层策略）；如果返回空，你用LLM从邮件正文提取{物流单号,承运商,发货日期}\n\n红线：选型确认/测试结果录入/任务取消由项目经理人工触发，你不自动执行。异常状态不自动恢复。", "model": "deepseek-v4"},
+    {"id": "emp-mail-inquiry", "name": "备件邮件询价数字员工", "desc": "面向工程师通过邮件发起的备件询价场景。工程师发送询价邮件（模板A）→系统自动生成任务号→向供应商发送询价邮件（模板B，不含收货地址）→收集供应商报价邮件（模板C）→自动计算最低价→发送汇总邮件（模板D，抄送审批人）→审批人二选一确认→下达订货邮件（模板E，含收货地址）→全流程自动化。静态配置（模板/审批人/供应商池）通过 skill-proc-mail-inquiry.json 热加载，动态状态存储于 spare_mail_task 表。", "type": "邮件询价", "created": "2026-08-28", "updated": "2026-08-28",
+     "skills": ["skill-proc-mail-inquiry"],
+     "rag_kb": "采购知识库-邮件询价流程", "prompt": "你是备件邮件询价数字员工（emp-mail-inquiry），处理工程师通过邮件发起的备件询价全流程：\n\n①邮件监听——定时轮询收件箱，识别工程师发起的询价邮件（模板A，包含项目号/备件类型/品牌/PN号/规格/成色/数量/收货地址/最晚发货时间等）\n②任务创建——解析询价邮件字段，生成唯一任务号，创建 spare_mail_task 记录\n③询价发送——向供应商池批量发送询价邮件（模板B），不含收货地址\n④报价收集——监听供应商回复邮件（模板C），按 In-Reply-To 匹配线程，解析报价（单价/交货周期）\n⑤最低价计算——所有供应商已回复或截止时间到达后，自动计算最低价供应商\n⑥汇总邮件——发送汇总邮件（模板D）回复工程师，抄送审批人，列出全部报价并推荐最低价\n⑦审批确认——审批人回复邮件确认：采纳最低价或指定其他供应商\n⑧订货下达——向选中供应商发送订货邮件（模板E），包含收货地址、最晚发货时间、要求测试报告和快递单号\n\n红线：审批人未确认前不自动下达订货；审批人可选择任意供应商而非仅最低价；无驳回机制（审批即确认）。", "model": "deepseek-v4"},
 ]
 
 
@@ -462,6 +467,12 @@ SKILL_DETAILS = {
         "prompt": "你是供应商邮件智能解析 Skill（skill-proc-parse）。核心职责：阅读供应商回复邮件正文，理解其意图（报价 / 发货 / 两者皆有 / 无关），并提取结构化业务字段。\n\n【设计原则】你是认知主体，不是流程脚本：\n - 不预设\"先调 Tool 再 LLM 兜底\"的固定顺序\n - 你自己读懂邮件，决定要不要调用辅助 Tool\n - 标准格式邮件（如 \"单价: ¥3200 总价: 9600 顺丰SF1234567890\"）可直接提取，无需调 Tool\n - 长尾/非标/模糊表达（口语化、表格混排、多段叙述）你直接用语言理解能力提取，比正则更准\n - 仅当邮件正文很长且结构规整时，可考虑调 procurement_parse_quote / procurement_parse_logistics 作为辅助参考；调完仍由你判断是否采纳\n\n【解析目标字段】依据邮件内容判断提取哪些：\n 报价类：unit_price(单价,数字)、total_price(总价,数字)、brand(品牌)、model(型号规格)、lead_time(货期/交货期,如 \"7天\"\"3-5天\"\"次日达\"\"2026-08-25前\")\n 物流类：tracking_no(物流/快递单号)、carrier(承运商,如 顺丰/中通/京东/EMS)、delivery_date(发货日期,格式 YYYY-MM-DD)\n\n【输入上下文】每次调用会附带：mail_body(邮件正文)、expected_qty(询价数量,用于区分单价/总价)、spare_part_model(备件型号,可作 model 字段参考)、parse_mode(\"quote\"仅解析报价 / \"logistics\"仅解析物流)\n\n【输出格式】必须返回纯 JSON（无 markdown 代码块、无解释文字），字段：\n{\n  \"mail_type\": \"quote|delivery|both|unknown\",\n  \"unit_price\": 0.0,\n  \"total_price\": 0.0,\n  \"brand\": \"\",\n  \"model\": \"\",\n  \"lead_time\": \"\",\n  \"tracking_no\": \"\",\n  \"carrier\": \"\",\n  \"delivery_date\": \"\",\n  \"parse_strategy\": \"llm_direct|tool_assisted|llm_with_tool_ref|failed\",\n  \"note\": \"可选,仅当有需要人工复核的判断时填写\",\n  \"raw_reply_excerpt\": \"邮件正文前300字\"\n}\n\n【字段规则】\n - parse_mode=logistics 时，报价类字段填 0 或空字符串\n - parse_mode=quote 时，物流类字段填空字符串\n - 价格统一为浮点数（去除 ¥/,/元 等符号）\n - 无法提取的字段填空值，不要编造\n - 若 parse_mode 范围内所有字段都提取不到，parse_strategy=\"failed\"，note 说明原因\n\n【红线】\n - 不输出任何除 JSON 外的文字（包括解释、问候、确认语）\n - 不编造邮件里没有的数据\n - parse_strategy 字段标注你用了什么手段，便于审计",
         "tools": ["procurement_parse_quote", "procurement_parse_logistics"],
         "flow": "认知流程（由 LLM 自主决定）：\n1、阅读 mail_body，判断邮件类型（报价回复 / 发货通知 / 两者皆有 / 无关）\n2、依据 parse_mode 决定提取哪些字段（quote→报价类；logistics→物流类）\n3、标准格式可直接提取；非标格式用语言理解提取；可选调 procurement_parse_quote / procurement_parse_logistics Tool 作为参考\n4、Tool 返回结果仅供参考，由 LLM 决定是否采纳或修正\n5、输出统一 JSON，parse_strategy 标注解析手段\n6、无法解析的字段填空值，parse_strategy=failed 时由 Flow 层标记 need_manual 通知人工\n\n调用方：Flow 层 _flow_proc_03（报价解析）和 _flow_proc_06（物流解析）通过 invoke_skill_parse() 同步桥调用本 Skill。",
+    },
+    "skill-proc-mail-inquiry": {
+        "type": "流程编排技能-邮件询价",
+        "prompt": "你是备件邮件询价数字员工的 Skill（skill-proc-mail-inquiry）。静态配置（审批人邮箱、供应商池、6 个邮件模板 A-F）从 skills/skill-proc-mail-inquiry.json 热加载。\n\n核心流程（由 scheduler/tick?kind=mail-inquiry 定时驱动，无需 LLM）：\n1. PARSING：拉取收件箱，识别工程师发起的询价邮件（模板A），解析项目号、备件、收货地址等字段\n2. SENDING_B：向供应商池批量发送询价邮件（模板B，不含收货地址）\n3. WAITING_QUOTES：监听供应商回复邮件（模板C），按 In-Reply-To 匹配线程，解析报价\n4. DECIDING_LOWEST：计算最低价，生成汇总邮件（模板D）回复工程师并抄送审批人\n5. WAITING_APPROVAL：审批人二选一确认（采纳最低价 or 指定供应商）\n6. ORDERING：向选中供应商发送订货邮件（模板E，含收货地址）\n7. DONE：任务完成",
+        "tools": ["tool_send_mail", "tool_batch_send_mail", "tool_read_inbox_mail"],
+        "flow": "状态机流程：PARSING→SENDING_B→WAITING_QUOTES→DECIDING_LOWEST→WAITING_APPROVAL→ORDERING→DONE\n由 scheduler/tick?kind=mail-inquiry 定时触发，每次 tick 推进符合条件的任务状态。",
     },
 }
 
