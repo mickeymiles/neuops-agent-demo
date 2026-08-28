@@ -59,6 +59,7 @@ jobs:
         run: |
           rsync -az --delete \
             --exclude='.git' --exclude='.github' \
+            --exclude='.env' --exclude='.env.*' \
             --exclude='chroma_data' --exclude='uploads' \
             --exclude='*.db' --exclude='__pycache__' \
             --exclude='.venv' --exclude='venv' \
