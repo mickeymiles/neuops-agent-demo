@@ -5,6 +5,7 @@
 （skills/skill-proc-mail-inquiry.json）。本文件只负责动态运行态任务表的读写。
 """
 from datetime import datetime
+import json
 from typing import Optional
 
 from .base import (
@@ -15,6 +16,67 @@ from .base import (
 
 def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# ── 配置表操作（spare_mail_config：邮件/飞书凭据、审批人、供应商、模板）──
+def spare_mail_get_config(config_key: str) -> Optional[dict]:
+    """按 key 读配置，返回 dict；不存在 / 为空返回 None。"""
+    config_key = str(config_key or "").strip()
+    if not config_key:
+        return None
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            r = conn.execute(
+                "SELECT config_value FROM spare_mail_config WHERE config_key=?",
+                (config_key,)).fetchone()
+            if not r:
+                return None
+            val = r["config_value"]
+            try:
+                return json.loads(val) if val else None
+            except Exception:
+                return {"_raw": val}
+        finally:
+            conn.close()
+
+
+def spare_mail_set_config(config_key: str, value: dict) -> bool:
+    """upsert 一条配置（整体覆盖该 key 的值）。成功返回 True。"""
+    config_key = str(config_key or "").strip()
+    if not config_key:
+        return False
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            val = json.dumps(value if value is not None else {}, ensure_ascii=False)
+            conn.execute(
+                "INSERT INTO spare_mail_config (config_key, config_value, updated_at) "
+                "VALUES (?,?,?) "
+                "ON CONFLICT(config_key) DO UPDATE SET config_value=excluded.config_value, "
+                "updated_at=excluded.updated_at",
+                (config_key, val, _now()))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+
+def spare_mail_list_config() -> dict:
+    """列出全部配置 key→dict。"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            rows = conn.execute("SELECT config_key, config_value FROM spare_mail_config").fetchall()
+            out = {}
+            for r in rows:
+                try:
+                    out[r["config_key"]] = json.loads(r["config_value"]) if r["config_value"] else {}
+                except Exception:
+                    out[r["config_key"]] = {"_raw": r["config_value"]}
+            return out
+        finally:
+            conn.close()
 
 
 # 表字段集合（与 schema.py 的 CREATE TABLE 保持同步）

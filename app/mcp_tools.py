@@ -118,6 +118,38 @@ import time as _time
 from app import config as _proc_cfg
 
 
+def _proc_mail_cfg():
+    """解析邮件/飞书凭据：DB spare_mail_config 优先，缺失时兜底 config/.env。
+
+    返回 dict，含 mail_username/mail_password/feishu_app_id/... 等聚合键。
+    DB 不可用或未配置时静默回退到环境变量（emp-008 行为保持不变）。
+    """
+    cfg = {
+        "mail_username": _proc_cfg.PROC_MAIL_USERNAME,
+        "mail_password": _proc_cfg.PROC_MAIL_PASSWORD,
+        "imap_host": _proc_cfg.PROC_MAIL_IMAP_HOST,
+        "imap_port": _proc_cfg.PROC_MAIL_IMAP_PORT,
+        "smtp_host": _proc_cfg.PROC_MAIL_SMTP_HOST,
+        "smtp_port": _proc_cfg.PROC_MAIL_SMTP_PORT,
+        "feishu_app_id": _proc_cfg.PROC_FEISHU_APP_ID,
+        "feishu_app_secret": _proc_cfg.PROC_FEISHU_APP_SECRET,
+        "feishu_pm_open_id": _proc_cfg.PROC_FEISHU_PM_OPEN_ID,
+        "feishu_bitable_app_token": _proc_cfg.PROC_FEISHU_BITABLE_APP_TOKEN,
+        "feishu_bitable_task_table_id": _proc_cfg.PROC_FEISHU_BITABLE_TASK_TABLE_ID,
+        "feishu_bitable_ledger_table_id": _proc_cfg.PROC_FEISHU_BITABLE_LEDGER_TABLE_ID,
+    }
+    try:
+        from app.db import spare_mail as _spm
+        db_cfg = _spm.spare_mail_get_config("proc_credentials") or {}
+        if isinstance(db_cfg, dict):
+            for k, v in db_cfg.items():
+                if v not in (None, "") and k in cfg:
+                    cfg[k] = v
+    except Exception:
+        pass  # DB 不可用 → 保持环境变量兜底
+    return cfg
+
+
 def _decode_mime(s: str) -> str:
     """解码 MIME 编码的邮件头"""
     if not s:
@@ -175,7 +207,8 @@ def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = 
     import imaplib
     import re  # 【修复 2026-08-24】原代码使用了 re.split/re.sub/re.match 但未导入 re，导致 NameError: name 're' is not defined
 
-    if not _proc_cfg.PROC_MAIL_PASSWORD:
+    _mc = _proc_mail_cfg()
+    if not _mc["mail_password"]:
         return {"tool": "read_inbox_mail", "success": False,
                 "error": "PROC_MAIL_PASSWORD 未配置（163 邮箱授权码）", "mails": []}
 
@@ -183,8 +216,8 @@ def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = 
     if exclude_sender_email_list is None:
         exclude_sender_email_list = []
     exclude_set = {str(e).lower().strip() for e in exclude_sender_email_list if e}
-    if _proc_cfg.PROC_MAIL_USERNAME:
-        exclude_set.add(str(_proc_cfg.PROC_MAIL_USERNAME).lower().strip())
+    if _mc["mail_username"]:
+        exclude_set.add(str(_mc["mail_username"]).lower().strip())
 
     # 询价函关键字（采购方模板：询价函开头一定会出现的语句）——如果原文里出现这些，
     # 直接判为采购方询价函，不是供应商的报价回复
@@ -192,15 +225,15 @@ def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = 
                         "请在回复邮件中注明产品型号、单价", "备品备件询价")
 
     try:
-        imap = imaplib.IMAP4_SSL(_proc_cfg.PROC_MAIL_IMAP_HOST, _proc_cfg.PROC_MAIL_IMAP_PORT)
-        imap.login(_proc_cfg.PROC_MAIL_USERNAME, _proc_cfg.PROC_MAIL_PASSWORD)
+        imap = imaplib.IMAP4_SSL(_mc["imap_host"], int(_mc["imap_port"] or 993))
+        imap.login(_mc["mail_username"], _mc["mail_password"])
         # 163 邮箱要求 login 后立即发送 IMAP ID 命令，否则 SELECT 报 "Unsafe Login"
         # 用 _simple_command 发送（imap.id() 在 Python 3.9 会因 untagged response 报错）
         imaplib.Commands["ID"] = ("AUTH",)
         try:
             imap._simple_command("ID",
                 '("name" "NeuOps" "version" "1.0.0" "vendor" "NeuOps" '
-                '"support-email" "' + _proc_cfg.PROC_MAIL_USERNAME + '")')
+                '"support-email" "' + _mc["mail_username"] + '")')
         except Exception:
             pass  # ID 命令响应解析异常不影响命令已发送
         sel_status, sel_data = imap.select("INBOX")
@@ -318,14 +351,15 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
     from email.mime.text import MIMEText
     from email.utils import formataddr, make_msgid
 
-    if not _proc_cfg.PROC_MAIL_PASSWORD:
+    _mc = _proc_mail_cfg()
+    if not _mc["mail_password"]:
         return {"tool": "send_mail", "success": False,
                 "error": "PROC_MAIL_PASSWORD 未配置（163 邮箱授权码）"}
 
     try:
         msg = MIMEText(body_text, "plain", "utf-8")
         msg["Subject"] = subject
-        msg["From"] = formataddr(("备品备件采购智能体", _proc_cfg.PROC_MAIL_USERNAME))
+        msg["From"] = formataddr(("备品备件采购智能体", _mc["mail_username"]))
         msg["To"] = ",".join(to)
         # 【关键修复】必须在 sendmail 之前显式生成并写入 Message-ID，
         # 否则 msg["Message-ID"] 读出来是空字符串，后续回写的 _sent_ok 恒为 False。
@@ -343,9 +377,9 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
                 msg["References"] = reply_to_mail_id
 
         recipients = list(to) + (cc or [])
-        with smtplib.SMTP_SSL(_proc_cfg.PROC_MAIL_SMTP_HOST, _proc_cfg.PROC_MAIL_SMTP_PORT) as smtp:
-            smtp.login(_proc_cfg.PROC_MAIL_USERNAME, _proc_cfg.PROC_MAIL_PASSWORD)
-            smtp.sendmail(_proc_cfg.PROC_MAIL_USERNAME, recipients, msg.as_string())
+        with smtplib.SMTP_SSL(_mc["smtp_host"], int(_mc["smtp_port"] or 465)) as smtp:
+            smtp.login(_mc["mail_username"], _mc["mail_password"])
+            smtp.sendmail(_mc["mail_username"], recipients, msg.as_string())
 
         return {"tool": "send_mail", "success": True,
                 "message_id": msg["Message-ID"] or "",
@@ -389,12 +423,13 @@ def _get_feishu_token() -> str:
     """获取并缓存飞书 tenant_access_token"""
     if _FEISHU_TOKEN_CACHE["token"] and _time.time() < _FEISHU_TOKEN_CACHE["expires_at"]:
         return _FEISHU_TOKEN_CACHE["token"]
-    if not _proc_cfg.PROC_FEISHU_APP_ID or not _proc_cfg.PROC_FEISHU_APP_SECRET:
+    _fc = _proc_mail_cfg()
+    if not _fc["feishu_app_id"] or not _fc["feishu_app_secret"]:
         return ""
     try:
         r = httpx.post("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-                       json={"app_id": _proc_cfg.PROC_FEISHU_APP_ID,
-                             "app_secret": _proc_cfg.PROC_FEISHU_APP_SECRET}, timeout=10)
+                       json={"app_id": _fc["feishu_app_id"],
+                             "app_secret": _fc["feishu_app_secret"]}, timeout=10)
         d = r.json()
         token = d.get("tenant_access_token", "")
         expire = d.get("expire", 7200)

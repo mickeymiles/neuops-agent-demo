@@ -373,8 +373,9 @@ def init_config_db():
 def init_spare_mail_db():
     """初始化「备件邮件询价」数字员工数据表。
 
-    只建动态任务表 spare_mail_task；模板/采购邮箱/审批人/启停开关等
-    静态配置统一走 skill JSON 文件（skills/skill-proc-mail-inquiry.json）。
+    - spare_mail_task：动态运行态任务单表。
+    - spare_mail_config：静态配置（邮件/飞书凭据、审批人、供应商、邮件模板），
+      由配置管理页面维护，优先于 skill JSON 与 .env。
     """
     with _db_lock:
         conn = _get_conn()
@@ -412,6 +413,13 @@ def init_spare_mail_db():
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_spare_mail_task_status ON spare_mail_task(status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_spare_mail_task_thread ON spare_mail_task(thread_msg_id)")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS spare_mail_config (
+                    config_key TEXT PRIMARY KEY,
+                    config_value TEXT DEFAULT '{}',
+                    updated_at TEXT DEFAULT ''
+                )
+            """)
             conn.commit()
         finally:
             conn.close()

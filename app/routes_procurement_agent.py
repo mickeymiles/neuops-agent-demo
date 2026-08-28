@@ -2000,14 +2000,27 @@ async def scheduler_tick(kind: str = "all"):
 # ════════════════════════════════════════════════════════════════
 @router.get("/health")
 async def health():
+    try:
+        from app.mcp_tools import _proc_mail_cfg as _pmc
+        _pc = _pmc()
+        mail_configured = bool(_pc.get("mail_password"))
+        feishu_configured = bool(_pc.get("feishu_app_id") and _pc.get("feishu_app_secret"))
+        feishu_pm = bool(_pc.get("feishu_pm_open_id"))
+        bitable = bool(_pc.get("feishu_bitable_app_token"))
+    except Exception:
+        _pc = {}
+        mail_configured = bool(config.PROC_MAIL_PASSWORD)
+        feishu_configured = bool(config.PROC_FEISHU_APP_ID and config.PROC_FEISHU_APP_SECRET)
+        feishu_pm = bool(config.PROC_FEISHU_PM_OPEN_ID)
+        bitable = bool(config.PROC_FEISHU_BITABLE_APP_TOKEN)
     return {
         "success": True,
         "employee": "emp-008",
         "name": "备品备件采购询比价专员",
-        "mail_configured": bool(config.PROC_MAIL_PASSWORD),
-        "feishu_configured": bool(config.PROC_FEISHU_APP_ID and config.PROC_FEISHU_APP_SECRET),
-        "feishu_pm_open_id_configured": bool(config.PROC_FEISHU_PM_OPEN_ID),
-        "bitable_configured": bool(config.PROC_FEISHU_BITABLE_APP_TOKEN),
+        "mail_configured": mail_configured,
+        "feishu_configured": feishu_configured,
+        "feishu_pm_open_id_configured": feishu_pm,
+        "bitable_configured": bitable,
         "db_path": config.PROC_9006_DB_PATH,
     }
 
@@ -2299,15 +2312,40 @@ def _norm_mid(m):
     return s.strip()
 
 def _load_mail_inquiry_skill():
-    """从 skill_loader 热加载 skill-proc-mail-inquiry，返回 (config_dict, templates_dict)。
-    失败时返回 (None, None)。"""
+    """加载 mail-inquiry 配置：以 skill JSON 为底，spare_mail_config（DB）优先覆盖。
+
+    返回 (config_dict, templates_dict)。
+    - config 优先 DB `proc_participants` + `proc_credentials` 合并，缺失回退 skill.config
+    - templates 优先 DB `proc_templates`，缺失回退 skill.templates
+    失败时返回 (None, None)。
+    """
     try:
         _ensure_mail_inquiry_imports()
         sk = _ensure_mail_inquiry_imports._load_sk(_SKILL_ID_MAIL_INQUIRY)
-        if not sk:
-            return None, None
-        skill_def = sk.get("skill") or {}
-        return skill_def.get("config") or {}, skill_def.get("templates") or {}
+        skill_def = (sk or {}).get("skill") or {}
+        cfg = skill_def.get("config") or {}
+        tpls = skill_def.get("templates") or {}
+
+        spm = _ensure_mail_inquiry_imports._spm
+        # 参与方（审批人/供应商）
+        p = spm.spare_mail_get_config("proc_participants") or {}
+        if isinstance(p, dict):
+            if p.get("approver_emails") not in (None, []):
+                cfg["approver_emails"] = p["approver_emails"]
+            if p.get("default_suppliers") not in (None, []):
+                cfg["default_suppliers"] = p["default_suppliers"]
+        # 邮件凭据（供 health / 提示用）
+        cred = spm.spare_mail_get_config("proc_credentials") or {}
+        if isinstance(cred, dict):
+            if cred.get("mail_username") not in (None, ""):
+                cfg["proc_mail_username"] = cred["mail_username"]
+        # 模板
+        db_tpls = spm.spare_mail_get_config("proc_templates") or {}
+        if isinstance(db_tpls, dict) and db_tpls:
+            merged = dict(tpls)
+            merged.update({k: v for k, v in db_tpls.items() if v})
+            tpls = merged
+        return cfg, tpls
     except Exception as e:
         print(f"[mail-inquiry] load skill failed: {e}")
         return None, None
@@ -3096,3 +3134,91 @@ async def mail_inquiry_register_employee():
     }
     _ensure_mail_inquiry_imports._upsert_emp(emp)
     return {"success": True, "employee_id": emp_id, "skill_id": _SKILL_ID_MAIL_INQUIRY}
+
+
+# ── 配置管理 API（spare_mail_config：邮件/飞书凭据、审批人、供应商、模板）──
+
+def _ensure_mail_inquiry_config_seeded():
+    """首次访问时，把 skill JSON 里的默认参与方/模板下沉到 DB（仅当对应 key 不存在时）。
+
+    幂等：已有配置不覆盖，保证页面修改不被回滚。
+    """
+    _ensure_mail_inquiry_imports()
+    _ensure_mail_inquiry_imports._init_db()
+    spm = _ensure_mail_inquiry_imports._spm
+    cfg, tpls = _load_mail_inquiry_skill()
+    if cfg:
+        participants = {"approver_emails": cfg.get("approver_emails") or [],
+                        "default_suppliers": cfg.get("default_suppliers") or []}
+        if spm.spare_mail_get_config("proc_participants") is None:
+            spm.spare_mail_set_config("proc_participants", participants)
+    if tpls:
+        if spm.spare_mail_get_config("proc_templates") is None:
+            spm.spare_mail_set_config("proc_templates", tpls)
+    return spm
+
+
+@router.get("/mail-inquiry/config")
+async def mail_inquiry_get_config(mask: bool = True):
+    """读取配置汇总。mask=True 时对密码类字段打码（默认）。"""
+    spm = _ensure_mail_inquiry_config_seeded()
+    creds = spm.spare_mail_get_config("proc_credentials") or {}
+    participants = spm.spare_mail_get_config("proc_participants") or {}
+    templates = spm.spare_mail_get_config("proc_templates") or {}
+    out_creds = dict(creds)
+    if mask:
+        for k in ("mail_password", "feishu_app_secret", "feishu_bitable_app_token"):
+            if out_creds.get(k):
+                v = str(out_creds[k])
+                out_creds[k] = v[:2] + "****" if len(v) > 4 else "****"
+    return {
+        "success": True,
+        "credentials": out_creds,
+        "participants": participants,
+        "templates": templates,
+        "mail_configured": bool((creds or {}).get("mail_password")),
+    }
+
+
+@router.put("/mail-inquiry/config")
+async def mail_inquiry_put_config(body: dict):
+    """更新配置：段级覆盖。body 支持 {credentials, participants, templates} 或 {section, value}。
+
+    - credentials: 邮件/飞书凭据键（mail_username/mail_password/imap_host/...）
+    - participants: {approver_emails, default_suppliers}
+    - templates: {A: {subject, body/name}, B: ...}
+    """
+    _ensure_mail_inquiry_imports()
+    _ensure_mail_inquiry_imports._init_db()
+    spm = _ensure_mail_inquiry_imports._spm
+    if not body or not isinstance(body, dict):
+        return {"success": False, "error": "body_required"}
+
+    # 段级快捷写法：{section:"credentials|participants|templates", value:{...}}
+    section = body.get("section")
+    value = body.get("value")
+    if section in ("credentials", "participants", "templates"):
+        body = {section: value or {}}
+
+    def _merge(target: dict, patch: dict) -> dict:
+        merged = dict(target or {})
+        for k, v in (patch or {}).items():
+            # 空字符串视为清空该键，None 忽略
+            if v is None:
+                continue
+            merged[k] = v
+        return merged
+
+    if "credentials" in body:
+        cur = spm.spare_mail_get_config("proc_credentials") or {}
+        new = _merge(cur, body.get("credentials") or {})
+        spm.spare_mail_set_config("proc_credentials", new)
+    if "participants" in body:
+        cur = spm.spare_mail_get_config("proc_participants") or {}
+        new = _merge(cur, body.get("participants") or {})
+        spm.spare_mail_set_config("proc_participants", new)
+    if "templates" in body:
+        cur = spm.spare_mail_get_config("proc_templates") or {}
+        new = _merge(cur, body.get("templates") or {})
+        spm.spare_mail_set_config("proc_templates", new)
+    return {"success": True, "msg": "配置已更新", "reload_required": False}
