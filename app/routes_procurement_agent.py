@@ -3215,18 +3215,25 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
 # ════════════════════════════════════════════════════════════════
 
 @router.post("/mail-inquiry/task/{task_id}/advance")
-async def mail_inquiry_advance_task(task_id: str, to_status: str = "DECIDING_LOWEST"):
+async def mail_inquiry_advance_task(task_id: str, to_status: str = "DECIDING_LOWEST", body: dict = None):
     """手动推进单个任务到指定状态（调试/应急用，绕过等待供应商回复）。
 
     to_status 支持 DECIDING_LOWEST（把已收到的报价送去算最低价）。后续 tick 会继续推进。
-    可选 body 传 {allow_partial: true} 表示即使未收齐报价也推进。
+    body 可选传 quotes=[{supplier,email,unit_price,condition,count,ship_time,...}]，
+    会先覆盖写入任务报价再推进（用于报价解析失败但人工已读出的场景）。
     """
+    body = body or {}
     _ensure_mail_inquiry_imports()
     _ensure_mail_inquiry_imports._init_db()
     spm = _ensure_mail_inquiry_imports._spm
     t = spm.spare_mail_get_task(task_id)
     if not t:
         return {"success": False, "error": "not_found"}
+    # 可选：人工注入报价
+    inject = body.get("quotes")
+    if inject is not None:
+        spm.spare_mail_update_task(task_id, {"quotes_json": json.dumps(inject, ensure_ascii=False)})
+        t = spm.spare_mail_get_task(task_id)
     cfg, tpls = _load_mail_inquiry_skill()
     if to_status == "DECIDING_LOWEST":
         # 把已收的报价送去最低价优选
