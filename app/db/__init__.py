@@ -64,6 +64,9 @@ from .seed import (
     db_update_mcp_tool,
 )
 
+# Re-export seed data for tests that access db.MOCK_EMPLOYEES / db.SKILLS
+from seed_data import MOCK_EMPLOYEES, SKILLS
+
 from .employees import (
     db_list_employees,
     db_get_employee,
