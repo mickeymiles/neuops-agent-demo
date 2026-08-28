@@ -2276,7 +2276,6 @@ async def _handle_confirm_purchase_action(action_data: dict) -> dict:
 # ── 模块级延迟 import（避免改文件顶部 import 区）──
 def _ensure_mail_inquiry_imports():
     """首次调用时把 CRUD / schema / skill_loader / employees 加载进来。"""
-    import importlib, sys
     try:
         from app.db import spare_mail as _spm; _ensure_mail_inquiry_imports._spm = _spm
         from app.db.schema import init_spare_mail_db as _init_db; _ensure_mail_inquiry_imports._init_db = _init_db
@@ -2570,7 +2569,7 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     m = re.search(r"(?:(?:询价)?回复(?:时限|时间|内))\s*[:：]?\s*(\d+\s*[hH小时])", merged)
     if m:
         dur = m.group(1).lower().replace("小时", "h").replace(" ", "")
-        dur_map = {"12h": "12h", "24h": "24h", "48h": "48h", "12h": "12h"}
+        dur_map = {"12h": "12h", "24h": "24h", "48h": "48h"}
         out["inquiry_dur"] = dur_map.get(dur, dur) if dur_map.get(dur) else dur
     # 最晚发货时间
     m = re.search(r"(?:最晚发货(?:时间)?\s*[:：]?\s*)(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?)", merged)
@@ -2693,7 +2692,6 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
     r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude,
                              match_in_reply_to_msg_ids=match_ids)
 
-    new_quotes_added = False
     if r.get("success"):
         for m in r.get("mails", []):
             mid = _norm_mid(m.get("message_id", ""))
@@ -2716,7 +2714,6 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
             # 迟到判断
             deadline_str = task.get("inquiry_deadline", "")
             try:
-                from email.utils import parsedate_to_datetime
                 recv_ts = int(m.get("receive_timestamp") or 0)
                 deadline_ts = int(datetime.strptime(deadline_str, "%Y-%m-%d %H:%M:%S").timestamp()) if deadline_str else 0
                 is_late = bool(recv_ts and deadline_ts and recv_ts > deadline_ts)
@@ -2736,7 +2733,6 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
                 "raw_body": body[:800],
             })
             existing_msg_ids.add(mid)
-            new_quotes_added = True
 
     # 判断是否到点/全部已回
     all_replied = all(
@@ -2747,7 +2743,6 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
     )
     deadline_str = task.get("inquiry_deadline", "")
     try:
-        import time as _time
         deadline_ts = int(datetime.strptime(deadline_str, "%Y-%m-%d %H:%M:%S").timestamp()) if deadline_str else 0
     except Exception:
         deadline_ts = 0
