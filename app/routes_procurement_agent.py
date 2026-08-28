@@ -2548,6 +2548,9 @@ def _step_parsing(cfg, tpls):
 
         # 从正文抽取字段（尽量解析，不完整就留空由后续补）
         fields = _extract_inquiry_fields(body, subject)
+        # 正则为主、LLM 兜底：关键字段（brand/pn/part_type/count/spec）缺失时调 DeepSeek 补抽
+        if _extract_needs_llm(fields):
+            fields = _llm_fallback_extract(body, subject, fields)
         task_id = _gen_task_id()
         deadline = _inquiry_deadline_ts(fields.get("inquiry_dur", "48h"))
 
@@ -2588,17 +2591,17 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     # 项目名称
     m = re.search(r"(?:项目名称?\s*[:：]?\s*)([\u4e00-\u9fff\w\-（）()\s]{2,40})", merged)
     if m and "project_name" not in out: out["project_name"] = m.group(1).strip()
-    # 品牌
-    m = re.search(r"(?:品牌\s*[:：]?\s*)([A-Za-z][A-Za-z0-9\-]{2,20})", merged)
+    # 品牌（中英文均可：兼容 三星 / Seagate）
+    m = re.search(r"品牌\s*[:：]?\s*([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9\-]{1,20})", merged)
     if m: out["brand"] = m.group(1)
-    # PN
-    m = re.search(r"(?:PN(?:\s*料号)?\s*[:：]?\s*)([A-Za-z0-9\-/.]{4,30})", merged, re.I)
+    # PN（兼容 "PN：" 与 "型号（PN）："）
+    m = re.search(r"(?:PN(?:\s*料号)?\s*[:：]?|型号（PN）\s*[:：])\s*([A-Za-z0-9\-/.]+)", merged, re.I)
     if m: out["pn"] = m.group(1)
-    # 备件类型
-    m = re.search(r"(?:备件(?:类型)?\s*[:：]?\s*)(内存条|硬盘|电源|主板|网卡|CPU|机箱|风扇|SSD|HDD)", merged)
-    if m: out["part_type"] = m.group(1)
-    # 成色
-    m = re.search(r"(成色\s*[:：]?\s*)(全新|原厂翻新|拆机二手)", merged)
+    # 备件类型（兼容 "备件类型：" / "类型：" 开头，值为任意词）
+    m = re.search(r"(?:备件类型\s*[:：]?\s*|类型\s*[:：]?\s*)([^\n：:]{1,20})", merged)
+    if m: out["part_type"] = m.group(1).strip()
+    # 成色（取值，不含 "成色：" 前缀）
+    m = re.search(r"成色\s*[:：]?\s*(全新|原厂翻新|拆机二手)", merged)
     if m: out["condition"] = m.group(1)
     # 数量
     m = re.search(r"(?:采购数量|数量)\s*[:：]?\s*(\d+)", merged)
@@ -2607,16 +2610,15 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     m = re.search(r"(?:(?:询价)?回复(?:时限|时间|内))\s*[:：]?\s*(\d+\s*[hH小时])", merged)
     if m:
         dur = m.group(1).lower().replace("小时", "h").replace(" ", "")
-        dur_map = {"12h": "12h", "24h": "24h", "48h": "48h"}
-        out["inquiry_dur"] = dur_map.get(dur, dur) if dur_map.get(dur) else dur
+        out["inquiry_dur"] = dur
     # 最晚发货时间
     m = re.search(r"(?:最晚发货(?:时间)?\s*[:：]?\s*)(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?)", merged)
     if m: out["latest_ship_time"] = m.group(1).replace("/", "-").replace("年", "-").replace("月", "-").replace("日", "")
-    # 规格
-    m = re.search(r"(?:规格(?:参数)?\s*[:：]?\s*)([\u4e00-\u9fff\w\d\s+/\-]{4,60})", merged)
+    # 规格（取本冒号后到行尾，不再吞并后续换行/字段）
+    m = re.search(r"规格(?:参数)?\s*[:：]?\s*([^\n：:]{1,40})", merged)
     if m: out["spec"] = m.group(1).strip()
     # 收货地址
-    m = re.search(r"(?:收货地址|收货地址(?:详情)?|地址)\s*[:：]?\s*([^\n]{3,80})", merged)
+    m = re.search(r"(?:收货地址|收货地址(?:详情)?|地址)\s*[:：︓]?\s*([^\n]{3,80})", merged)
     if m: out["address"] = m.group(1).strip()
     # 联系人
     m = re.search(r"(?:收货人|联系人|收货联系人)\s*[:：]?\s*([\u4e00-\u9fff\w]{2,10})", merged)
@@ -2625,6 +2627,86 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     m = re.search(r"(?:联系电话|收货人电话|电话)\s*[:：]?\s*([\d\-+]{7,20})", merged)
     if m: out["receiver_phone"] = m.group(1).strip()
     return out
+
+
+# ── mail-inquiry 字段 LLM 兜底（正则为主，仅关键字段缺失时调用）──
+_MI_LLM_REQUIRED = ("brand", "pn", "part_type", "count", "spec")
+
+def _extract_needs_llm(fields: dict) -> bool:
+    """正则结果是否缺关键字段 → 本轮需走 LLM 兜底。"""
+    return any(not (fields.get(k) or "").strip() for k in _MI_LLM_REQUIRED)
+
+
+def _llm_fallback_extract(body: str, subject: str, regex_fields: dict) -> dict:
+    """用 DeepSeek 从询价邮件补抽缺失字段（仅当正则缺失关键字段时调用）。
+
+    返回字段与 _extract_inquiry_fields 对齐：project_no/project_name/part_type/
+    brand/pn/spec/condition/count/address/receiver_name/receiver_phone/
+    inquiry_dur/latest_ship_time。LLM 失败时原样返回 regex_fields，保证不比正则差。
+    """
+    def _merge(result: dict) -> dict:
+        merged = dict(regex_fields)
+        for k, v in (result or {}).items():
+            if k in merged and v not in (None, ""):
+                merged[k] = v
+        return merged
+
+    try:
+        from app.agent_chat import _load_deepseek_key, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+    except Exception:
+        return regex_fields
+    key = _load_deepseek_key()
+    if not key:
+        return regex_fields
+
+    prompt = (
+        "你是专业的备件采购询价邮件解析助手。请从工程师发起的【询价申请邮件】正文和主题中，"
+        "抽取结构化字段，输出严格的 JSON（不要多余文字、不要代码块标记）。\n"
+        "字段说明：\n"
+        "- project_no 项目编号（如 PRJ-2026-0888，没写则空字符串）\n"
+        "- project_name 项目名称（没写则空字符串，不要把主题里的占位符 XXX 当真实值）\n"
+        "- part_type 备件类型（如 内存条/硬盘/主板；原文写 类型：X 则取 X）\n"
+        "- brand 品牌（如 三星/Kingston）\n"
+        "- pn 型号/PN 料号\n"
+        "- spec 规格参数\n"
+        "- condition 成色（全新/原厂翻新/拆机二手）\n"
+        "- count 采购数量（数字字符串）\n"
+        "- address 收货地址\n"
+        "- receiver_name 收货联系人\n"
+        "- receiver_phone 联系电话\n"
+        "- inquiry_dur 询价回复时限（如 48h/24h/12h/1h）\n"
+        "- latest_ship_time 最晚发货时间（统一格式 YYYY-MM-DD）\n"
+        "规范：只把邮件里真实出现的信息填进去，未出现一律给空字符串，绝不编造。"
+    )
+    user_msg = f"【主题】\n{subject}\n\n【邮件正文】\n{body}\n\n【应输出 JSON 字段】\n"
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": user_msg},
+    ]
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": messages,
+        "temperature": 0.1,
+        "max_tokens": 1200,
+        "response_format": {"type": "json_object"},
+    }
+    try:
+        import httpx as _httpx
+        with _httpx.Client(timeout=60) as client:
+            r = client.post(f"{DEEPSEEK_BASE_URL}/chat/completions",
+                            headers={"Authorization": f"Bearer {key}",
+                                     "Content-Type": "application/json"},
+                            json=payload)
+            if r.status_code != 200:
+                return regex_fields
+            data = r.json()
+            content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+        result = json.loads(content)
+        if not isinstance(result, dict):
+            return regex_fields
+        return _merge(result)
+    except Exception:
+        return regex_fields
 
 
 def _step_sending_b(task: dict, cfg: dict, tpls: dict):
