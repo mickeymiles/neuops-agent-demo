@@ -383,6 +383,7 @@ def init_spare_mail_db():
                 CREATE TABLE IF NOT EXISTS spare_mail_task (
                     task_id TEXT PRIMARY KEY,
                     thread_msg_id TEXT DEFAULT '',
+                    d_mail_msg_id TEXT DEFAULT '',
                     approver_email TEXT DEFAULT '',
                     project_no TEXT DEFAULT '',
                     project_name TEXT DEFAULT '',

@@ -19,7 +19,7 @@ def _now() -> str:
 
 # 表字段集合（与 schema.py 的 CREATE TABLE 保持同步）
 _TASK_COLS = (
-    "task_id", "thread_msg_id", "approver_email",
+    "task_id", "thread_msg_id", "d_mail_msg_id", "approver_email",
     "project_no", "project_name", "part_type", "brand", "pn", "spec",
     "condition", "count", "address", "inquiry_dur", "latest_ship_time",
     "inquiry_deadline", "suppliers_json", "quotes_json", "lowest_supplier",

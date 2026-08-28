@@ -178,7 +178,11 @@
     "proc_mail_username": "",
     "proc_mail_host": "",
     "proc_mail_port": "",
-    "approver_emails": [],
+    "approver_emails": ["biqzh@neusoft.com"],
+    "default_suppliers": [
+      {"name": "供应商1", "email": "13260023678@163.com"},
+      {"name": "供应商2", "email": "biquanzhi@163.com"}
+    ],
     "mail_enabled": true
   },
   "templates": {
@@ -190,7 +194,7 @@
     "B": {
       "name": "B-对外询价-不带收货地址",
       "subject": "【询价】{project_no} {brand} {pn} x {count} — {inquiry_dur} 内回复",
-      "body": "尊敬的 {supplier} 供应商：\n\n您好！我司项目 {project_no}（{project_name}）正紧急采购以下备件，烦请在 {inquiry_dur} 内给予报价：\n\n- 备件类型：{part_type}\n- 品牌：{brand}\n- PN 料号：{pn}\n- 规格参数：{spec}\n- 成色要求：{condition}\n- 采购数量：{count}\n- 最晚发货：{latest_ship_time}\n- 询价截止：{deadline}\n\n请按以上要求回复含税单价与交货周期，谢谢！\n\n（注：收货地址将在确定供应商后于订货邮件中单独告知）\n\n- NeuOps 备件邮件询价系统\n任务编号：{task_no}"
+      "body": "尊敬的 {supplier} 供应商：\n\n您好！我司项目 {project_no}（{project_name}）正紧急采购以下备件，烦请在 {inquiry_dur} 内给予报价：\n\n- 备件类型：{part_type}\n- 品牌：{brand}\n- PN 料号：{pn}\n- 规格参数：{spec}\n- 成色要求：{condition}\n- 采购数量：{count}\n- 最晚发货：{latest_ship_time}\n- 询价截止：{deadline}\n\n请按以上要求回复含税单价与交货周期，谢谢！\n\n（注：收货信息将在确定供应商后于订货邮件中单独告知）\n\n- NeuOps 备件邮件询价系统\n任务编号：{task_no}"
     },
     "C": {
       "name": "C-供应商回复-系统自动归档",

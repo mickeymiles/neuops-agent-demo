@@ -2495,6 +2495,15 @@ def _step_parsing(cfg, tpls):
         if not mid or mid in existing_threads:
             continue
 
+        # 排除条件：
+        # 1) 邮件是回复邮件（in_reply_to 不为空）→ 跳过，不是工程师发起
+        # 2) 主题以 Re: / 回复 / Re: 开头 → 跳过
+        if m.get("in_reply_to") or m.get("references"):
+            continue
+        subj_lower = subject.lower()
+        if subj_lower.startswith("re:") or subj_lower.startswith("回复") or subj_lower.startswith("re :"):
+            continue
+
         # 命中关键词 → 判定为"工程师发起询价"邮件
         body_flat = re.sub(r"\s+", "", body + subject)
         if not any(kw in body_flat for kw in _INTERNAL_KEYWORDS):
@@ -2540,7 +2549,7 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     m = re.search(r"(?:项目(?:编号|号)?\s*[:：]?\s*)(PRJ[-_/\w\d]+)", merged, re.I)
     if m: out["project_no"] = m.group(1)
     # 项目名称
-    m = re.search(r"(?:项目名称?\s*[:：]?\s*)([\u4e00-\w\-（）()\s]{2,40})", merged)
+    m = re.search(r"(?:项目名称?\s*[:：]?\s*)([\u4e00-\u9fff\w\-（）()\s]{2,40})", merged)
     if m and "project_name" not in out: out["project_name"] = m.group(1).strip()
     # 品牌
     m = re.search(r"(?:品牌\s*[:：]?\s*)([A-Za-z][A-Za-z0-9\-]{2,20})", merged)
@@ -2567,8 +2576,17 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     m = re.search(r"(?:最晚发货(?:时间)?\s*[:：]?\s*)(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?)", merged)
     if m: out["latest_ship_time"] = m.group(1).replace("/", "-").replace("年", "-").replace("月", "-").replace("日", "")
     # 规格
-    m = re.search(r"(?:规格(?:参数)?\s*[:：]?\s*)([\u4e00-\w\d\s+/\-]{4,60})", merged)
+    m = re.search(r"(?:规格(?:参数)?\s*[:：]?\s*)([\u4e00-\u9fff\w\d\s+/\-]{4,60})", merged)
     if m: out["spec"] = m.group(1).strip()
+    # 收货地址
+    m = re.search(r"(?:收货地址|收货地址(?:详情)?|地址)\s*[:：]?\s*([^\n]{3,80})", merged)
+    if m: out["address"] = m.group(1).strip()
+    # 联系人
+    m = re.search(r"(?:收货人|联系人|收货联系人)\s*[:：]?\s*([\u4e00-\u9fff\w]{2,10})", merged)
+    if m: out["receiver_name"] = m.group(1).strip()
+    # 联系电话
+    m = re.search(r"(?:联系电话|收货人电话|电话)\s*[:：]?\s*([\d\-+]{7,20})", merged)
+    if m: out["receiver_phone"] = m.group(1).strip()
     return out
 
 
@@ -2760,7 +2778,7 @@ def _parse_quote_body(body: str) -> dict:
     if m: out["condition"] = m.group(1)
     m = re.search(r"(?:数量|订货量)\s*[:：]?\s*(\d+)", body)
     if m: out["count"] = int(m.group(1))
-    m = re.search(r"(?:发货(?:时间|周期)?|交货(?:时间|周期)?|到货)\s*[:：]?\s*([\d\u4e00-\w\s]+?(?:天|日|周|小时内?)|\d{4}[-/]\d{1,2}[-/]\d{1,2})", body)
+    m = re.search(r"(?:发货(?:时间|周期)?|交货(?:时间|周期)?|到货)\s*[:：]?\s*([\d\u4e00-\u9fff\s]+?(?:天|日|周|小时内?)|\d{4}[-/]\d{1,2}[-/]\d{1,2})", body)
     if m: out["ship_time"] = m.group(1).strip()
     return out
 
@@ -2839,18 +2857,20 @@ def _step_deciding_lowest(task: dict, cfg: dict, tpls: dict):
         suppliers_count=len(valid),
     )
     # 回复模板 A 会话 + 抄送审批人
-    tool_send_mail(
+    d_sent = tool_send_mail(
         to=[str(cfg.get("proc_mail_username") or "").strip()],
         subject=subj_d, body_text=body_d,
         cc=approvers if approvers else None,
         reply_to_mail_id=task.get("thread_msg_id") or None,
     )
+    d_msg_id = d_sent.get("message_id", "") if isinstance(d_sent, dict) else ""
 
     spm.spare_mail_update_task(tid, {
         "lowest_supplier": lowest_supplier,
         "lowest_quote": json.dumps(lowest, ensure_ascii=False),
         "approval_state": "pending",
         "approval_result": "",
+        "d_mail_msg_id": d_msg_id,
         "status": "WAITING_APPROVAL",
         "latest_step": f"DECIDING_LOWEST→WAITING_APPROVAL(lowest={lowest_supplier}@{lowest_quote_str})",
     })
@@ -2883,12 +2903,15 @@ def _step_waiting_approval(task: dict, cfg: dict, tpls: dict):
         })
         return True
 
-    # 拉邮件：模板 D 发出去的 Message-ID 没存，用 thread_msg_id（模板 A 的）
-    # 匹配回复——In-Reply-To 链条最终会 reference 到模板 A 的 message_id
+    # 拉邮件：优先用 D 邮件的 message_id 匹配审批人回复
+    # 如果没有 D message_id，降级用 thread_msg_id（模板 A 的）
+    d_msg_id = _norm_mid(task.get("d_mail_msg_id", ""))
+    thread_mid = _norm_mid(task.get("thread_msg_id", ""))
+    match_ids = [d_msg_id] if d_msg_id else ([thread_mid] if thread_mid else [])
     since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60 * 2
     exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
     r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude,
-                             match_in_reply_to_msg_ids=[_norm_mid(task.get("thread_msg_id", ""))])
+                             match_in_reply_to_msg_ids=match_ids)
     if not r.get("success"):
         return False
 
