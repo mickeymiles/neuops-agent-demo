@@ -1989,6 +1989,9 @@ async def scheduler_tick(kind: str = "all"):
         results["flow_04"] = _flow_proc_04_progress_and_alert()
     if kind in ("delivery", "all"):
         results["flow_06"] = _flow_proc_06_parse_delivery_mail()
+    if kind in ("mail-inquiry", "all"):
+        # 备件邮件询价流程引擎（独立状态机，每 tick 推进 N 个任务）
+        results["mail_inquiry"] = tick_mail_inquiry()
     return {"success": True, "kind": kind, "results": results}
 
 
@@ -2259,3 +2262,819 @@ async def _handle_confirm_purchase_action(action_data: dict) -> dict:
         "card": card,  # 飞书会用此卡片替换原卡片
     }
 
+
+
+
+
+# ════════════════════════════════════════════════════════════════
+# 备件邮件询价流程引擎（阶段 2）
+# ── 严格最小侵入：全部新代码追加在文件末尾，不改动 2265 行之前任何现有函数。
+# ── 架构：静态配置走 skill JSON；动态状态走 spare_mail_task 单表；
+#           流程驱动走 scheduler/tick?kind=mail-inquiry 定时轮询。
+# ════════════════════════════════════════════════════════════════
+
+# ── 模块级延迟 import（避免改文件顶部 import 区）──
+def _ensure_mail_inquiry_imports():
+    """首次调用时把 CRUD / schema / skill_loader / employees 加载进来。"""
+    import importlib, sys
+    try:
+        from app.db import spare_mail as _spm; _ensure_mail_inquiry_imports._spm = _spm
+        from app.db.schema import init_spare_mail_db as _init_db; _ensure_mail_inquiry_imports._init_db = _init_db
+        from app.db.employees import db_upsert_employee as _upsert_emp; _ensure_mail_inquiry_imports._upsert_emp = _upsert_emp
+        from app.skill_loader import load_skill as _load_sk; _ensure_mail_inquiry_imports._load_sk = _load_sk
+    except Exception as e:
+        raise RuntimeError(f"mail-inquiry imports failed: {e}")
+
+# ── 常量 ──
+_SKILL_ID_MAIL_INQUIRY = "skill-proc-mail-inquiry"
+_TICK_MAX_TASKS = 5          # 每 tick 最多推进 N 个任务
+_DEFAULT_SINCE_MINUTES = 120  # 读邮件窗口（2h）
+_INTERNAL_KEYWORDS = ("备件", "询价", "采购", "备件询价", "备件采购")
+
+# ── 工具函数 ──
+def _norm_mid(m):
+    """规范化 RFC Message-ID（去掉前后 <>）。"""
+    s = str(m or "").strip()
+    while s.startswith("<"): s = s[1:]
+    while s.endswith(">"):   s = s[:-1]
+    return s.strip()
+
+def _load_mail_inquiry_skill():
+    """从 skill_loader 热加载 skill-proc-mail-inquiry，返回 (config_dict, templates_dict)。
+    失败时返回 (None, None)。"""
+    try:
+        _ensure_mail_inquiry_imports()
+        sk = _ensure_mail_inquiry_imports._load_sk(_SKILL_ID_MAIL_INQUIRY)
+        if not sk:
+            return None, None
+        skill_def = sk.get("skill") or {}
+        return skill_def.get("config") or {}, skill_def.get("templates") or {}
+    except Exception as e:
+        print(f"[mail-inquiry] load skill failed: {e}")
+        return None, None
+
+def _gen_task_id() -> str:
+    """生成 MI-{timestamp}-{rand6} 格式的任务号。"""
+    import random
+    ts = int(time.time())
+    r = ''.join(random.choices('abcdef0123456789', k=6))
+    return f"MI-{ts}-{r}"
+
+def _inquiry_deadline_ts(inquiry_dur: str) -> int:
+    """询价时限换算成 Unix 时间戳（截止时刻）。"""
+    dur = str(inquiry_dur or "48h").lower()
+    mapping = {"12h": 12 * 3600, "24h": 24 * 3600, "48h": 48 * 3600}
+    secs = mapping.get(dur, 48 * 3600)
+    return int(time.time()) + secs
+
+def _safe_json_loads(s, default=None):
+    if default is None: default = []
+    if not s: return default
+    try: return json.loads(s)
+    except Exception: return default
+
+
+def _safe_format(template: str, args: dict) -> str:
+    """安全 format：模板占位符缺失时用空字符串兜底，防止崩。"""
+    if not template:
+        return ""
+    try:
+        return template.format(**args)
+    except KeyError:
+        # 有占位符没提供 → 尝试只补缺失的为空串
+        import re as _re
+        missing = set()
+        for m in _re.finditer(r"\{(\w+)\}", template):
+            key = m.group(1)
+            if key not in args:
+                missing.add(key)
+        fixed = dict(args)
+        for k in missing:
+            fixed[k] = ""
+        try:
+            return template.format(**fixed)
+        except Exception:
+            return template
+    except Exception:
+        return template
+
+
+# ── 主循环：tick_mail_inquiry ──
+def tick_mail_inquiry():
+    """每次被 scheduler/tick?kind=mail-inquiry 调用时执行。
+
+    1) 确保 DB 表存在（幂等）。
+    2) 从 PARSING/SENDING_B/WAITING_QUOTES/DECIDING_LOWEST/WAITING_APPROVAL/ORDERING
+       六个状态各取最多 N/TICK 个任务推进。
+    3) 每个 step 推进独立 try/except，单任务崩不阻塞其他。
+    """
+    _ensure_mail_inquiry_imports()
+    try:
+        _ensure_mail_inquiry_imports._init_db()
+    except Exception as e:
+        print(f"[mail-inquiry] init_spare_mail_db failed: {e}")
+
+    cfg, tpls = _load_mail_inquiry_skill()
+    if not cfg:
+        return {"enabled": False, "msg": "skill-proc-mail-inquiry 未加载", "progress": 0}
+    if not cfg.get("mail_enabled", True):
+        return {"enabled": False, "msg": "mail_enabled=false 已停用", "progress": 0}
+
+    progress = 0
+    step_stats = {}
+
+    # ── Step 1: PARSING — 读收件箱拉"工程师发起询价"的内部邮件并落任务 ──
+    try:
+        step_stats["PARSING"] = _step_parsing(cfg, tpls)
+        progress += step_stats["PARSING"].get("created", 0)
+    except Exception as e:
+        step_stats["PARSING"] = {"error": str(e)}
+
+    # ── Step 2: SENDING_B — 对新任务发对外询价邮件 ──
+    try:
+        tasks_b = _ensure_mail_inquiry_imports._spm.spare_mail_list_tasks(
+            filter={"status": "SENDING_B"}, page_size=_TICK_MAX_TASKS)
+        for t in tasks_b:
+            try:
+                _step_sending_b(t, cfg, tpls)
+                progress += 1
+            except Exception as e:
+                _ensure_mail_inquiry_imports._spm.spare_mail_update_task(
+                    t["task_id"], {"latest_step": f"SENDING_B_ERROR:{e}", "updated_at": ""})
+        step_stats["SENDING_B"] = {"processed": len(tasks_b)}
+    except Exception as e:
+        step_stats["SENDING_B"] = {"error": str(e)}
+
+    # ── Step 3: WAITING_QUOTES — 拉供应商报价回复（线程匹配 B 的 Message-ID） ──
+    try:
+        tasks_waiting = _ensure_mail_inquiry_imports._spm.spare_mail_list_tasks(
+            filter={"status": "WAITING_QUOTES"}, page_size=_TICK_MAX_TASKS * 3)
+        for t in tasks_waiting:
+            try:
+                if _step_waiting_quotes(t, cfg, tpls):
+                    progress += 1
+            except Exception as e:
+                _ensure_mail_inquiry_imports._spm.spare_mail_update_task(
+                    t["task_id"], {"latest_step": f"WAITING_QUOTES_ERROR:{e}"})
+        step_stats["WAITING_QUOTES"] = {"scanned": len(tasks_waiting)}
+    except Exception as e:
+        step_stats["WAITING_QUOTES"] = {"error": str(e)}
+
+    # ── Step 4: DECIDING_LOWEST — 到点/全部供应商已回 → 汇总最低价 + 内部审批 ──
+    try:
+        tasks_deciding = _ensure_mail_inquiry_imports._spm.spare_mail_list_tasks(
+            filter={"status": "DECIDING_LOWEST"}, page_size=_TICK_MAX_TASKS)
+        for t in tasks_deciding:
+            try:
+                _step_deciding_lowest(t, cfg, tpls)
+                progress += 1
+            except Exception as e:
+                _ensure_mail_inquiry_imports._spm.spare_mail_update_task(
+                    t["task_id"], {"latest_step": f"DECIDING_ERROR:{e}"})
+        step_stats["DECIDING_LOWEST"] = {"processed": len(tasks_deciding)}
+    except Exception as e:
+        step_stats["DECIDING_LOWEST"] = {"error": str(e)}
+
+    # ── Step 5: WAITING_APPROVAL — 读审批人回复，路由批准/拒绝/指定供应商 ──
+    try:
+        tasks_app = _ensure_mail_inquiry_imports._spm.spare_mail_list_tasks(
+            filter={"status": "WAITING_APPROVAL"}, page_size=_TICK_MAX_TASKS)
+        for t in tasks_app:
+            try:
+                _step_waiting_approval(t, cfg, tpls)
+                progress += 1
+            except Exception as e:
+                _ensure_mail_inquiry_imports._spm.spare_mail_update_task(
+                    t["task_id"], {"latest_step": f"APPROVAL_ERROR:{e}"})
+        step_stats["WAITING_APPROVAL"] = {"processed": len(tasks_app)}
+    except Exception as e:
+        step_stats["WAITING_APPROVAL"] = {"error": str(e)}
+
+    # ── Step 6: ORDERING — 下达订货邮件给选中供应商 ──
+    try:
+        tasks_order = _ensure_mail_inquiry_imports._spm.spare_mail_list_tasks(
+            filter={"status": "ORDERING"}, page_size=_TICK_MAX_TASKS)
+        for t in tasks_order:
+            try:
+                _step_ordering(t, cfg, tpls)
+                progress += 1
+            except Exception as e:
+                _ensure_mail_inquiry_imports._spm.spare_mail_update_task(
+                    t["task_id"], {"latest_step": f"ORDERING_ERROR:{e}"})
+        step_stats["ORDERING"] = {"processed": len(tasks_order)}
+    except Exception as e:
+        step_stats["ORDERING"] = {"error": str(e)}
+
+    return {"enabled": True, "progress": progress, "step_stats": step_stats}
+
+
+# ════════════════════════════════════════════════════════════════
+# Step 实现
+# ════════════════════════════════════════════════════════════════
+
+def _step_parsing(cfg, tpls):
+    """PARSING 状态：读收件箱找工程师发起询价的内部邮件 → 建任务 → 转到 SENDING_B。"""
+    since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60
+    # 黑名单：采购方自己的邮箱（排除 sent 副本）
+    exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
+    r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude)
+    created = 0
+    if not r.get("success"):
+        return {"created": 0, "msg": r.get("error", "read inbox failed")}
+
+    # 已创建的 thread_msg_id 集合（避免重复入库）
+    existing_threads = {
+        t.get("thread_msg_id", "") for t in
+        _ensure_mail_inquiry_imports._spm.spare_mail_list_tasks(page_size=500)
+    }
+
+    for m in r.get("mails", []):
+        body = (m.get("mail_body_text") or "")
+        subject = (m.get("subject") or "")
+        mid = _norm_mid(m.get("message_id", ""))
+        if not mid or mid in existing_threads:
+            continue
+
+        # 命中关键词 → 判定为"工程师发起询价"邮件
+        body_flat = re.sub(r"\s+", "", body + subject)
+        if not any(kw in body_flat for kw in _INTERNAL_KEYWORDS):
+            continue
+
+        # 从正文抽取字段（尽量解析，不完整就留空由后续补）
+        fields = _extract_inquiry_fields(body, subject)
+        task_id = _gen_task_id()
+        deadline = _inquiry_deadline_ts(fields.get("inquiry_dur", "48h"))
+
+        task = {
+            "task_id": task_id,
+            "thread_msg_id": mid,
+            "project_no": fields.get("project_no", ""),
+            "project_name": fields.get("project_name", ""),
+            "part_type": fields.get("part_type", ""),
+            "brand": fields.get("brand", ""),
+            "pn": fields.get("pn", ""),
+            "spec": fields.get("spec", ""),
+            "condition": fields.get("condition", ""),
+            "count": fields.get("count", ""),
+            "address": fields.get("address", ""),
+            "inquiry_dur": fields.get("inquiry_dur", "48h"),
+            "latest_ship_time": fields.get("latest_ship_time", ""),
+            "inquiry_deadline": datetime.fromtimestamp(deadline).strftime("%Y-%m-%d %H:%M:%S"),
+            "suppliers_json": "[]",
+            "quotes_json": "[]",
+            "status": "SENDING_B",
+            "latest_step": "PARSING→SENDING_B",
+        }
+        _ensure_mail_inquiry_imports._spm.spare_mail_create_task(task)
+        existing_threads.add(mid)
+        created += 1
+
+    return {"created": created, "total_scanned": len(r.get("mails", []))}
+
+
+def _extract_inquiry_fields(body: str, subject: str) -> dict:
+    """从工程师询价邮件正文抽取关键字段（正则规则，失败返回空字符串占位）。"""
+    merged = (body or "") + "\n" + (subject or "")
+    out = {}
+    # 项目编号
+    m = re.search(r"(?:项目(?:编号|号)?\s*[:：]?\s*)(PRJ[-_/\w\d]+)", merged, re.I)
+    if m: out["project_no"] = m.group(1)
+    # 项目名称
+    m = re.search(r"(?:项目名称?\s*[:：]?\s*)([\u4e00-\w\-（）()\s]{2,40})", merged)
+    if m and "project_name" not in out: out["project_name"] = m.group(1).strip()
+    # 品牌
+    m = re.search(r"(?:品牌\s*[:：]?\s*)([A-Za-z][A-Za-z0-9\-]{2,20})", merged)
+    if m: out["brand"] = m.group(1)
+    # PN
+    m = re.search(r"(?:PN(?:\s*料号)?\s*[:：]?\s*)([A-Za-z0-9\-/.]{4,30})", merged, re.I)
+    if m: out["pn"] = m.group(1)
+    # 备件类型
+    m = re.search(r"(?:备件(?:类型)?\s*[:：]?\s*)(内存条|硬盘|电源|主板|网卡|CPU|机箱|风扇|SSD|HDD)", merged)
+    if m: out["part_type"] = m.group(1)
+    # 成色
+    m = re.search(r"(成色\s*[:：]?\s*)(全新|原厂翻新|拆机二手)", merged)
+    if m: out["condition"] = m.group(1)
+    # 数量
+    m = re.search(r"(?:采购数量|数量)\s*[:：]?\s*(\d+)", merged)
+    if m: out["count"] = m.group(1)
+    # 询价时限
+    m = re.search(r"(?:(?:询价)?回复(?:时限|时间|内))\s*[:：]?\s*(\d+\s*[hH小时])", merged)
+    if m:
+        dur = m.group(1).lower().replace("小时", "h").replace(" ", "")
+        dur_map = {"12h": "12h", "24h": "24h", "48h": "48h", "12h": "12h"}
+        out["inquiry_dur"] = dur_map.get(dur, dur) if dur_map.get(dur) else dur
+    # 最晚发货时间
+    m = re.search(r"(?:最晚发货(?:时间)?\s*[:：]?\s*)(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?)", merged)
+    if m: out["latest_ship_time"] = m.group(1).replace("/", "-").replace("年", "-").replace("月", "-").replace("日", "")
+    # 规格
+    m = re.search(r"(?:规格(?:参数)?\s*[:：]?\s*)([\u4e00-\w\d\s+/\-]{4,60})", merged)
+    if m: out["spec"] = m.group(1).strip()
+    return out
+
+
+def _step_sending_b(task: dict, cfg: dict, tpls: dict):
+    """SENDING_B：渲染模板 B（不带收货地址）→ tool_batch_send_mail → 存 suppliers_json → WAITING_QUOTES。"""
+    tid = task["task_id"]
+    tpl_b = (tpls or {}).get("B", {}) or {}
+
+    # 供应商池：优先查 tool_table_query（主数据表），失败/无记录 fallback 空数组
+    suppliers = []
+    try:
+        r = tool_table_query(table_key="procurement_master_data", page_size=20)
+        records = r.get("records", []) if isinstance(r, dict) else []
+        for rec in records:
+            name = str(rec.get("supplier_name") or rec.get("name") or "").strip()
+            email = str(rec.get("supplier_email") or rec.get("email") or "").strip()
+            if name and email:
+                suppliers.append({"name": name, "email": email})
+    except Exception:
+        pass
+    if not suppliers:
+        # 兼容 skill config 里可能的 default_suppliers 占位
+        for s in (cfg or {}).get("default_suppliers", []) or []:
+            name = str(s.get("name") or "").strip() if isinstance(s, dict) else str(s)
+            email = str(s.get("email") or "").strip() if isinstance(s, dict) else ""
+            if name and email:
+                suppliers.append({"name": name, "email": email})
+
+    # 渲染模板 B（每个供应商各渲染一份，supplier 字段不同）
+    deadline_str = task.get("inquiry_deadline") or ""
+    emails = [s["email"] for s in suppliers]
+    subject = (tpl_b.get("subject") or "").format(
+        project_no=task.get("project_no", ""),
+        brand=task.get("brand", ""),
+        pn=task.get("pn", ""),
+        count=task.get("count", ""),
+        inquiry_dur=task.get("inquiry_dur", "48h"),
+    )
+    body_fmt = tpl_b.get("body") or ""
+    body_args = dict(
+        project_no=task.get("project_no", ""),
+        project_name=task.get("project_name", ""),
+        part_type=task.get("part_type", ""),
+        brand=task.get("brand", ""),
+        pn=task.get("pn", ""),
+        spec=task.get("spec", ""),
+        condition=task.get("condition", ""),
+        count=task.get("count", ""),
+        latest_ship_time=task.get("latest_ship_time", ""),
+        inquiry_dur=task.get("inquiry_dur", "48h"),
+        deadline=deadline_str,
+        task_no=tid,
+        supplier="{supplier}",
+    )
+    # 批量发送（同一个 body 模板，每封的 {supplier} 事后回填——这里统一批发送完再组装）
+    rendered_body = body_fmt.format(**body_args).replace("{supplier}", "供应商您好")
+    batch_r = tool_batch_send_mail(receiver_email_list=emails, subject=subject, body_text=rendered_body)
+
+    # 组装 suppliers_json
+    sent_map = {(s.get("email") or ""): (s.get("message_id") or "") for s in batch_r.get("sent", [])}
+    fail_set = {(f.get("email") or "") for f in batch_r.get("fail_email_list", [])}
+    suppliers_out = []
+    for s in suppliers:
+        email = s["email"]
+        msg_id = sent_map.get(email, "")
+        ok = email not in fail_set and bool(msg_id)
+        suppliers_out.append({
+            "name": s["name"], "email": email, "msg_id": msg_id, "sent_ok": ok,
+        })
+
+    # 存库并转到 WAITING_QUOTES
+    spm = _ensure_mail_inquiry_imports._spm
+    spm.spare_mail_update_task(tid, {
+        "suppliers_json": json.dumps(suppliers_out, ensure_ascii=False),
+        "status": "WAITING_QUOTES",
+        "latest_step": f"SENDING_B→WAITING_QUOTES(sent={sum(1 for x in suppliers_out if x['sent_ok'])}/{len(suppliers_out)})",
+    })
+    return True
+
+
+def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
+    """WAITING_QUOTES：拉邮件 → 按 In-Reply-To/References 匹配 B 的 Message-ID → 解析报价 → 到点或全供应商已回 → DECIDING_LOWEST。
+
+    返回 True 表示任务已推进到下一状态。
+    """
+    tid = task["task_id"]
+    suppliers = _safe_json_loads(task.get("suppliers_json") or "[]")
+    quotes = _safe_json_loads(task.get("quotes_json") or "[]")
+    existing_msg_ids = {_norm_mid(q.get("msg_id", "")) for q in quotes}
+
+    # 要匹配的 Message-ID：每个成功发送的 B 邮件
+    match_ids = [_norm_mid(s.get("msg_id", "")) for s in suppliers if s.get("sent_ok") and s.get("msg_id")]
+    if not match_ids:
+        # 没有发成功的询价邮件，直接转 DECIDING_LOWEST（此时 quotes=[] → 走无有效报价分支）
+        _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
+            "status": "DECIDING_LOWEST",
+            "latest_step": "WAITING_QUOTES→DECIDING_LOWEST(no_sent_suppliers)",
+        })
+        return True
+
+    # 拉收件箱：用 match_in_reply_to_msg_ids 精确匹配线程
+    since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60 * 2
+    exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
+    r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude,
+                             match_in_reply_to_msg_ids=match_ids)
+
+    new_quotes_added = False
+    if r.get("success"):
+        for m in r.get("mails", []):
+            mid = _norm_mid(m.get("message_id", ""))
+            if not mid or mid in existing_msg_ids:
+                continue
+            # 发件人必须在我们的供应商列表里
+            from_email = str(m.get("from_email") or "").lower()
+            matched_supplier = None
+            for s in suppliers:
+                if str(s.get("email") or "").lower() == from_email:
+                    matched_supplier = s
+                    break
+            if not matched_supplier:
+                continue
+
+            # 解析报价正文：单价/成色/数量/发货时间
+            body = m.get("mail_body_text") or ""
+            parsed = _parse_quote_body(body)
+
+            # 迟到判断
+            deadline_str = task.get("inquiry_deadline", "")
+            try:
+                from email.utils import parsedate_to_datetime
+                recv_ts = int(m.get("receive_timestamp") or 0)
+                deadline_ts = int(datetime.strptime(deadline_str, "%Y-%m-%d %H:%M:%S").timestamp()) if deadline_str else 0
+                is_late = bool(recv_ts and deadline_ts and recv_ts > deadline_ts)
+            except Exception:
+                is_late = False
+
+            quotes.append({
+                "supplier": matched_supplier.get("name", ""),
+                "email": from_email,
+                "unit_price": parsed.get("unit_price", ""),
+                "condition": parsed.get("condition", ""),
+                "count": parsed.get("count", ""),
+                "ship_time": parsed.get("ship_time", ""),
+                "msg_id": mid,
+                "is_late": is_late,
+                "raw_subject": m.get("subject", ""),
+                "raw_body": body[:800],
+            })
+            existing_msg_ids.add(mid)
+            new_quotes_added = True
+
+    # 判断是否到点/全部已回
+    all_replied = all(
+        not s.get("sent_ok")
+        or any(str(q.get("email") or "").lower() == str(s.get("email") or "").lower()
+               for q in quotes)
+        for s in suppliers
+    )
+    deadline_str = task.get("inquiry_deadline", "")
+    try:
+        import time as _time
+        deadline_ts = int(datetime.strptime(deadline_str, "%Y-%m-%d %H:%M:%S").timestamp()) if deadline_str else 0
+    except Exception:
+        deadline_ts = 0
+    now_ts = int(time.time())
+
+    if all_replied or (deadline_ts and now_ts >= deadline_ts):
+        _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
+            "quotes_json": json.dumps(quotes, ensure_ascii=False),
+            "status": "DECIDING_LOWEST",
+            "latest_step": f"WAITING_QUOTES→DECIDING_LOWEST(all_replied={all_replied}, deadline_hit={bool(deadline_ts and now_ts >= deadline_ts)})",
+        })
+        return True
+
+    # 还没到点/未全部回：更新 quotes_json 后继续等
+    _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
+        "quotes_json": json.dumps(quotes, ensure_ascii=False),
+        "latest_step": f"WAITING_QUOTES({len(quotes)} quotes so far)",
+    })
+    return False
+
+
+def _parse_quote_body(body: str) -> dict:
+    """从供应商报价正文抽单价/成色/数量/发货时间（正则，失败留空）。"""
+    out = {}
+    m = re.search(r"(?:单价|报价|含税价|价格)\s*[:：]?\s*[¥￥$]?\s*(\d+(?:\.\d+)?)", body)
+    if m: out["unit_price"] = float(m.group(1))
+    m = re.search(r"(成色|新旧)\s*[:：]?\s*(全新|原厂翻新|拆机二手|二手|全新原装)", body)
+    if m: out["condition"] = m.group(1)
+    m = re.search(r"(?:数量|订货量)\s*[:：]?\s*(\d+)", body)
+    if m: out["count"] = int(m.group(1))
+    m = re.search(r"(?:发货(?:时间|周期)?|交货(?:时间|周期)?|到货)\s*[:：]?\s*([\d\u4e00-\w\s]+?(?:天|日|周|小时内?)|\d{4}[-/]\d{1,2}[-/]\d{1,2})", body)
+    if m: out["ship_time"] = m.group(1).strip()
+    return out
+
+
+def _step_deciding_lowest(task: dict, cfg: dict, tpls: dict):
+    """DECIDING_LOWEST：算最低价 → 组模板 D 回复模板 A 会话 + 抄送审批人 → WAITING_APPROVAL；
+    无有效报价 → 模板 F 中止 → DONE。"""
+    tid = task["task_id"]
+    quotes = _safe_json_loads(task.get("quotes_json") or "[]")
+    tpl_d = (tpls or {}).get("D", {}) or {}
+    tpl_f = (tpls or {}).get("F", {}) or {}
+    approvers = list((cfg or {}).get("approver_emails") or [])
+
+    # 过滤有效报价（不是迟到、单价可解析）
+    valid = [q for q in quotes if not q.get("is_late") and q.get("unit_price") not in ("", None)]
+
+    spm = _ensure_mail_inquiry_imports._spm
+
+    if not valid:
+        # 中止：模板 F，回复模板 A 会话
+        reason = "无有效报价（全部迟到或供应商未回复）" if quotes else "无供应商回复"
+        fmt_args = dict(
+            project_no=task.get("project_no", ""),
+            project_name=task.get("project_name", ""),
+            part_type=task.get("part_type", ""),
+            brand=task.get("brand", ""),
+            pn=task.get("pn", ""),
+            stop_reason=reason,
+            task_no=tid,
+        )
+        body = _safe_format(tpl_f.get("body") or "", fmt_args)
+        subj = _safe_format(tpl_f.get("subject") or "", fmt_args)
+        tool_send_mail(to=[str(cfg.get("proc_mail_username") or "").strip()],
+                       subject=subj, body_text=body,
+                       reply_to_mail_id=task.get("thread_msg_id") or None)
+        spm.spare_mail_update_task(tid, {
+            "status": "DONE", "latest_step": "ABORT_NO_QUOTE",
+            "lowest_supplier": "", "lowest_quote": "",
+        })
+        return True
+
+    # 最低价
+    valid.sort(key=lambda q: float(q.get("unit_price") or 1e18))
+    lowest = valid[0]
+
+    # 组模板 D：展示全部有效报价 + 系统提示最低价
+    suppliers_str = "\n".join(
+        f"  - {q.get('supplier','')} <{q.get('email','')}>：¥{q.get('unit_price','')} "
+        f"{q.get('condition','')} x{q.get('count','')} / 发货 {q.get('ship_time','')}"
+        for q in valid
+    )
+    lowest_quote_str = f"¥{lowest.get('unit_price','')}"
+    lowest_supplier = lowest.get("supplier", "")
+
+    body_d = (tpl_d.get("body") or "").format(
+        project_no=task.get("project_no", ""),
+        project_name=task.get("project_name", ""),
+        part_type=task.get("part_type", ""),
+        brand=task.get("brand", ""),
+        pn=task.get("pn", ""),
+        spec=task.get("spec", ""),
+        condition=task.get("condition", ""),
+        count=task.get("count", ""),
+        deadline=task.get("inquiry_deadline", ""),
+        suppliers_count=len(valid),
+        suppliers=suppliers_str,
+        lowest_quote=lowest_quote_str,
+        lowest_supplier=lowest_supplier,
+        approver_emails="、".join(approvers) if approvers else "（未配置审批人）",
+        task_no=tid,
+    )
+    subj_d = (tpl_d.get("subject") or "").format(
+        project_no=task.get("project_no", ""),
+        brand=task.get("brand", ""),
+        pn=task.get("pn", ""),
+        suppliers_count=len(valid),
+    )
+    # 回复模板 A 会话 + 抄送审批人
+    tool_send_mail(
+        to=[str(cfg.get("proc_mail_username") or "").strip()],
+        subject=subj_d, body_text=body_d,
+        cc=approvers if approvers else None,
+        reply_to_mail_id=task.get("thread_msg_id") or None,
+    )
+
+    spm.spare_mail_update_task(tid, {
+        "lowest_supplier": lowest_supplier,
+        "lowest_quote": json.dumps(lowest, ensure_ascii=False),
+        "approval_state": "pending",
+        "approval_result": "",
+        "status": "WAITING_APPROVAL",
+        "latest_step": f"DECIDING_LOWEST→WAITING_APPROVAL(lowest={lowest_supplier}@{lowest_quote_str})",
+    })
+    return True
+
+
+def _step_waiting_approval(task: dict, cfg: dict, tpls: dict):
+    """WAITING_APPROVAL：读模板 D 会话的后续回复 → 只有 approver_emails 白名单的回复才解析。
+
+    分支：
+      - 含"全部报价不可选/终止" → DONE + ABORT_ALL_REJECTED
+      - 含"确认采购" + 指定供应商 → target_supplier 为指定 → ORDERING
+      - 含"确认采购" + 无供应商 → target_supplier = lowest_supplier → ORDERING
+      - 未命中任何关键字 → 继续 WAITING_APPROVAL
+    """
+    tid = task["task_id"]
+    approvers = [str(e).lower().strip() for e in (cfg or {}).get("approver_emails") or [] if e]
+    lowest_supplier = task.get("lowest_supplier", "")
+    quotes = _safe_json_loads(task.get("quotes_json") or "[]")
+    tpl_f = (tpls or {}).get("F", {}) or {}
+
+    if not approvers:
+        # 未配置审批人 → 直接选最低价进 ORDERING（自动通过）
+        _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
+            "target_supplier": lowest_supplier,
+            "approval_state": "auto_approved",
+            "approval_result": "no_approver_configured",
+            "status": "ORDERING",
+            "latest_step": f"WAITING_APPROVAL→ORDERING(auto, target={lowest_supplier})",
+        })
+        return True
+
+    # 拉邮件：模板 D 发出去的 Message-ID 没存，用 thread_msg_id（模板 A 的）
+    # 匹配回复——In-Reply-To 链条最终会 reference 到模板 A 的 message_id
+    since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60 * 2
+    exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
+    r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude,
+                             match_in_reply_to_msg_ids=[_norm_mid(task.get("thread_msg_id", ""))])
+    if not r.get("success"):
+        return False
+
+    spm = _ensure_mail_inquiry_imports._spm
+    for m in r.get("mails", []):
+        from_email = str(m.get("from_email") or "").lower().strip()
+        if from_email not in approvers:
+            continue  # 忽略非审批人
+
+        body = (m.get("mail_body_text") or "") + "\n" + (m.get("subject") or "")
+        # 分支 1: 全部不可选/终止
+        if re.search(r"全部报价不可选|全部不可选|任务终止|终止询价|全部拒绝", body):
+            fmt_args = dict(
+                project_no=task.get("project_no", ""),
+                project_name=task.get("project_name", ""),
+                part_type=task.get("part_type", ""),
+                brand=task.get("brand", ""),
+                pn=task.get("pn", ""),
+                stop_reason="审批人全部拒绝：全部报价不可选",
+                task_no=tid,
+            )
+            body_f = _safe_format(tpl_f.get("body") or "", fmt_args)
+            subj_f = _safe_format(tpl_f.get("subject") or "", fmt_args)
+            tool_send_mail(to=[str(cfg.get("proc_mail_username") or "").strip()],
+                           subject=subj_f, body_text=body_f,
+                           reply_to_mail_id=task.get("thread_msg_id") or None)
+            spm.spare_mail_update_task(tid, {
+                "approval_state": "rejected",
+                "approval_result": "ALL_REJECTED",
+                "status": "DONE",
+                "latest_step": "WAITING_APPROVAL→ABORT_ALL_REJECTED",
+            })
+            return True
+
+        # 分支 2 & 3: 确认采购
+        if re.search(r"确认采购|同意采购|批准采购|确认订货|批准订货|采购通过", body):
+            # 看有没有指定供应商（从 quotes 里按名称匹配）
+            specified_supplier = ""
+            valid_supplier_names = [q.get("supplier", "") for q in quotes if not q.get("is_late")]
+            for sname in valid_supplier_names:
+                if sname and sname in body:
+                    specified_supplier = sname
+                    break
+
+            target = specified_supplier or lowest_supplier
+            result_label = f"指定供应商:{target}" if specified_supplier else f"沿用最低价:{lowest_supplier}"
+            spm.spare_mail_update_task(tid, {
+                "target_supplier": target,
+                "approval_state": "approved",
+                "approval_result": result_label,
+                "status": "ORDERING",
+                "latest_step": f"WAITING_APPROVAL→ORDERING({result_label})",
+            })
+            return True
+
+    # 还没找到审批人回复 → 继续等
+    spm.spare_mail_update_task(tid, {
+        "latest_step": "WAITING_APPROVAL(waiting_for_approver_reply)",
+    })
+    return False
+
+
+def _step_ordering(task: dict, cfg: dict, tpls: dict):
+    """ORDERING：定位 target_supplier 的报价邮件 Message-ID → 渲染模板 E（回复该报价会话）→ 带收货地址 → DONE。"""
+    tid = task["task_id"]
+    tpl_e = (tpls or {}).get("E", {}) or {}
+    target = task.get("target_supplier", "")
+    if not target:
+        _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
+            "status": "DONE", "latest_step": "ORDERING_SKIPPED_NO_TARGET",
+        })
+        return False
+
+    quotes = _safe_json_loads(task.get("quotes_json") or "[]")
+    target_quote = next((q for q in quotes if q.get("supplier") == target), None)
+    target_email = (target_quote or {}).get("email", "") if target_quote else ""
+    reply_mid = _norm_mid((target_quote or {}).get("msg_id", "")) if target_quote else ""
+    if not target_email and target_quote:
+        target_email = next(
+            (s.get("email", "") for s in _safe_json_loads(task.get("suppliers_json") or "[]")
+             if s.get("name") == target),
+            "")
+
+    latest_ship_time = task.get("latest_ship_time") or datetime.now().strftime("%Y-%m-%d")
+    condition_display_map = {
+        "全新": "全新原装", "原厂翻新": "原厂翻新（带保修）", "拆机二手": "拆机二手（无保修）",
+    }
+    cond_display = condition_display_map.get(task.get("condition", ""), task.get("condition", ""))
+    address = task.get("address") or "（收货地址未填，请回复本会话确认）"
+
+    body = (tpl_e.get("body") or "").format(
+        supplier=target,
+        quote=(target_quote or {}).get("unit_price", "") or "",
+        project_no=task.get("project_no", ""),
+        project_name=task.get("project_name", ""),
+        part_type=task.get("part_type", ""),
+        brand=task.get("brand", ""),
+        pn=task.get("pn", ""),
+        spec=task.get("spec", ""),
+        condition=task.get("condition", ""),
+        condition_display=cond_display,
+        count=task.get("count", ""),
+        address=address,
+        receiver_name="运维部",
+        receiver_phone="（请回复本会话提供）",
+        latest_ship_time=latest_ship_time,
+        task_no=tid,
+    )
+    subj = (tpl_e.get("subject") or "").format(
+        project_no=task.get("project_no", ""),
+        brand=task.get("brand", ""),
+        pn=task.get("pn", ""),
+        count=task.get("count", ""),
+    )
+
+    mail_r = tool_send_mail(
+        to=[target_email] if target_email else [str(cfg.get("proc_mail_username") or "").strip()],
+        subject=subj, body_text=body,
+        reply_to_mail_id=reply_mid or None,
+    )
+
+    _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
+        "status": "DONE",
+        "latest_step": f"ORDER_CONFIRMED(sent_to={target_email}, mail_ok={mail_r.get('success', False)})",
+    })
+    return True
+
+
+# ════════════════════════════════════════════════════════════════
+# 调试 / 管理端点（不新增 config 表、不暴露敏感字段）
+# ════════════════════════════════════════════════════════════════
+
+@router.get("/mail-inquiry/tasks")
+async def mail_inquiry_tasks(status: str = "", keyword: str = "", page_size: int = 100):
+    """备件邮件询价任务列表（简版）。status 过滤可选。"""
+    _ensure_mail_inquiry_imports()
+    _ensure_mail_inquiry_imports._init_db()
+    spm = _ensure_mail_inquiry_imports._spm
+    r = spm.spare_mail_list_tasks(filter={"status": status, "keyword": keyword}, page_size=page_size)
+    # 返回时剥掉 raw_body 等大字段
+    safe = []
+    for t in r:
+        safe.append({k: v for k, v in t.items() if k not in ("raw_body",)})
+    return {"success": True, "total": len(safe), "tasks": safe}
+
+
+@router.get("/mail-inquiry/task/{task_id}")
+async def mail_inquiry_task_detail(task_id: str):
+    """单任务详情。"""
+    _ensure_mail_inquiry_imports()
+    _ensure_mail_inquiry_imports._init_db()
+    spm = _ensure_mail_inquiry_imports._spm
+    t = spm.spare_mail_get_task(task_id)
+    if not t:
+        return {"success": False, "error": "not_found"}
+    return {"success": True, "task": t}
+
+
+@router.post("/mail-inquiry/tick")
+async def mail_inquiry_manual_tick():
+    """手动强制触发一次 tick（测试/调试用）。"""
+    _ensure_mail_inquiry_imports()
+    _ensure_mail_inquiry_imports._init_db()
+    return {"success": True, "result": tick_mail_inquiry()}
+
+
+@router.post("/mail-inquiry/register")
+async def mail_inquiry_register_employee():
+    """幂等注册「备件邮件询价数字员工」。启动时或调试时调用均可。"""
+    _ensure_mail_inquiry_imports()
+    _ensure_mail_inquiry_imports._init_db()
+    emp_id = "emp-mail-inquiry"
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    emp = {
+        "id": emp_id,
+        "name": "备件邮件询价数字员工",
+        "desc": "由 scheduler/tick?kind=mail-inquiry 驱动的备件邮件询价流程引擎，覆盖邮件抓取、供应商询价、报价汇总、内部审批、下达订货全流程。",
+        "type": "digital_employee",
+        "created": now_str,
+        "updated": now_str,
+        "rag_kb": "",
+        "prompt": "你是备件邮件询价数字员工，负责从工程师询价邮件中抽取字段、自动向供应商发询价邮件、汇总报价并推送内部审批、最终下达订货邮件。",
+        "model": "",
+        "skills": [_SKILL_ID_MAIL_INQUIRY],
+        "skill_states": {_SKILL_ID_MAIL_INQUIRY: True},
+        "enabled": True,
+    }
+    _ensure_mail_inquiry_imports._upsert_emp(emp)
+    return {"success": True, "employee_id": emp_id, "skill_id": _SKILL_ID_MAIL_INQUIRY}

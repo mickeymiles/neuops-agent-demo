@@ -8,6 +8,8 @@
     from app.db import x          # 或 from .db import x
 """
 
+from ..config import DB_PATH
+
 from .base import (
     _db_lock,
     _get_conn,

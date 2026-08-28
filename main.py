@@ -17,7 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from app.alert_engine import _alert_engine_loop, seed_alert_rules
 from app.config import DB_PATH, PORT, STATIC_DIR, BASE_DIR
 from app.db import (
-    init_bid_db, init_config_db, init_ops_db, init_session_db, seed_config_db, seed_mock_conversations,
+    init_bid_db, init_config_db, init_ops_db, init_session_db,
+    seed_config_db, seed_mock_conversations,
     ensure_mcp_server_mapping, sync_seed_employees,
 )
 from app.seed_bid_kb import seed_bid_kb

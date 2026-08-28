@@ -368,3 +368,49 @@ def init_config_db():
             conn.commit()
         finally:
             conn.close()
+
+
+def init_spare_mail_db():
+    """初始化「备件邮件询价」数字员工数据表。
+
+    只建动态任务表 spare_mail_task；模板/采购邮箱/审批人/启停开关等
+    静态配置统一走 skill JSON 文件（skills/skill-proc-mail-inquiry.json）。
+    """
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS spare_mail_task (
+                    task_id TEXT PRIMARY KEY,
+                    thread_msg_id TEXT DEFAULT '',
+                    approver_email TEXT DEFAULT '',
+                    project_no TEXT DEFAULT '',
+                    project_name TEXT DEFAULT '',
+                    part_type TEXT DEFAULT '',
+                    brand TEXT DEFAULT '',
+                    pn TEXT DEFAULT '',
+                    spec TEXT DEFAULT '',
+                    `condition` TEXT DEFAULT '',
+                    `count` TEXT DEFAULT '',
+                    address TEXT DEFAULT '',
+                    inquiry_dur TEXT DEFAULT '',
+                    latest_ship_time TEXT DEFAULT '',
+                    inquiry_deadline TEXT DEFAULT '',
+                    suppliers_json TEXT DEFAULT '[]',
+                    quotes_json TEXT DEFAULT '[]',
+                    lowest_supplier TEXT DEFAULT '',
+                    lowest_quote TEXT DEFAULT '',
+                    approval_state TEXT DEFAULT '',
+                    approval_result TEXT DEFAULT '',
+                    target_supplier TEXT DEFAULT '',
+                    status TEXT DEFAULT '',
+                    latest_step TEXT DEFAULT '',
+                    created_at TEXT DEFAULT '',
+                    updated_at TEXT DEFAULT ''
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_spare_mail_task_status ON spare_mail_task(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_spare_mail_task_thread ON spare_mail_task(thread_msg_id)")
+            conn.commit()
+        finally:
+            conn.close()
