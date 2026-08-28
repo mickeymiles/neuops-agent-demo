@@ -3214,6 +3214,28 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
 # 调试 / 管理端点（不新增 config 表、不暴露敏感字段）
 # ════════════════════════════════════════════════════════════════
 
+@router.post("/mail-inquiry/task/{task_id}/advance")
+async def mail_inquiry_advance_task(task_id: str, to_status: str = "DECIDING_LOWEST"):
+    """手动推进单个任务到指定状态（调试/应急用，绕过等待供应商回复）。
+
+    to_status 支持 DECIDING_LOWEST（把已收到的报价送去算最低价）。后续 tick 会继续推进。
+    可选 body 传 {allow_partial: true} 表示即使未收齐报价也推进。
+    """
+    _ensure_mail_inquiry_imports()
+    _ensure_mail_inquiry_imports._init_db()
+    spm = _ensure_mail_inquiry_imports._spm
+    t = spm.spare_mail_get_task(task_id)
+    if not t:
+        return {"success": False, "error": "not_found"}
+    cfg, tpls = _load_mail_inquiry_skill()
+    if to_status == "DECIDING_LOWEST":
+        # 把已收的报价送去最低价优选
+        ok = _step_deciding_lowest(t, cfg or {}, tpls or {})
+        return {"success": bool(ok), "advanced_to": "DECIDING_LOWEST",
+                "msg": "已推进到最低价优选，报价已汇总，后续 tick 会继续审批流程" if ok else "推进失败"}
+    return {"success": False, "error": f"unsupported to_status={to_status}"}
+
+
 @router.get("/mail-inquiry/tasks")
 async def mail_inquiry_tasks(status: str = "", keyword: str = "", page_size: int = 100):
     """备件邮件询价任务列表（简版）。status 过滤可选。"""
