@@ -71,4 +71,12 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "cd ${{ secrets.DEPLOY_PATH }} && bash scripts/remote_deploy.sh"
+            "DEPLOY_PROC_MAIL_USERNAME='${{ secrets.DEPLOY_PROC_MAIL_USERNAME }}' \
+             DEPLOY_PROC_MAIL_PASSWORD='${{ secrets.DEPLOY_PROC_MAIL_PASSWORD }}' \
+             DEPLOY_PROC_FEISHU_APP_ID='${{ secrets.DEPLOY_PROC_FEISHU_APP_ID }}' \
+             DEPLOY_PROC_FEISHU_APP_SECRET='${{ secrets.DEPLOY_PROC_FEISHU_APP_SECRET }}' \
+             DEPLOY_PROC_FEISHU_PM_OPEN_ID='${{ secrets.DEPLOY_PROC_FEISHU_PM_OPEN_ID }}' \
+             DEPLOY_PROC_FEISHU_BITABLE_APP_TOKEN='${{ secrets.DEPLOY_PROC_FEISHU_BITABLE_APP_TOKEN }}' \
+             DEPLOY_PROC_FEISHU_BITABLE_TASK_TABLE_ID='${{ secrets.DEPLOY_PROC_FEISHU_BITABLE_TASK_TABLE_ID }}' \
+             DEPLOY_PROC_FEISHU_BITABLE_LEDGER_TABLE_ID='${{ secrets.DEPLOY_PROC_FEISHU_BITABLE_LEDGER_TABLE_ID }}' \
+             cd ${{ secrets.DEPLOY_PATH }} && bash scripts/remote_deploy.sh"
