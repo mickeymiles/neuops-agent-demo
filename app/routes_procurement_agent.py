@@ -2885,16 +2885,71 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
 
 
 def _parse_quote_body(body: str) -> dict:
-    """从供应商报价正文抽单价/成色/数量/发货时间（正则，失败留空）。"""
+    """从供应商报价正文抽单价/成色/数量/发货时间（正则，失败留空）。
+
+    同时支持普通文本字段与 Markdown 表格（| 表头 | 行数据 |）两种常见报价格式。
+    """
     out = {}
-    m = re.search(r"(?:单价|报价|含税价|价格)\s*[:：]?\s*[¥￥$]?\s*(\d+(?:\.\d+)?)", body)
-    if m: out["unit_price"] = float(m.group(1))
-    m = re.search(r"(成色|新旧)\s*[:：]?\s*(全新|原厂翻新|拆机二手|二手|全新原装)", body)
-    if m: out["condition"] = m.group(1)
-    m = re.search(r"(?:数量|订货量)\s*[:：]?\s*(\d+)", body)
-    if m: out["count"] = int(m.group(1))
-    m = re.search(r"(?:发货(?:时间|周期)?|交货(?:时间|周期)?|到货)\s*[:：]?\s*([\d\u4e00-\u9fff\s]+?(?:天|日|周|小时内?)|\d{4}[-/]\d{1,2}[-/]\d{1,2})", body)
-    if m: out["ship_time"] = m.group(1).strip()
+
+    # ── 表格格式：优先尝试解析 | A | B | ... | 表格行 ──
+    # 找包含至少 单价/价格 且 数量/货期/成色 之一的“数据行”
+    table_rows = re.findall(r"^\s*\|([^\n]+)\|\s*$", body, re.M)
+    numeric_rows = []
+    for row in table_rows:
+        cells = [c.strip() for c in row.split("|")]
+        cells = [c for c in cells if c]  # 去掉空单元格
+        # 数据行至少包含一个数字（数字行/单价/数量）
+        if any(re.search(r"\d", c) for c in cells) and any(c for c in cells):
+            numeric_rows.append(cells)
+    # 表头识别：表头行含 单价|价格 等关键词
+    header_row = None
+    for row in table_rows:
+        cells = [c.strip() for c in row.split("|")]
+        cells = [c for c in cells if c]
+        if any(("单价" in c or "价格" in c or "报价" in c) for c in cells):
+            header_row = cells
+            break
+    # 用表头定位 数量/货期/成色 列
+    idx_price = idx_qty = idx_lead = idx_cond = None
+    if header_row:
+        def _find(cands):
+            for i, c in enumerate(header_row):
+                if any(k in c for k in cands):
+                    return i
+            return None
+        idx_price = _find(("单价", "价格", "报价"))
+        idx_qty = _find(("数量", "交付数量"))
+        idx_lead = _find(("货期", "交货", "周期", "发货"))
+        idx_cond = _find(("成色", "新旧"))
+    if header_row and numeric_rows:
+        for cells in numeric_rows:
+            if idx_price is not None and idx_price < len(cells):
+                pm = re.search(r"\d+(?:\.\d+)?", cells[idx_price])
+                if pm and out.get("unit_price") is None:
+                    out["unit_price"] = float(pm.group(0))
+            if idx_qty is not None and idx_qty < len(cells) and "count" not in out:
+                qm = re.search(r"\d+", cells[idx_qty])
+                if qm: out["count"] = int(qm.group(0))
+            if idx_lead is not None and idx_lead < len(cells) and "ship_time" not in out:
+                lm = re.search(r"[\d\u4e00-\u9fff]+", cells[idx_lead].replace(",", ""))
+                if lm: out["ship_time"] = lm.group(0).strip()
+            if idx_cond is not None and idx_cond < len(cells) and "condition" not in out:
+                cm = re.search(r"全新|原厂翻新|拆机二手|二手|全新原装", cells[idx_cond])
+                if cm: out["condition"] = cm.group(0)
+
+    # ── 普通文本格式（表格未解出时兜底）──
+    if out.get("unit_price") is None:
+        m = re.search(r"(?:单价|报价|含税价|价格)\s*[:：]?\s*[¥￥$]?\s*(\d+(?:\.\d+)?)", body)
+        if m: out["unit_price"] = float(m.group(1))
+    if "condition" not in out:
+        m = re.search(r"(?:成色|新旧)\s*[:：]?\s*(全新|原厂翻新|拆机二手|二手|全新原装)", body)
+        if m: out["condition"] = m.group(1)
+    if "count" not in out:
+        m = re.search(r"(?:数量|订货量)\s*[:：]?\s*(\d+)", body)
+        if m: out["count"] = int(m.group(1))
+    if "ship_time" not in out:
+        m = re.search(r"(?:发货(?:时间|周期)?|交货(?:时间|周期)?|到货)\s*[:：]?\s*([\d\u4e00-\u9fff\s]+?(?:天|日|周|小时内?)|\d{4}[-/]\d{1,2}[-/]\d{1,2})", body)
+        if m: out["ship_time"] = m.group(1).strip()
     return out
 
 
