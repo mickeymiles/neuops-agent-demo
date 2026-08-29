@@ -2316,7 +2316,12 @@ def _tick_prefetch_unseen(cfg: dict):
     try:
         _TICK_UNSEEN_CACHE = tool_read_inbox_mail(use_unseen=True,
                                                   exclude_sender_email_list=exclude)
-        print(f"[mail-inquiry tick] UNSEEN cache: {len((_TICK_UNSEEN_CACHE or {}).get('mails', []))} mails pre-fetched")
+        n = len((_TICK_UNSEEN_CACHE or {}).get("mails", []))
+        print(f"[mail-inquiry tick] UNSEEN cache: {n} mails pre-fetched")
+        # 如果 UNSEEN 返回 0 封（163 IMAP UNSEEN 搜索不稳定时），清缓存让后续 step 回退全量拉取
+        if n == 0:
+            _TICK_UNSEEN_CACHE = None
+            print(f"[mail-inquiry tick] UNSEEN 0 → fallback 全量拉取")
     except Exception as e:
         print(f"[mail-inquiry tick] UNSEEN pre-fetch failed: {e}")
         _TICK_UNSEEN_CACHE = None
