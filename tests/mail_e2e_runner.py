@@ -276,13 +276,102 @@ def step_approve():
                     f"Re: {orig_subject}", body, reply_to=d_mid)
     print(f"  审批人 b5 已确认: {mid}")
 
+def step_ship():
+    """供应商 b2 在 E 订货邮件线程上回复快递单号（真实 SMTP + 引用原文）"""
+    print("[供应商 b2] 取服务器最新 R_WAIT_SHIPPING 任务的 e_mail_msg_id → 在 E 线程上回快递单号")
+    d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
+    target = None
+    for t in d.get("tasks", []):
+        if t.get("external_status") == "R_WAIT_SHIPPING":
+            target = t
+            break
+    if not target:
+        print("  ✗ 无 R_WAIT_SHIPPING 任务")
+        return
+    tid = target["task_id"]
+    e_mid = target.get("e_mail_msg_id") or ""
+    if not e_mid:
+        print("  ✗ 任务无 e_mail_msg_id")
+        return
+    print(f"  任务 {tid} e_mail_msg_id: {e_mid[:60]}")
+
+    # 从 b2 收件箱找 E 邮件原文（引用）
+    import email as em
+    orig_body = ""; orig_subject = "【订货确认】"
+    try:
+        for raw in fetch_inbox(B2, P2(), limit=15):
+            try:
+                msg = em.message_from_bytes(raw)
+                mid2 = _dec(msg.get("Message-ID", ""))
+                if mid2 and mid2.strip() == e_mid.strip():
+                    orig_subject = _dec(msg.get("Subject", ""))
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                orig_body = part.get_payload(decode=True).decode(part.get_content_charset() or 'utf-8', errors='replace')
+                                break
+                    else:
+                        orig_body = msg.get_payload(decode=True).decode(msg.get_content_charset() or 'utf-8', errors='replace')
+                    break
+            except Exception:
+                continue
+    except Exception as ex:
+        print("  (取 E 原文失败)", ex)
+
+    body = "您好，订货已发出，快递单号：SF8822168990\n预计 3 天内到达，请查收。\n\n- 供应商A"
+    if orig_body:
+        quoted = "\n".join(f"> {ln}" for ln in orig_body.splitlines())
+        body += f"\n\n在 {orig_subject} 中写道：\n{quoted}"
+
+    mid = send_mail(B2, P2(), B3, f"Re: {orig_subject}", body, reply_to=e_mid)
+    print(f"  供应商已回单号: {mid}")
+
+def step_done():
+    """工程师 b1 在 D 汇总邮件线程上回复备件更换完成 → 触发 G 结算 → DONE"""
+    print("[工程师 b1] 取服务器最新 R_APPROVAL 任务的 d_mail_msg_id → 回复备件更换完成")
+    d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
+    target = None
+    for t in d.get("tasks", []):
+        if t.get("internal_status") == "R_APPROVAL" and t.get("shipped_no"):
+            target = t
+            break
+    if not target:
+        for t in d.get("tasks", []):
+            if t.get("internal_status") == "R_APPROVAL":
+                target = t
+                break
+    if not target:
+        print("  ✗ 无 R_APPROVAL 任务")
+        return
+    d_mid = target.get("d_mail_msg_id") or target.get("thread_msg_id") or ""
+    print(f"  任务 {target['task_id']} 用 reply_to={d_mid[:60]}")
+    mid = send_mail(B1, P1(), B3, "Re: 【询价汇总】备件更换完成确认",
+                    "备件已更换完成，可以结算了。\n\n- 运维部工程师",
+                    reply_to=d_mid)
+    print(f"  工程师已确认更换完成: {mid}")
+
+def step_full():
+    """跑全流程：sent → (auto tick → quote → approve → ship → done)"""
+    print("=== 全流程自动执行 ===")
+    step_sent(); wait_tick(70)
+    step_quote(); wait_tick(70)
+    step_approve(); wait_tick(70)
+    print("  … 等服务器发 E 订货邮件 …"); wait_tick(80)
+    step_ship(); wait_tick(70)
+    print("  … 等服务器登记 shipped_no …"); wait_tick(10)
+    step_done(); wait_tick(70)
+    print("\n=== 最终状态 ===")
+    step_status()
+    print("\n=== 各邮箱最近邮件 ===")
+    step_check()
+
 def step_status():
     d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
     for t in d.get("tasks", []):
-        print(f"  {t.get('task_id')} | {t.get('status')} | {t.get('latest_step')} | 最低={t.get('lowest_supplier')}@{t.get('lowest_quote')}")
+        print(f"  {t.get('task_id')} | {t.get('status')} | ext={t.get('external_status')} | int={t.get('internal_status')} | shipped={t.get('shipped_no','-')} | step={t.get('latest_step','')[:80]}")
 
 def step_check():
-    for email, pw, name in ((B3, P3(), "采购方b3"), (B1, P1(), "工程师b1"), (B2, P2(), "供应商b2")):
+    for email, pw, name in ((B3, P3(), "采购方b3"), (B1, P1(), "工程师b1"), (B2, P2(), "供应商b2"), (B5, P5(), "审批人b5")):
         print(f"\n=== {name} ({email}) 收件箱最近邮件 ===")
         try:
             for m in raw_summaries(email, pw, limit=8):
@@ -293,8 +382,9 @@ def step_check():
 if __name__ == "__main__":
     step = sys.argv[1] if len(sys.argv) > 1 else "cfg"
     fn = {"cfg": step_cfg, "sent": step_sent, "sendbad": step_sendbad,
-          "quote": step_quote, "approve": step_approve, "status": step_status,
-          "check": step_check}.get(step)
+          "quote": step_quote, "approve": step_approve, "ship": step_ship,
+          "done": step_done, "status": step_status, "check": step_check,
+          "full": step_full}.get(step)
     if not fn:
         print("未知 step:", step); sys.exit(2)
     fn()

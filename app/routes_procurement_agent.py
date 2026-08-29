@@ -3478,18 +3478,23 @@ def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
     if not target:
         return False
 
-    reply_mid = ""
+    reply_mids = []
     for q in _safe_json_loads(task.get("quotes_json") or "[]"):
         if q.get("supplier") == target and q.get("email"):
-            reply_mid = _norm_mid(q.get("msg_id", ""))
+            m = _norm_mid(q.get("msg_id", ""))
+            if m:
+                reply_mids.append(m)
             break
-    if not reply_mid:
+    e_mid = _norm_mid(task.get("e_mail_msg_id", ""))
+    if e_mid:
+        reply_mids.append(e_mid)
+    if not reply_mids:
         return False
 
     since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60 * 2
     exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
     r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude,
-                             match_in_reply_to_msg_ids=[reply_mid])
+                             match_in_reply_to_msg_ids=reply_mids)
     if not r.get("success"):
         return False
 
