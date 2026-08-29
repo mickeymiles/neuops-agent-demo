@@ -227,11 +227,11 @@ def step_quote():
     print(f"  供应商已按标准格式+带引用回复报价: {mid}")
 
 def step_approve():
-    print("[审批人 b5] 取服务器最新 WAITING_APPROVAL 任务的 d_mail_msg_id → 在 D 线程上回复确认采购")
+    print("[审批人 b5] 取服务器最新 R_APPROVAL 任务的 d_mail_msg_id → 在 D 线程上回复确认采购")
     d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
     target = None
     for t in d.get("tasks", []):
-        if t.get("status") == "WAITING_APPROVAL":
+        if t.get("internal_status") == "R_APPROVAL":
             target = t
             break
     if not target:
