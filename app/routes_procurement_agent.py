@@ -3316,10 +3316,15 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
         })
         return True
 
-    # 匹配线程：优先 D 邮件 message_id，缺失则用线程 thread_msg_id
+    # 匹配线程：同时匹配 D 邮件 message_id 与原始询价 thread_msg_id，
+    # 以兼容审批人回 D 线程、工程师回原始询价线程两种消息来源。
     d_msg_id = _norm_mid(task.get("d_mail_msg_id", ""))
     thread_mid = _norm_mid(task.get("thread_msg_id", ""))
-    match_ids = [d_msg_id] if d_msg_id else ([thread_mid] if thread_mid else [])
+    match_ids = []
+    if d_msg_id:
+        match_ids.append(d_msg_id)
+    if thread_mid and thread_mid != d_msg_id:
+        match_ids.append(thread_mid)
     since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60 * 2
     exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
     r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude,
