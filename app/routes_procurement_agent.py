@@ -2981,6 +2981,7 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
         count=task.get("count", ""),
         urgent=urgent,
         inquiry_dur=urgent,
+        task_no=tid,
     )
     body_fmt = tpl_b.get("body") or ""
     body_args = dict(
@@ -3320,6 +3321,7 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
         brand=task.get("brand", ""),
         pn=task.get("pn", ""),
         count=task.get("count", ""),
+        task_no=tid,
     )
 
     # 在选中供应商报价邮件线程上回复——构造完整 References 链确保 RFC 会话链不中断
