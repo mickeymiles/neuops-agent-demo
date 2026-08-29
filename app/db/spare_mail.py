@@ -122,7 +122,10 @@ def spare_mail_create_task(task: dict) -> str:
     # 同步到 contract-9006 平台库（失败不影响主流程）
     try:
         from .contract_mail import contract_mail_upsert
-        contract_mail_upsert(task)
+        _sync = dict(task)
+        _sync.setdefault("source", "邮件")
+        _sync.setdefault("mail_archive_json", [])
+        contract_mail_upsert(_sync)
     except Exception as e:
         print(f"[spare_mail] sync create to 9006 failed: {e}")
     return tid
@@ -196,7 +199,9 @@ def spare_mail_update_task(task_id: str, patch: dict) -> int:
     # 同步增量补丁到 contract-9006（失败不影响主流程）
     try:
         from .contract_mail import contract_mail_upsert
-        contract_mail_upsert({"task_id": task_id}, patch)
+        _p = dict(safe)
+        _p.setdefault("source", "邮件")
+        contract_mail_upsert({"task_id": task_id}, _p)
     except Exception as e:
         print(f"[spare_mail] sync update to 9006 failed: {e}")
     return rowcount

@@ -13,6 +13,7 @@ source/latest_ship_time/…），本模块仅写入，不建 contract 主表结�
 
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime
 
@@ -31,6 +32,34 @@ def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+# contract procurement_task.emergency_level 的合法枚举
+_EMERGENCY_ENUM = {"2h", "4h", "5h"}
+
+
+def _norm_emergency(urgent) -> str:
+    """把 spare_mail 的 urgent/询价时限规范成 procurement_task 的 ENUM。
+    值可能形如 4h/2h/5h/1h/24h/12h/48h/高/中/低 等；无法归一取 4h。"""
+    s = str(urgent or "").strip().lower().replace(" ", "")
+    if s in _EMERGENCY_ENUM:
+        return s
+    m = re.search(r"(\d+)\s*(?:h|小时|hour)", s)
+    if m:
+        h = int(m.group(1))
+        if h <= 2:
+            return "2h"
+        if h <= 4:
+            return "4h"
+        if h <= 5:
+            return "5h"
+        return "5h"
+    # 文本紧急程度：高→2h，中→4h，低→5h
+    if "高" in s or s in ("urgent", "critical"):
+        return "2h"
+    if "中" in s or s in ("medium", "normal"):
+        return "4h"
+    return "4h"
+
+
 # procurement_task 中本模块会写入的列（缺失时幂等补列，随写随补）
 _WRITE_COLS = (
     "task_id", "project_no", "project_name", "part_type", "brand", "pn", "spec",
@@ -39,6 +68,8 @@ _WRITE_COLS = (
     "approval_state", "approval_result", "approver_email", "target_supplier",
     "internal_status", "external_status", "shipped_no", "mail_archive_json",
     "from_email", "source", "latest_ship_time", "latest_step",
+    # NOT NULL 无默认的既有列，必须显式写入
+    "spare_part_model", "contract_no", "creator",
 )
 
 # 需要落库为 JSON 的列
@@ -96,15 +127,32 @@ def contract_mail_upsert(task: dict, patch: dict = None) -> bool:
                 return False
             merged["task_id"] = tid
             merged["updated_at"] = _now()
+            # procurement_task 用 create_time 表示创建时间（无 created_at 列），做名归一
             if not merged.get("create_time"):
-                merged["create_time"] = merged["created_at"] or _now()
+                merged["create_time"] = merged.get("created_at") or _now()
             # 缺失非空字段置默认（新行 INSERT 需要 NOT NULL 列）
             merged.setdefault("spare_part_model", merged.get("pn") or "")
             merged.setdefault("contract_no", merged.get("project_no") or "")
             merged.setdefault("creator", merged.get("from_email") or "")
-            merged.setdefault("created_at", merged["create_time"])
-
-            cols = [k for k in _WRITE_COLS if k in merged]
+            # purchase_qty 为 procurement_task NOT NULL 列，缺省时用 count 映射
+            if "purchase_qty" not in merged or merged.get("purchase_qty") in (None, ""):
+                try:
+                    merged["purchase_qty"] = float(merged.get("count") or 0)
+                except Exception:
+                    merged["purchase_qty"] = 0
+            elif not isinstance(merged.get("purchase_qty"), (int, float)):
+                try:
+                    merged["purchase_qty"] = float(merged["purchase_qty"])
+                except Exception:
+                    merged["purchase_qty"] = 0
+            # emergency_level / reply_deadline 为 procurement_task NOT NULL 列
+            # spare_mail 用 urgent/inquiry_deadline，做映射 + 规范到 ENUM 值
+            if not merged.get("emergency_level"):
+                merged["emergency_level"] = _norm_emergency(merged.get("urgent"))
+            if not merged.get("reply_deadline"):
+                merged["reply_deadline"] = merged.get("inquiry_deadline") or _now()
+            _WRITE_ALL_COLS = _WRITE_COLS + ("emergency_level", "reply_deadline")
+            cols = [k for k in _WRITE_ALL_COLS if k in merged] + ["create_time"]
             vals = list(merged[k] for k in cols)
             # JSON 序列化
             for ci, c in enumerate(cols):
