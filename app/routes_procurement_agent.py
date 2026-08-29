@@ -3203,32 +3203,41 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
 
 
 def _parse_quote_table(body: str) -> dict:
-    """解析"列用制表符/多个空格分隔"的报价表格（用户模板型）。
+    """解析"报价表格"并定位单价/数量/货期/成色列。
 
-    模板形如（逐列 Tab 或 ≥2 空格分隔，首列是序号）：
-      序 日期 品牌 型号、描述 数量 单价 总价 货期 成色 备注
-      1  2025年8月31日  Seagate ST-E2E-200  3 1000 3000 7天 全新
+    覆盖三种常见的富文本表格表示（取决于发件客户端如何渲染）：
+    1) 列用制表符分隔（Excel/富文本直接粘贴）：
+        序 日期 品牌 数量 单价 总价 货期 成色
+        1  2025年8月31日  Seagate  3 1000 3000 7天 全新
+    2) 列用多个空格分隔（纯文本对齐）。
+    3) 163 富文本转换为 "| 单元格 | 单元格 |" 的伪竖线表格（行首可能带表头文字 / 行尾缺 |）。
     识别含"单价/数量/货期"的表头行定位列号，再从序号为数字的数据行读取对应列。
-    与本 Markdown 竖线表格不同的场景。解析不出时返回 {}。
+    解析不出时返回 {}。
     """
     out = {}
-    lines = [ln.rstrip() for ln in str(body or "").splitlines()]
+    lines = [ln.rstrip().strip() for ln in str(body or "").splitlines()]
     header_cells = None
     header_idx = None
+
+    # 候选分隔符：若行内出现竖线用 |，否则依次用 Tab / ≥2空格
+    def _split(ln):
+        for delim in (r"\|", r"\t", r" {2,}"):
+            c = [x.strip() for x in re.split(delim, ln) if x.strip()]
+            if len(c) >= 3:
+                return c
+        return [ln]
+
     # 找表头行：切成列后同时含"单价"类 与 至少一个辅助列词
     for i, ln in enumerate(lines):
-        if not ln.strip():
+        if not ln:
             continue
-        for delim in (r"\t", r" {2,}"):
-            cells = [c for c in re.split(delim, ln.strip()) if c]
-            if len(cells) < 3:
-                continue
-            has_price = any(("单价" in c or "价格" in c or "报价" in c) for c in cells)
-            has_aux = any(("数量" in c or "总价" in c or "货期" in c or "成色" in c or "型号" in c or "日期" in c) for c in cells)
-            if has_price and has_aux:
-                header_cells, header_idx = cells, i
-                break
-        if header_cells:
+        cells = _split(ln)
+        if len(cells) < 3:
+            continue
+        has_price = any(("单价" in c or "价格" in c or "报价" in c) for c in cells)
+        has_aux = any(("数量" in c or "总价" in c or "货期" in c or "成色" in c or "型号" in c or "日期" in c or "序" in c or "备注" in c) for c in cells)
+        if has_price and has_aux:
+            header_cells, header_idx = cells, i
             break
     if not header_cells:
         return out
@@ -3244,13 +3253,17 @@ def _parse_quote_table(body: str) -> dict:
     j_cond = _find(("成色", "新旧"))
 
     for ln in lines[header_idx + 1:]:
-        if not ln.strip():
+        if not ln:
             continue
-        cells = [c for c in re.split(r"\t+| {2,}", ln.strip()) if c]
+        cells = _split(ln)
         if not cells:
             continue
         # 数据行首列应为序号数字
         if not re.match(r"^\d+", cells[0]):
+            continue
+        # 列数一致性：表头 H 列、数据行若被拆成显著不同列数（如 163 把型号/品牌拆多格），
+        # 按索引取值必然错位（把总价当单价）。宁可解析失败走 LLM 兜底，也不给错值。
+        if abs(len(cells) - len(header_cells)) > 1:
             continue
         if j_price is not None and j_price < len(cells) and out.get("unit_price") is None:
             pm = re.search(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", cells[j_price])
@@ -3324,20 +3337,24 @@ def _parse_quote_body(body: str) -> dict:
         idx_lead = _find(("货期", "交货", "周期", "发货"))
         idx_cond = _find(("成色", "新旧"))
     if header_row and numeric_rows:
-        for cells in numeric_rows:
-            if idx_price is not None and idx_price < len(cells):
-                pm = re.search(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", cells[idx_price])
-                if pm and out.get("unit_price") is None:
-                    out["unit_price"] = float(pm.group(0).replace(",", ""))
-            if idx_qty is not None and idx_qty < len(cells) and "count" not in out:
-                qm = re.search(r"\d+", cells[idx_qty])
-                if qm: out["count"] = int(qm.group(0))
-            if idx_lead is not None and idx_lead < len(cells) and "ship_time" not in out:
-                lm = re.search(r"[\d\u4e00-\u9fff]+", cells[idx_lead].replace(",", ""))
-                if lm: out["ship_time"] = lm.group(0).strip()
-            if idx_cond is not None and idx_cond < len(cells) and "condition" not in out:
-                cm = re.search(r"全新|原厂翻新|拆机二手|二手|全新原装", cells[idx_cond])
-                if cm: out["condition"] = cm.group(0)
+        # 列对齐校验：任一数据行与表头列数差异过大 → 163 拆格错位，整表不可靠，不切列（走后续兜底）
+        _hcols = len(header_row)
+        _misaligned = any(abs(len(nr) - _hcols) > 1 for nr in numeric_rows)
+        if not _misaligned:
+            for cells in numeric_rows:
+                if idx_price is not None and idx_price < len(cells):
+                    pm = re.search(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", cells[idx_price])
+                    if pm and out.get("unit_price") is None:
+                        out["unit_price"] = float(pm.group(0).replace(",", ""))
+                if idx_qty is not None and idx_qty < len(cells) and "count" not in out:
+                    qm = re.search(r"\d+", cells[idx_qty])
+                    if qm: out["count"] = int(qm.group(0))
+                if idx_lead is not None and idx_lead < len(cells) and "ship_time" not in out:
+                    lm = re.search(r"[\d\u4e00-\u9fff]+", cells[idx_lead].replace(",", ""))
+                    if lm: out["ship_time"] = lm.group(0).strip()
+                if idx_cond is not None and idx_cond < len(cells) and "condition" not in out:
+                    cm = re.search(r"全新|原厂翻新|拆机二手|二手|全新原装", cells[idx_cond])
+                    if cm: out["condition"] = cm.group(0)
 
     # ── 普通文本格式（表格未解出时兜底）──
     # 先尝试"制表符/多空格分隔"的报价表格（用户模板型），再退到键值正则
