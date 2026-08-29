@@ -2699,10 +2699,13 @@ def _step_parsing(cfg, tpls):
     if not r.get("success"):
         return {"created": 0, "msg": r.get("error", "read inbox failed")}
 
-    # 已创建的 thread_msg_id 集合（避免重复入库）
-    existing_threads = {
-        t.get("thread_msg_id", "") for t in
-        _ensure_mail_inquiry_imports._spm.spare_mail_list_tasks(page_size=500)
+    # 已创建的线程/业务键集合（避免重复入库）
+    # thread_msg_id 去重（同一封邮件） + project_no 去重（同一项目不再开新任务）
+    _all_tasks = _ensure_mail_inquiry_imports._spm.spare_mail_list_tasks(page_size=2000)
+    existing_threads = {t.get("thread_msg_id", "") for t in _all_tasks if t.get("thread_msg_id")}
+    existing_project_nos = {
+        (t.get("project_no") or "").strip() for t in _all_tasks
+        if (t.get("project_no") or "").strip() and (t.get("status") or "") != "REJECTED"
     }
 
     for m in r.get("mails", []):
@@ -2751,6 +2754,14 @@ def _step_parsing(cfg, tpls):
                 print(f"[mail-inquiry] persist rejected marker failed: {e}")
             continue
 
+        # ── 业务键去重：同一 project_no 已存在有效任务 → 跳过，不开新任务 ──
+        # 工程师邮件本身带项目号（如 TRGHDHF202608311124），与时间无关；只要该项目已有
+        # 任务（未 reject），即便收件箱反复扫到同主题邮件，也不重复建任务。
+        pno = (fields.get("project_no") or "").strip()
+        if pno and pno in existing_project_nos:
+            print(f"[mail-inquiry] 项目 {pno} 已有任务，跳过重复创建")
+            continue
+
         task_id = _gen_task_id()
         deadline = _inquiry_deadline(m, fields.get("urgent", "24h"))
 
@@ -2779,6 +2790,8 @@ def _step_parsing(cfg, tpls):
         }
         _ensure_mail_inquiry_imports._spm.spare_mail_create_task(task)
         existing_threads.add(mid)
+        if pno:
+            existing_project_nos.add(pno)
         created += 1
 
     return {"created": created, "total_scanned": len(r.get("mails", []))}
