@@ -133,16 +133,16 @@ def step_cfg():
     print("供应商:", [(s.get("name"), s.get("email")) for s in p.get("default_suppliers", [])])
 
 def step_sent():
-    print("[工程师 b1 → 采购方 b3] 发送询价 A（字段齐全）")
+    print("[工程师 b1 → 采购方 b3] 发送询价 A（含紧急程度 5min）")
     body = (
         "您好，我是运维部工程师，现发起备件询价申请。\n\n"
-        "项目编号：PRJ-E2E-001\n项目名称：真邮箱端到端测试\n"
-        "类型：硬盘\n品牌：Seagate\nPN：ST-E2E-100\n规格：1TB 7200转\n"
-        "成色：全新\n数量：4\n"
-        "收货地址：大连市高新园区测试路1号 李工 15900000000\n"
-        "询价时间：一天\n最晚发货时间：2026-09-10\n"
+        "项目编号：PRJ-E2E-002\n项目名称：真邮箱双流测试\n"
+        "类型：硬盘\n品牌：Seagate\nPN：ST-E2E-200\n规格：1TB 7200转\n"
+        "成色：全新\n数量：3\n"
+        "收货地址：大连市高新园区测试路2号 王工 15900000001\n"
+        "紧急程度：5min\n最晚发货时间：2026-09-12\n"
     )
-    mid = send_mail(B1, P1(), B3, "【备件询价】PRJ-E2E-001 硬盘询价", body)
+    mid = send_mail(B1, P1(), B3, "【备件询价】PRJ-E2E-002 硬盘询价", body)
     print(f"  已发送: {mid}")
 
 def step_sendbad():
@@ -152,7 +152,7 @@ def step_sendbad():
     print(f"  已发送: {mid}")
 
 def step_quote():
-    print("[供应商 b2] 从服务器取最新 WAITING_QUOTES 任务的供应商 B message_id")
+    print("[供应商 b2] 从服务器取最新 WAITING_QUOTES 任务供应商 B message_id，并从 b2 收件箱取 B 原询价构造带引用的标准报价回复")
     d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
     target = None
     for t in d.get("tasks", []):
@@ -176,12 +176,54 @@ def step_quote():
         print("  ✗ 任务供应商无 B message_id:", suppliers)
         return
     print(f"  任务 {tid} 供应商 B message_id: {b_msg}")
-    reply = (
-        "您好，贵司询价如下，我方报价：\n"
-        "单价：1180元\n成色：全新\n数量：4\n发货时间：5天\n可提供测试报告：是\n"
-    )
-    mid = send_mail(B2, P2(), B3, "Re: 【询价】报价", reply, reply_to=b_msg)
-    print(f"  供应商已按正确线程回复报价: {mid}")
+
+    # 从 b2(供应商)收件箱取原询价 B 邮件正文，用于"全部回复"式引用
+    import email as em
+    orig_body = ""
+    orig_subject = ""
+    try:
+        for raw in fetch_inbox(B2, P2(), limit=15):
+            try:
+                msg = em.message_from_bytes(raw)
+                subj = _dec(msg.get("Subject", ""))
+                mid2 = _dec(msg.get("Message-ID", ""))
+                if mid2 and mid2.strip() == (b_msg or "").strip():
+                    orig_subject = subj
+                    # 提取纯文本正文
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                orig_body = part.get_payload(decode=True).decode(part.get_content_charset() or 'utf-8', errors='replace')
+                                break
+                    else:
+                        orig_body = msg.get_payload(decode=True).decode(msg.get_content_charset() or 'utf-8', errors='replace')
+                    break
+            except Exception:
+                continue
+    except Exception as e:
+        print("  (取原询价引用失败，将仅发标准报价)", e)
+
+    # 标准报价回复（依设计文档字段规范），并在下方引用原询价内容
+    quote_lines = [
+        "尊敬的采购方：",
+        "您好！针对贵司询价，我方报价如下：\n",
+        "备件品牌：Seagate",
+        "型号（PN）：ST-E2E-200",
+        "报价数量：3",
+        "报价单价：1180元",
+        "成色：全新",
+        "交货周期：5天",
+        "是否提供测试报告：是\n",
+        "以上报价有效期即为贵司询价截止前，请查收确认。\n",
+        "- 供应商A",
+    ]
+    reply = "\n".join(quote_lines)
+    if orig_body:
+        quoted = "\n".join(f"> {ln}" for ln in orig_body.splitlines())
+        reply += f"\n\n在 {orig_subject or '询价'} 中写道：\n{quoted}"
+    subj = f"Re: {orig_subject or '【询价】报价'}"
+    mid = send_mail(B2, P2(), B3, subj, reply, reply_to=b_msg)
+    print(f"  供应商已按标准格式+带引用回复报价: {mid}")
 
 def step_approve():
     print("[审批人 b1] 取服务器最新 WAITING_APPROVAL 任务的 d_mail_msg_id → 回复确认采购")

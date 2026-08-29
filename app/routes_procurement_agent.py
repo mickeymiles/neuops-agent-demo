@@ -2591,7 +2591,19 @@ def _step_parsing(cfg, tpls):
         missing = [k for k in _MI_LLM_REQUIRED if not (fields.get(k) or "").strip()]
         if missing:
             _reply_missing_fields(m, missing, fields)
-            existing_threads.add(mid)  # 标记已处理，避免重复回信
+            # 持久化"已回信"标记：建一条 REJECTED 任务占用该 msg_id，
+            # 使下次 tick 的 existing_threads 判重命中，避免重复回信。
+            try:
+                _ensure_mail_inquiry_imports._spm.spare_mail_create_task({
+                    "task_id": _gen_task_id(),
+                    "thread_msg_id": mid,
+                    "status": "REJECTED",
+                    "internal_status": "REJECTED",
+                    "external_status": "REJECTED",
+                    "latest_step": f"R_FR02_MISSING_FIELDS:{','.join(missing)}",
+                })
+            except Exception as e:
+                print(f"[mail-inquiry] persist rejected marker failed: {e}")
             continue
 
         task_id = _gen_task_id()
@@ -2977,8 +2989,20 @@ def _parse_quote_body(body: str) -> dict:
     """从供应商报价正文抽单价/成色/数量/发货时间（正则，失败留空）。
 
     同时支持普通文本字段与 Markdown 表格（| 表头 | 行数据 |）两种常见报价格式。
+    先剥离"回复引用旧询价"的内容（> 前缀行 / '在 ... 中写道' 之后），
+    确保解析只看供应商自己新写的报价，避免被原询价里的 单价/数量 干扰。
     """
     out = {}
+
+    # ── 剥离被引用的旧询价（邮件流"全部回复"携带的原文）──
+    body = str(body or "")
+    # 1) 截断到"在 ... 中写道："引用标记之前
+    m_cut = re.search(r"在\s*.{0,60}写道[:：]?", body)
+    if m_cut:
+        body = body[:m_cut.start()]
+    # 2) 去掉以 > 开头的引用行
+    body_lines = [ln for ln in body.splitlines() if not ln.strip().startswith(">")]
+    body = "\n".join(body_lines)
 
     # ── 表格格式：优先尝试解析 | A | B | ... | 表格行 ──
     # 找包含至少 单价/价格 且 数量/货期/成色 之一的“数据行”
