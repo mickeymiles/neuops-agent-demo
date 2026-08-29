@@ -2791,8 +2791,8 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     # 项目编号
     m = re.search(r"(?:项目(?:编号|号)?\s*[:：]?\s*)(PRJ[-_/\w\d]+)", merged, re.I)
     if m: out["project_no"] = m.group(1)
-    # 项目名称
-    m = re.search(r"(?:项目名称?\s*[:：]?\s*)([\u4e00-\u9fff\w\-（）()\s]{2,40})", merged)
+    # 项目名称（不跨行：值中只允许空格/Tab，不允许换行吞并下一字段）
+    m = re.search(r"(?:项目名称?\s*[:：]?\s*)([\u4e00-\u9fff\w\-（）() \t]{2,40})", merged)
     if m and "project_name" not in out: out["project_name"] = m.group(1).strip()
     # 品牌（中英文均可：兼容 三星 / Seagate）
     m = re.search(r"品牌\s*[:：]?\s*([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9\-]{1,20})", merged)
@@ -3191,9 +3191,9 @@ def _parse_quote_body(body: str) -> dict:
     if header_row and numeric_rows:
         for cells in numeric_rows:
             if idx_price is not None and idx_price < len(cells):
-                pm = re.search(r"\d+(?:\.\d+)?", cells[idx_price])
+                pm = re.search(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", cells[idx_price])
                 if pm and out.get("unit_price") is None:
-                    out["unit_price"] = float(pm.group(0))
+                    out["unit_price"] = float(pm.group(0).replace(",", ""))
             if idx_qty is not None and idx_qty < len(cells) and "count" not in out:
                 qm = re.search(r"\d+", cells[idx_qty])
                 if qm: out["count"] = int(qm.group(0))
@@ -3206,8 +3206,9 @@ def _parse_quote_body(body: str) -> dict:
 
     # ── 普通文本格式（表格未解出时兜底）──
     if out.get("unit_price") is None:
-        m = re.search(r"(?:单价|报价|含税价|价格)\s*[:：]?\s*[¥￥$]?\s*(\d+(?:\.\d+)?)", body)
-        if m: out["unit_price"] = float(m.group(1))
+        # 支持千分位：￥1,280 / 1,280.00 / 1280
+        m = re.search(r"(?:单价|报价|含税价|价格)\s*[:：]?\s*[¥￥$]?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)", body)
+        if m: out["unit_price"] = float(m.group(1).replace(",", ""))
     if "condition" not in out:
         m = re.search(r"(?:成色|新旧)\s*[:：]?\s*(全新|原厂翻新|拆机二手|二手|全新原装)", body)
         if m: out["condition"] = m.group(1)
@@ -3524,6 +3525,7 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     spm.spare_mail_update_task(tid, {
                         "approval_state": "rejected",
                         "approval_result": "ALL_REJECTED",
+                        "approver_email": from_email,
                         "internal_status": "R_CLOSED",
                         "external_status": "R_ABORT",
                         "status": "DONE",
@@ -3543,7 +3545,8 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                         "target_supplier": target,
                         "approval_state": "approved",
                         "approval_result": result_label,
-                        "latest_step": f"R_APPROVAL(approved, {result_label})",
+                        "approver_email": from_email,
+                        "latest_step": f"R_APPROVAL(approved by {from_email}, {result_label})",
                     })
                     changed = True
         else:
