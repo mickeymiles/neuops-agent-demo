@@ -273,10 +273,13 @@ def tool_read_inbox_mail(since_timestamp: int = 0, filter_sender_email_list: lis
             raw = msg_data[0][1]
             msg = _email_pkg.message_from_bytes(raw)
             from_full = _decode_mime(msg.get("From", ""))
-            # 提取邮箱
+            # 提取邮箱：兼容 "名称 <a@b.com>" 和纯邮箱 "a@b.com" 两种格式
             from_email = ""
             if "<" in from_full and ">" in from_full:
                 from_email = from_full[from_full.find("<")+1:from_full.find(">")]
+            elif "@" in from_full:
+                from email.utils import parseaddr
+                from_email = (parseaddr(from_full)[1] or "").strip() or from_full.strip()
             subject = _decode_mime(msg.get("Subject", ""))
             # 时间戳
             date_str = msg.get("Date", "")
