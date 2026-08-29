@@ -2311,6 +2311,17 @@ def _norm_mid(m):
     while s.endswith(">"):   s = s[:-1]
     return s.strip()
 
+def _quote_orig_body(body: str, max_chars: int = 3000) -> str:
+    """将邮件正文作为被引用原文（每行加 > 前缀）追加到回复末尾，保证在一线程内带原文。"""
+    body = str(body or "").strip()
+    if not body:
+        return ""
+    lines = [ln for ln in body.splitlines() if not ln.strip().startswith(">")]
+    quoted = "\n".join(f"> {ln}" if ln.strip() else ">" for ln in lines)
+    if len(quoted) > max_chars:
+        quoted = quoted[:max_chars] + "\n> ……（引用过长已截断）"
+    return f"\n\n在 {datetime.now().strftime('%Y-%m-%d %H:%M')} 的邮件中写道：\n{quoted}"
+
 def _load_mail_inquiry_skill():
     """加载 mail-inquiry 配置：以 skill JSON 为底，spare_mail_config（DB）优先覆盖。
 
@@ -2612,6 +2623,7 @@ def _step_parsing(cfg, tpls):
         task = {
             "task_id": task_id,
             "thread_msg_id": mid,
+            "inquiry_body": body[:4000],
             "project_no": fields.get("project_no", ""),
             "project_name": fields.get("project_name", ""),
             "part_type": fields.get("part_type", ""),
@@ -3092,8 +3104,9 @@ def _step_deciding_lowest(task: dict, cfg: dict, tpls: dict):
         )
         body = _safe_format(tpl_f.get("body") or "", fmt_args)
         subj = _safe_format(tpl_f.get("subject") or "", fmt_args)
+        # 回复工程师询价线程，末尾引用原始采购申请原文
         tool_send_mail(to=[str(cfg.get("proc_mail_username") or "").strip()],
-                       subject=subj, body_text=body,
+                       subject=subj, body_text=body + _quote_orig_body(task.get("inquiry_body")),
                        reply_to_mail_id=task.get("thread_msg_id") or None)
         spm.spare_mail_update_task(tid, {
             "status": "DONE", "external_status": "R_ABORT", "internal_status": "R_CLOSED",
@@ -3179,16 +3192,20 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
         count=task.get("count", ""),
     )
 
+    # 在选中供应商报价邮件线程上回复——这样 E 的 References 已经串到 C→B→A
+    body_full = body + _quote_orig_body((target_quote or {}).get("raw_body"))
     mail_r = tool_send_mail(
         to=[target_email] if target_email else [str(cfg.get("proc_mail_username") or "").strip()],
-        subject=subj, body_text=body,
+        subject=subj, body_text=body_full,
         reply_to_mail_id=reply_mid or None,
     )
+    e_mail_msg_id = (mail_r or {}).get("message_id") or ""
 
     _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
         "external_status": "R_WAIT_SHIPPING",
         "status": "ORDERING",
-        "latest_step": f"R_ORDER→R_WAIT_SHIPPING(sent_to={target_email}, mail_ok={mail_r.get('success', False)})",
+        "e_mail_msg_id": e_mail_msg_id,
+        "latest_step": f"R_ORDER→R_WAIT_SHIPPING(sent_to={target_email}, e_msg_id={e_mail_msg_id})",
     })
     return True
 
@@ -3262,10 +3279,11 @@ def _mi_internal_send_d(task: dict, cfg: dict, tpls: dict) -> bool:
         pn=task.get("pn", ""),
         suppliers_count=len(valid),
     ))
-    # 回复工程师询价线程 + 抄送审批人
+    # 回复工程师询价线程 + 抄送审批人；正文末尾引用工程师原始采购申请原文（同一线程内带原文）
+    body_d_full = body_d + _quote_orig_body(task.get("inquiry_body"))
     d_sent = tool_send_mail(
         to=[str(cfg.get("proc_mail_username") or "").strip()],
-        subject=subj_d, body_text=body_d,
+        subject=subj_d, body_text=body_d_full,
         cc=approvers if approvers else None,
         reply_to_mail_id=task.get("thread_msg_id") or None,
     )
@@ -3352,8 +3370,10 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     )
                     body_f = _safe_format(tpl_f.get("body") or "", fmt_args)
                     subj_f = _safe_format(tpl_f.get("subject") or "", fmt_args)
+                    # 回复工程师询价线程，末尾引用原始采购申请原文
                     tool_send_mail(to=[str(cfg.get("proc_mail_username") or "").strip()],
-                                   subject=subj_f, body_text=body_f,
+                                   subject=subj_f,
+                                   body_text=body_f + _quote_orig_body(task.get("inquiry_body")),
                                    reply_to_mail_id=task.get("thread_msg_id") or None)
                     spm.spare_mail_update_task(tid, {
                         "approval_state": "rejected",
@@ -3404,8 +3424,11 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     )
                     body_g = _safe_format(tpl_g.get("body") or "", fmt_args)
                     subj_g = _safe_format(tpl_g.get("subject") or "", fmt_args)
-                    tool_send_mail(to=[target_email], subject=subj_g, body_text=body_g,
-                                   reply_to_mail_id=reply_mid or None)
+                    # 在 E（订货）邮件线程上回复——线程链自然串起 A/B/C/D/E，G 自动带全历史
+                    e_reply_mid = _norm_mid(task.get("e_mail_msg_id", "")) or reply_mid
+                    tool_send_mail(to=[target_email], subject=subj_g,
+                                   body_text=body_g,
+                                   reply_to_mail_id=e_reply_mid or None)
                 spm.spare_mail_update_task(tid, {
                     "internal_status": "R_CLOSED",
                     "status": "DONE",

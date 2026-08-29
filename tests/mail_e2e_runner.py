@@ -43,6 +43,7 @@ def _pwd(suffix):
 B1 = "biquanzhi1@163.com"; P1 = lambda: _pwd("1")
 B2 = "biquanzhi2@163.com"; P2 = lambda: _pwd("2")
 B3 = "biquanzhi3@163.com"; P3 = lambda: _pwd("3")
+B5 = "biquanzhi5@163.com"; P5 = lambda: _pwd("5")  # 审批人
 
 IMAP_HOST, IMAP_PORT = "imap.163.com", 993
 SMTP_HOST, SMTP_PORT = "smtp.163.com", 465
@@ -226,7 +227,7 @@ def step_quote():
     print(f"  供应商已按标准格式+带引用回复报价: {mid}")
 
 def step_approve():
-    print("[审批人 b1] 取服务器最新 WAITING_APPROVAL 任务的 d_mail_msg_id → 回复确认采购")
+    print("[审批人 b5] 取服务器最新 WAITING_APPROVAL 任务的 d_mail_msg_id → 在 D 线程上回复确认采购")
     d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
     target = None
     for t in d.get("tasks", []):
@@ -236,14 +237,44 @@ def step_approve():
     if not target:
         print("  ✗ 无 WAITING_APPROVAL 任务")
         return
+    tid = target["task_id"]
     d_mid = target.get("d_mail_msg_id") or ""
     if not d_mid:
         print("  ✗ 任务无 d_mail_msg_id")
         return
-    print(f"  任务 {target['task_id']} d_mail_msg_id: {d_mid}")
-    mid = send_mail(B1, P1(), B3, "Re: 【询价汇总】审批确认", "确认采购，按最低价执行。",
-                    reply_to=d_mid)
-    print(f"  审批人已确认: {mid}")
+    print(f"  任务 {tid} d_mail_msg_id: {d_mid}")
+
+    # 从 b5 收件箱取 D 邮件原文（全部回复式引用）
+    import email as em
+    orig_body = ""; orig_subject = "【询价汇总】"
+    try:
+        for raw in fetch_inbox(B5, P5(), limit=15):
+            try:
+                msg = em.message_from_bytes(raw)
+                mid2 = _dec(msg.get("Message-ID", ""))
+                if mid2 and mid2.strip() == d_mid.strip():
+                    orig_subject = _dec(msg.get("Subject", ""))
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                orig_body = part.get_payload(decode=True).decode(part.get_content_charset() or 'utf-8', errors='replace')
+                                break
+                    else:
+                        orig_body = msg.get_payload(decode=True).decode(msg.get_content_charset() or 'utf-8', errors='replace')
+                    break
+            except Exception:
+                continue
+    except Exception as e:
+        print("  (取 D 邮件原文失败，将仅发标准确认)", e)
+
+    body = "确认采购，按最低价执行。\n\n- 审批人"
+    if orig_body:
+        quoted = "\n".join(f"> {ln}" for ln in orig_body.splitlines())
+        body += f"\n\n在 {orig_subject} 中写道：\n{quoted}"
+
+    mid = send_mail(B5, P5(), B3,
+                    f"Re: {orig_subject}", body, reply_to=d_mid)
+    print(f"  审批人 b5 已确认: {mid}")
 
 def step_status():
     d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")

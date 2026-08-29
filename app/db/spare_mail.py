@@ -81,12 +81,13 @@ def spare_mail_list_config() -> dict:
 
 # 表字段集合（与 schema.py 的 CREATE TABLE 保持同步）
 _TASK_COLS = (
-    "task_id", "thread_msg_id", "d_mail_msg_id", "approver_email",
+    "task_id", "thread_msg_id", "d_mail_msg_id", "inquiry_body", "approver_email",
     "project_no", "project_name", "part_type", "brand", "pn", "spec",
     "condition", "count", "address", "urgent", "latest_ship_time", "inquiry_deadline",
     "suppliers_json", "quotes_json", "lowest_supplier",
     "lowest_quote", "approval_state", "approval_result", "target_supplier",
     "internal_status", "external_status", "shipped_no",
+    "e_mail_msg_id",
     "status", "latest_step", "created_at", "updated_at",
 )
 

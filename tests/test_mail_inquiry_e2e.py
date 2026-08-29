@@ -261,6 +261,8 @@ assert "biqzh@neusoft.com" in (D_MAIL.get("cc") or []), f"D 没抄送审批人�
 assert "最低价" in D_MAIL["body"], "D 没写系统最低价优选提示"
 assert "1280" in D_MAIL["body"], "D 没写最低价 ¥1280"
 assert "13260023678@163.com" in D_MAIL["body"], "D 没写最低价供应商"
+assert "写道" in D_MAIL["body"] and "项目编号：PRJ-2026-0888" in D_MAIL["body"], \
+    "D 没引用工程师原始采购申请原文（内部流带原文）"
 print("[TEST] 模板D：回复A会话 + 抄送审批人 + 最低价¥1280 提示 ✓")
 
 # 10) 审批人回复"确认采购"（应自动选最低价）
@@ -286,12 +288,15 @@ E_MAILS = [m for m in SENT_MAILS if "订货" in m.get("subject", "") or "下单"
 assert len(E_MAILS) >= 1, f"模板E没发出，SENT_MAILS subjects: {[m.get('subject','') for m in SENT_MAILS]}"
 E_MAIL = E_MAILS[0]
 print(f"[DEBUG] E_MAIL subject={E_MAIL.get('subject')}, reply_to={E_MAIL.get('reply_to')}, body[:300]={E_MAIL.get('body','')[:300]}")
-# E 应该回复最低价供应商的报价会话
+# E 应该回复选中供应商的报价邮件会话（同一线程，不新建）
 assert E_MAIL.get("reply_to"), "E 没有回复报价会话！"
-# 验证收货地址
+assert E_MAIL["reply_to"] in ("msg-quote-1", "msg-quote-2"), \
+    f"E 必须回复选中供应商的报价邮件线程，实际 reply_to={E_MAIL.get('reply_to')}"
 assert "南京市鼓楼区中山北路100号" in E_MAIL["body"], f"E 没带收货地址！body[:400]={E_MAIL.get('body','')[:400]}"
 assert "测试报告" in E_MAIL["body"], "E 没要求测试报告"
 assert "快递单号" in E_MAIL["body"], "E 没要求快递单号"
+assert "写道" in E_MAIL["body"] and "报价单价：1280元" in E_MAIL["body"], \
+    "E 没引用供应商报价原文（外部流带原文）"
 print("[TEST] 模板E：回复最低价供应商报价会话 + 带收货地址 + 要求测试报告/快递单号 ✓")
 
 # 11) 供应商(最低价家)回复快递单号
