@@ -95,7 +95,7 @@ def raw_summaries(email, pw, limit=10):
             out.append({"error": str(e)})
     return out
 
-def send_mail(email, pw, to, subject, body, cc=None, reply_to=None, name=None):
+def send_mail(email, pw, to, subject, body, cc=None, reply_to=None, name=None, references=None):
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = subject
     msg["From"] = formataddr((name or email, email))
@@ -104,7 +104,8 @@ def send_mail(email, pw, to, subject, body, cc=None, reply_to=None, name=None):
     if cc: msg["Cc"] = cc if isinstance(cc, str) else ",".join(cc)
     if reply_to:
         msg["In-Reply-To"] = reply_to
-        msg["References"] = reply_to
+        # References：优先用传入的完整上游链，否则退化为 reply_to 本身
+        msg["References"] = (references + " " + reply_to).strip() if (references and references.strip()) else reply_to
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as s:
         s.login(email, pw)
         s.sendmail(email, [to] if isinstance(to, str) else list(to) + (list(cc or [])), msg.as_string())
@@ -332,8 +333,10 @@ def step_ship():
     print(f"  供应商已回单号: {mid}")
 
 def step_done():
-    """工程师 b1 在 D 汇总邮件线程上回复备件更换完成 → 触发 G 结算 → DONE"""
-    print("[工程师 b1] 取服务器最新(已登记shipped_no)R_APPROVAL 任务的 d_mail_msg_id → 回复备件更换完成")
+    """工程师 b1 在【内部 D 汇总邮件线程】上回复备件更换完成 → 触发 G 结算 → DONE。
+    必须 reply 到 D 的那封内部邮件（保留其主题 + 完整 References 链），不能发成新邮件。
+    """
+    print("[工程师 b1] 取服务器最新(已登记shipped_no)R_APPROVAL 任务的 d_mail_msg_id → 在其内部线程上回复备件更换完成")
     target = wait_tasks(lambda t: t.get("internal_status") == "R_APPROVAL" and t.get("shipped_no"),
                         label="已收货待验收的R_APPROVAL任务")
     if not target:
@@ -341,10 +344,29 @@ def step_done():
         return
     d_mid = target.get("d_mail_msg_id") or target.get("thread_msg_id") or ""
     print(f"  任务 {target['task_id']} 用 reply_to={d_mid[:60]}")
-    mid = send_mail(B1, P1(), B3, "Re: 【询价汇总】备件更换完成确认",
+
+    # 从 b1(工程师)收件箱取 D 汇总邮件原文（主题 + References），用于在同一内部线程上追加回复
+    import email as em
+    orig_subject = "【询价汇总】备件更换完成确认"
+    d_refs = ""
+    try:
+        for raw in fetch_inbox(B1, P1(), limit=15):
+            try:
+                msg = em.message_from_bytes(raw)
+                mid2 = _dec(msg.get("Message-ID", ""))
+                if mid2 and mid2.strip() == d_mid.strip():
+                    orig_subject = _dec(msg.get("Subject", ""))
+                    d_refs = _dec(msg.get("References", "")).strip()
+                    break
+            except Exception:
+                continue
+    except Exception as e:
+        print("  (取 D 原文失败，将直接引用任务号回复)", e)
+
+    mid = send_mail(B1, P1(), B3, f"Re: {orig_subject}",
                     "备件已更换完成，可以结算了。\n\n- 运维部工程师",
-                    reply_to=d_mid, name="运维工程师")
-    print(f"  工程师已确认更换完成: {mid}")
+                    reply_to=d_mid, references=d_refs, name="运维工程师")
+    print(f"  工程师已在 D 线程回复更换完成: {mid}")
 
 def step_full():
     """跑全流程：sent → quote → approve → ship → done（各 step 内部轮询等待系统 tick 推进）"""

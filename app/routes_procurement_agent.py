@@ -2358,6 +2358,20 @@ def _external_flow_cc(task: dict, cfg: dict, exclude_to=()) -> list:
            and e.lower() not in exclude_low]
     return out
 
+
+def _task_neu_no(task: dict) -> str:
+    """生成任务号：NEU + 项目号后四位 + 创建时间(精确到分钟)，如 NEU3465202608311021。
+
+    仅作为邮件标题/正文里的外部任务标识（工程师初始邮件 A 除外，不带任务号）。
+    """
+    pno = str((task or {}).get("project_no") or "")
+    last4 = pno[-4:] if len(pno) >= 4 else pno
+    ctime = str((task or {}).get("created_at") or "")[:16]  # YYYY-MM-DD HH:MM
+    digits = "".join(ch for ch in ctime if ch.isdigit())
+    if len(digits) < 12:
+        digits = datetime.now().strftime("%Y%m%d%H%M")
+    return f"NEU{last4}{digits}"
+
 # ── tick 级 IMAP 缓存：每次 tick 开头做一次 UNSEEN 拉取，后续 step 函数复用 ──
 # 避免每任务一次 IMAP SEARCH，10 个任务从 10 次缩到 1 次
 _TICK_UNSEEN_CACHE = None
@@ -3067,7 +3081,7 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
         count=task.get("count", ""),
         urgent=urgent,
         inquiry_dur=urgent,
-        task_no=tid,
+        task_no=_task_neu_no(task),
     )
     body_fmt = tpl_b.get("body") or ""
     # 注意：B 询价对外不暴露内部项目编号/项目名称（供应商不该看到），一律置空
@@ -3084,7 +3098,7 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
         urgent=urgent,
         inquiry_dur=urgent,
         deadline=deadline_str,
-        task_no=tid,
+        task_no=_task_neu_no(task),
         supplier="{supplier}",
     )
     # 批量发送（同一个 body 模板，每封的 {supplier} 事后回填——这里统一批发送完再组装）
@@ -3537,7 +3551,7 @@ def _step_deciding_lowest(task: dict, cfg: dict, tpls: dict):
             brand=task.get("brand", ""),
             pn=task.get("pn", ""),
             stop_reason=reason,
-            task_no=tid,
+            task_no=_task_neu_no(task),
         )
         body = _safe_format(tpl_f.get("body") or "", fmt_args)
         subj = _safe_format(tpl_f.get("subject") or "", fmt_args)
@@ -3620,14 +3634,14 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
         receiver_name="运维部",
         receiver_phone="（请回复本会话提供）",
         latest_ship_time=latest_ship_time,
-        task_no=tid,
+        task_no=_task_neu_no(task),
     )
     subj = (tpl_e.get("subject") or "").format(
         project_no=task.get("project_no", ""),
         brand=task.get("brand", ""),
         pn=task.get("pn", ""),
         count=task.get("count", ""),
-        task_no=tid,
+        task_no=_task_neu_no(task),
     )
 
     # 在选中供应商报价邮件线程上回复——构造完整 References 链确保 RFC 会话链不中断
@@ -3716,7 +3730,7 @@ def _mi_internal_send_d(task: dict, cfg: dict, tpls: dict) -> bool:
         lowest_quote=lowest_quote_str,
         lowest_supplier=lowest_supplier,
         approver_emails="、".join(approvers) if approvers else "（未配置审批人）",
-        task_no=tid,
+        task_no=_task_neu_no(task),
     ))
     subj_d = _safe_format(tpl_d.get("subject") or "", dict(
         project_no=task.get("project_no", ""),
@@ -3826,7 +3840,7 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                         brand=task.get("brand", ""),
                         pn=task.get("pn", ""),
                         stop_reason="审批人全部拒绝：全部报价不可选",
-                        task_no=tid,
+                        task_no=_task_neu_no(task),
                     )
                     body_f = _safe_format(tpl_f.get("body") or "", fmt_args)
                     subj_f = _safe_format(tpl_f.get("subject") or "", fmt_args)
@@ -3891,7 +3905,7 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                         pn=task.get("pn", ""),
                         count=task.get("count", ""),
                         condition=task.get("condition", ""),
-                        task_no=tid,
+                        task_no=_task_neu_no(task),
                     )
                     body_g = _safe_format(tpl_g.get("body") or "", fmt_args)
                     subj_g = _safe_format(tpl_g.get("subject") or "", fmt_args)
