@@ -3976,27 +3976,48 @@ async def mail_inquiry_manual_tick():
 
 @router.post("/mail-inquiry/register")
 async def mail_inquiry_register_employee():
-    """幂等注册「备件邮件询价数字员工」。启动时或调试时调用均可。"""
+    """幂等注册「备件邮件询价」能力到 emp-008（方案A：保留008统一入口，双流并入008）。
+
+    不再新建独立数字员工 emp-mail-inquiry；把 skill-proc-mail-inquiry 绑定给 emp-008，
+    使 emp-008 成为同时承载 chat(页面/对话) 与 邮件双流询价 的唯一备件采购数字员工。
+    同时停用旧 emp-mail-inquiry 记录（避免平台出现两个）。
+    """
     _ensure_mail_inquiry_imports()
     _ensure_mail_inquiry_imports._init_db()
-    emp_id = "emp-mail-inquiry"
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    emp = {
-        "id": emp_id,
-        "name": "备件邮件询价数字员工",
-        "desc": "由 scheduler/tick?kind=mail-inquiry 驱动的备件邮件询价流程引擎，覆盖邮件抓取、供应商询价、报价汇总、内部审批、下达订货全流程。",
-        "type": "digital_employee",
-        "created": now_str,
+    # 1) 给 emp-008 补上 mail-inquiry skill 绑定（幂等）
+    emp_008 = {
+        "id": "emp-008",
+        "name": "备品备件采购询比价专员",
+        "desc": "统一备件采购数字员工：支持 页面/Agent对话/工程师邮件 三入口。邮件双流引擎(skill-proc-mail-inquiry)负责工程师询价→报价→内部审批→订货→回单→结算全流程；chat 负责对话创建与进度查询。",
+        "type": "采购询比价",
+        "created": "2026-08-21",
         "updated": now_str,
-        "rag_kb": "",
-        "prompt": "你是备件邮件询价数字员工，负责从工程师询价邮件中抽取字段、自动向供应商发询价邮件、汇总报价并推送内部审批、最终下达订货邮件。",
-        "model": "",
-        "skills": [_SKILL_ID_MAIL_INQUIRY],
-        "skill_states": {_SKILL_ID_MAIL_INQUIRY: True},
+        "rag_kb": "采购知识库-询比价流程与邮件模板",
+        "prompt": "你是备品备件采购询比价专员（emp-008），统一处理三入口采购：页面/Agent对话/工程师邮件。",
+        "model": "deepseek-v4",
+        "skills": ["skill-proc-chat", "skill-proc-mail-compose", "skill-proc-parse",
+                   _SKILL_ID_MAIL_INQUIRY],
+        "skill_states": {"skill-proc-chat": True, "skill-proc-mail-compose": True,
+                         "skill-proc-parse": True, _SKILL_ID_MAIL_INQUIRY: True},
         "enabled": True,
     }
-    _ensure_mail_inquiry_imports._upsert_emp(emp)
-    return {"success": True, "employee_id": emp_id, "skill_id": _SKILL_ID_MAIL_INQUIRY}
+    _ensure_mail_inquiry_imports._upsert_emp(emp_008)
+    # 2) 停用旧 emp-mail-inquiry（方案A：不再作为独立数字员工暴露）
+    try:
+        _ensure_mail_inquiry_imports._upsert_emp({
+            "id": "emp-mail-inquiry", "name": "备件邮件询价数字员工",
+            "desc": "（已并入 emp-008，此记录停用）双流邮件询价能力由 emp-008 统一承载。",
+            "type": "digital_employee", "created": "2026-08-28", "updated": now_str,
+            "rag_kb": "", "prompt": "", "model": "",
+            "skills": [_SKILL_ID_MAIL_INQUIRY],
+            "skill_states": {_SKILL_ID_MAIL_INQUIRY: True},
+            "enabled": False,
+        })
+    except Exception as e:
+        print(f"[mail-inquiry] disable emp-mail-inquiry fallback: {e}")
+    return {"success": True, "employee_id": "emp-008", "skill_id": _SKILL_ID_MAIL_INQUIRY,
+            "note": "双流并入emp-008，停用emp-mail-inquiry"}
 
 
 # ── 配置管理 API（spare_mail_config：邮件/飞书凭据、审批人、供应商、模板）──
