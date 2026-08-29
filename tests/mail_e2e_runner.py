@@ -95,10 +95,10 @@ def raw_summaries(email, pw, limit=10):
             out.append({"error": str(e)})
     return out
 
-def send_mail(email, pw, to, subject, body, cc=None, reply_to=None):
+def send_mail(email, pw, to, subject, body, cc=None, reply_to=None, name=None):
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = subject
-    msg["From"] = formataddr(("E2E", email))
+    msg["From"] = formataddr((name or email, email))
     msg["To"] = to if isinstance(to, str) else ",".join(to)
     msg["Message-ID"] = make_msgid()
     if cc: msg["Cc"] = cc if isinstance(cc, str) else ",".join(cc)
@@ -143,13 +143,13 @@ def step_sent():
         "收货地址：大连市高新园区测试路2号 王工 15900000001\n"
         "紧急程度：5min\n最晚发货时间：2026-09-12\n"
     )
-    mid = send_mail(B1, P1(), B3, "【备件询价】PRJ-E2E-002 硬盘询价", body)
+    mid = send_mail(B1, P1(), B3, "【备件询价】PRJ-E2E-002 硬盘询价", body, name="运维工程师")
     print(f"  已发送: {mid}")
 
 def step_sendbad():
     print("[工程师 b1 → 采购方 b3] 发送格式错误询价（缺品牌/PN/数量）")
     body = "您好，我需要采购备件，请尽快。\n类型：硬盘\n"
-    mid = send_mail(B1, P1(), B3, "【备件询价】缺少关键字段", body)
+    mid = send_mail(B1, P1(), B3, "【备件询价】缺少关键字段", body, name="运维工程师")
     print(f"  已发送: {mid}")
 
 def step_quote():
@@ -223,7 +223,7 @@ def step_quote():
         quoted = "\n".join(f"> {ln}" for ln in orig_body.splitlines())
         reply += f"\n\n在 {orig_subject or '询价'} 中写道：\n{quoted}"
     subj = f"Re: {orig_subject or '【询价】报价'}"
-    mid = send_mail(B2, P2(), B3, subj, reply, reply_to=b_msg)
+    mid = send_mail(B2, P2(), B3, subj, reply, reply_to=b_msg, name="供应商A")
     print(f"  供应商已按标准格式+带引用回复报价: {mid}")
 
 def step_approve():
@@ -273,7 +273,7 @@ def step_approve():
         body += f"\n\n在 {orig_subject} 中写道：\n{quoted}"
 
     mid = send_mail(B5, P5(), B3,
-                    f"Re: {orig_subject}", body, reply_to=d_mid)
+                    f"Re: {orig_subject}", body, reply_to=d_mid, name="采购审批人")
     print(f"  审批人 b5 已确认: {mid}")
 
 def step_ship():
@@ -323,7 +323,7 @@ def step_ship():
         quoted = "\n".join(f"> {ln}" for ln in orig_body.splitlines())
         body += f"\n\n在 {orig_subject} 中写道：\n{quoted}"
 
-    mid = send_mail(B2, P2(), B3, f"Re: {orig_subject}", body, reply_to=e_mid)
+    mid = send_mail(B2, P2(), B3, f"Re: {orig_subject}", body, reply_to=e_mid, name="供应商A")
     print(f"  供应商已回单号: {mid}")
 
 def step_done():
@@ -347,7 +347,7 @@ def step_done():
     print(f"  任务 {target['task_id']} 用 reply_to={d_mid[:60]}")
     mid = send_mail(B1, P1(), B3, "Re: 【询价汇总】备件更换完成确认",
                     "备件已更换完成，可以结算了。\n\n- 运维部工程师",
-                    reply_to=d_mid)
+                    reply_to=d_mid, name="运维工程师")
     print(f"  工程师已确认更换完成: {mid}")
 
 def step_full():

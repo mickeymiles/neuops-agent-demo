@@ -2312,15 +2312,25 @@ def _norm_mid(m):
     return s.strip()
 
 def _quote_orig_body(body: str, max_chars: int = 3000) -> str:
-    """将邮件正文作为被引用原文（每行加 > 前缀）追加到回复末尾，保证在一线程内带原文。"""
+    """将邮件正文以清晰的引用分隔符追加到回复末尾。
+
+    用纯文本分隔线（--- / =）包裹原文，比 `>` 前缀在 webmail 客户端里渲染更稳定。
+    截断过长原文，避免线程链越来越臃肿。
+    """
     body = str(body or "").strip()
     if not body:
         return ""
-    lines = [ln for ln in body.splitlines() if not ln.strip().startswith(">")]
-    quoted = "\n".join(f"> {ln}" if ln.strip() else ">" for ln in lines)
-    if len(quoted) > max_chars:
-        quoted = quoted[:max_chars] + "\n> ……（引用过长已截断）"
-    return f"\n\n在 {datetime.now().strftime('%Y-%m-%d %H:%M')} 的邮件中写道：\n{quoted}"
+    # 跳过已被引用的旧内容（避免无限嵌套）
+    lines = [ln for ln in body.splitlines()
+             if not ln.strip().startswith(">") and not ln.strip().startswith("---")
+             and "原始邮件" not in ln]
+    content = "\n".join(lines).strip()
+    if not content:
+        return ""
+    if len(content) > max_chars:
+        content = content[:max_chars] + "\n……（引用过长已截断）"
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return f"\n\n{'=' * 40}\n【引用】以下为 {ts} 的被回复邮件原文\n{'=' * 40}\n{content}\n{'=' * 40}\n"
 
 def _load_mail_inquiry_skill():
     """加载 mail-inquiry 配置：以 skill JSON 为底，spare_mail_config（DB）优先覆盖。
