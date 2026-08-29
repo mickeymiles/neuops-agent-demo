@@ -2500,15 +2500,8 @@ def _gen_task_id() -> str:
     return f"MI-{ts}-{r}"
 
 def _urgent_to_seconds(urgent: str) -> int:
-    """紧急程度字符串 → 秒。支持 5min/1h/24小时/3天/高/中/低。解析失败默认 24h。"""
+    """紧急程度字符串 → 秒。支持 5min/1h/24小时/3天。解析失败默认 24h。"""
     s = str(urgent or "").strip().lower().replace(" ", "")
-    # 文本紧急程度映射
-    if s in ("高", "urgent", "critical"):
-        return 6 * 3600       # 高 → 6h
-    if s in ("中", "medium"):
-        return 24 * 3600      # 中 → 24h
-    if s in ("低", "low", "normal"):
-        return 48 * 3600      # 低 → 48h
     m = re.match(r"(\d+)\s*(分钟|min|m|小时|h|天|d)", s)
     if not m:
         return 24 * 3600
@@ -2816,10 +2809,8 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     # 数量
     m = re.search(r"(?:采购数量|数量)\s*[:：]?\s*(\d+)", merged)
     if m: out["count"] = m.group(1)
-    # 紧急程度（决定报价截止）：支持 数字时间(5min/1h/24小时) 和 文本程度(高/中/低)
-    m = re.search(r"紧急程度\s*[:：]?\s*([\d]+\s*(?:分钟?|min|m|小时?|h|天|d|周|wk))", merged, re.I)
-    if not m:
-        m = re.search(r"紧急(?:程度|性)?\s*[:：]?\s*(高|中|低|urgent|normal|critical)\b", merged, re.I)
+    # 紧急程度（决定报价截止）：如 紧急程度：5min / 1h / 24小时 / 3天
+    m = re.search(r"紧急程度\s*[:：]?\s*([\d]+\s*(?:分钟?|min|m|小时?|h|天|d))", merged, re.I)
     if m:
         out["urgent"] = m.group(1).strip()
     elif not (out.get("urgent") or ""):
@@ -2979,35 +2970,16 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
     tid = task["task_id"]
     tpl_b = (tpls or {}).get("B", {}) or {}
 
-    # 供应商池：优先查 tool_table_query（主数据表），失败/无记录 fallback 空数组
+    # 供应商池：只读配置（DB spare_mail_config.proc_participants 优先，skill JSON 兜底）
     suppliers = []
-    try:
-        r = tool_table_query(table_key="procurement_master_data", page_size=20)
-        records = r.get("records", []) if isinstance(r, dict) else []
-        for rec in records:
-            name = str(rec.get("supplier_name") or rec.get("name") or "").strip()
-            email = str(rec.get("supplier_email") or rec.get("email") or "").strip()
-            if name and email:
-                suppliers.append({"name": name, "email": email})
-    except Exception:
-        pass
-    if not suppliers:
-        # 兼容 skill config 里可能的 default_suppliers 占位
-        for s in (cfg or {}).get("default_suppliers", []) or []:
-            name = str(s.get("name") or "").strip() if isinstance(s, dict) else str(s)
-            email = str(s.get("email") or "").strip() if isinstance(s, dict) else ""
-            if name and email:
-                suppliers.append({"name": name, "email": email})
-    # E2E fallback：确保至少有 b2/b5 测试供应商（全流程测试时主数据可能没配）
-    _existing = {s["email"].lower().strip() for s in suppliers}
-    for _e2e in [
-        {"name": "E2E供应商-B2", "email": "biquanzhi2@163.com"},
-        {"name": "E2E供应商-B5审批模拟", "email": "biquanzhi5@163.com"},
-    ]:
-        if _e2e["email"] not in _existing:
-            suppliers.append(_e2e)
-            _existing.add(_e2e["email"])
-            print(f"[mail-inquiry] E2E fallback 添加供应商: {_e2e['email']}")
+    for s in (cfg or {}).get("default_suppliers", []) or []:
+        if isinstance(s, dict):
+            name = str(s.get("name") or "").strip()
+            email = str(s.get("email") or "").strip()
+        else:
+            name, email = str(s).strip(), ""
+        if name and email:
+            suppliers.append({"name": name, "email": email})
 
     # 渲染模板 B（每个供应商各渲染一份，supplier 字段不同）
     deadline_str = task.get("inquiry_deadline") or ""
