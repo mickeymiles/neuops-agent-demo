@@ -161,6 +161,7 @@ def test_duplicate_mail_not_recreated():
         "mail_body_text": (
             "您好，申请购买硬盘。\n"
             "类型：硬盘\n品牌：Seagate\nPN：ST1000VD\n规格：1TB\n成色：全新\n数量：5\n"
+            "紧急程度：5min\n"
         ),
         "in_reply_to": None,
     })
@@ -174,6 +175,7 @@ def test_duplicate_mail_not_recreated():
         "subject": "【备件询价】重复判重测试",
         "mail_body_text": (
             "您好，申请购买硬盘。\n类型：硬盘\n品牌：Seagate\nPN：ST1000VD\n规格：1TB\n成色：全新\n数量：5\n"
+            "紧急程度：5min\n"
         ),
         "in_reply_to": None,
     })

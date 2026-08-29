@@ -381,38 +381,57 @@ def init_spare_mail_db():
         conn = _get_conn()
         try:
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS spare_mail_task (
-                    task_id TEXT PRIMARY KEY,
-                    thread_msg_id TEXT DEFAULT '',
-                    d_mail_msg_id TEXT DEFAULT '',
-                    approver_email TEXT DEFAULT '',
-                    project_no TEXT DEFAULT '',
-                    project_name TEXT DEFAULT '',
-                    part_type TEXT DEFAULT '',
-                    brand TEXT DEFAULT '',
-                    pn TEXT DEFAULT '',
-                    spec TEXT DEFAULT '',
-                    `condition` TEXT DEFAULT '',
-                    `count` TEXT DEFAULT '',
-                    address TEXT DEFAULT '',
-                    inquiry_dur TEXT DEFAULT '',
-                    latest_ship_time TEXT DEFAULT '',
-                    inquiry_deadline TEXT DEFAULT '',
-                    suppliers_json TEXT DEFAULT '[]',
-                    quotes_json TEXT DEFAULT '[]',
-                    lowest_supplier TEXT DEFAULT '',
-                    lowest_quote TEXT DEFAULT '',
-                    approval_state TEXT DEFAULT '',
-                    approval_result TEXT DEFAULT '',
-                    target_supplier TEXT DEFAULT '',
-                    status TEXT DEFAULT '',
-                    latest_step TEXT DEFAULT '',
-                    created_at TEXT DEFAULT '',
-                    updated_at TEXT DEFAULT ''
-                )
-            """)
+    CREATE TABLE IF NOT EXISTS spare_mail_task (
+        task_id TEXT PRIMARY KEY,
+        thread_msg_id TEXT DEFAULT '',
+        d_mail_msg_id TEXT DEFAULT '',
+        approver_email TEXT DEFAULT '',
+        project_no TEXT DEFAULT '',
+        project_name TEXT DEFAULT '',
+        part_type TEXT DEFAULT '',
+        brand TEXT DEFAULT '',
+        pn TEXT DEFAULT '',
+        spec TEXT DEFAULT '',
+        `condition` TEXT DEFAULT '',
+        `count` TEXT DEFAULT '',
+        address TEXT DEFAULT '',
+        urgent TEXT DEFAULT '',
+        latest_ship_time TEXT DEFAULT '',
+        inquiry_deadline TEXT DEFAULT '',
+        suppliers_json TEXT DEFAULT '[]',
+        quotes_json TEXT DEFAULT '[]',
+        lowest_supplier TEXT DEFAULT '',
+        lowest_quote TEXT DEFAULT '',
+        approval_state TEXT DEFAULT '',
+        approval_result TEXT DEFAULT '',
+        target_supplier TEXT DEFAULT '',
+        -- 双流水：内部审批流 / 外部报价流
+        internal_status TEXT DEFAULT '',
+        external_status TEXT DEFAULT '',
+        shipped_no TEXT DEFAULT '',
+        status TEXT DEFAULT '',
+        latest_step TEXT DEFAULT '',
+        created_at TEXT DEFAULT '',
+        updated_at TEXT DEFAULT ''
+    )
+""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_spare_mail_task_status ON spare_mail_task(status)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_spare_mail_task_thread ON spare_mail_task(thread_msg_id)")
+            # 旧表迁移：补齐双流/紧急程度等新增列（CREATE IF NOT EXISTS 对已存在表不生效）
+            _add_cols = {
+                "urgent": "TEXT DEFAULT ''",
+                "latest_ship_time": "TEXT DEFAULT ''",
+                "internal_status": "TEXT DEFAULT ''",
+                "external_status": "TEXT DEFAULT ''",
+                "shipped_no": "TEXT DEFAULT ''",
+            }
+            existing = {r[1] for r in conn.execute("PRAGMA table_info(spare_mail_task)").fetchall()}
+            for c, ddl in _add_cols.items():
+                if c not in existing:
+                    try:
+                        conn.execute(f"ALTER TABLE spare_mail_task ADD COLUMN {c} {ddl}")
+                    except Exception:
+                        pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS spare_mail_config (
                     config_key TEXT PRIMARY KEY,

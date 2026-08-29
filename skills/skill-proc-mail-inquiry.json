@@ -189,12 +189,12 @@
     "A": {
       "name": "A-工程师发起询价",
       "subject": "【备件询价】{project_no} {project_name} — {brand} {pn} x {count}",
-      "body": "您好，我是运维部工程师，现发起备件询价申请，请协助转达至采购邮箱。\n\n项目：{project_no} / {project_name}\n备件类型：{part_type}\n品牌：{brand}\nPN：{pn}\n规格：{spec}\n成色要求：{condition}\n数量：{count}\n询价回复时限：{inquiry_dur}\n最晚发货时间：{latest_ship_time}\n\n本任务编号：{task_no}\n收到回复后将自动汇总并推送审批。"
+      "body": "您好，我是运维部工程师，现发起备件询价申请，请协助转达至采购邮箱。\n\n项目：{project_no} / {project_name}\n备件类型：{part_type}\n品牌：{brand}\nPN：{pn}\n规格：{spec}\n成色要求：{condition}\n数量：{count}\n紧急程度：{urgent}\n最晚发货时间：{latest_ship_time}\n\n本任务编号：{task_no}\n收到回复后将自动汇总并推送审批。"
     },
     "B": {
       "name": "B-对外询价-不带收货地址",
-      "subject": "【询价】{project_no} {brand} {pn} x {count} — {inquiry_dur} 内回复",
-      "body": "尊敬的 {supplier} 供应商：\n\n您好！我司项目 {project_no}（{project_name}）正紧急采购以下备件，烦请在 {inquiry_dur} 内给予报价：\n\n- 备件类型：{part_type}\n- 品牌：{brand}\n- PN 料号：{pn}\n- 规格参数：{spec}\n- 成色要求：{condition}\n- 采购数量：{count}\n- 最晚发货：{latest_ship_time}\n- 询价截止：{deadline}\n\n请按以上要求回复含税单价与交货周期，谢谢！\n\n（注：收货信息将在确定供应商后于订货邮件中单独告知）\n\n- NeuOps 备件邮件询价系统\n任务编号：{task_no}"
+      "subject": "【询价】{project_no} {brand} {pn} x {count} — {urgent} 内回复",
+      "body": "尊敬的 {supplier} 供应商：\n\n您好！我司项目 {project_no}（{project_name}）正紧急采购以下备件，烦请在 {urgent} 内给予报价：\n\n- 备件类型：{part_type}\n- 品牌：{brand}\n- PN 料号：{pn}\n- 规格参数：{spec}\n- 成色要求：{condition}\n- 采购数量：{count}\n- 最晚发货：{latest_ship_time}\n- 询价截止：{deadline}\n\n请按以上要求回复含税单价与交货周期，谢谢！\n\n（注：收货信息将在确定供应商后于订货邮件中单独告知）\n\n- NeuOps 备件邮件询价系统\n任务编号：{task_no}"
     },
     "C": {
       "name": "C-供应商回复-系统自动归档",
@@ -215,6 +215,11 @@
       "name": "F-中止通知",
       "subject": "【询价中止通知】{project_no} {brand} {pn} — 任务 {task_no}",
       "body": "各位好，备件询价任务 {task_no} 已中止，原因如下：\n\n项目：{project_no} / {project_name}\n备件：{part_type} / {brand} / {pn}\n中止原因：{stop_reason}\n\n所有正在进行的对外询价将自动终止，不再接收新报价。\n\n如需重新发起询价，请在会话中重新说明需求。\n\n- NeuOps 备件邮件询价系统"
+    },
+    "G": {
+      "name": "G-采购结束结算通知（内部流完成→外部流供应商）",
+      "subject": "【采购结束】{project_no} {brand} {pn} — 任务 {task_no} 关闭，等待结算",
+      "body": "尊敬的 {supplier} 供应商：\n\n您好！关于 {project_no}（{project_name}）的备件采购（任务 {task_no}），我方已确认收货并完成更换。\n\n本次采购正式结束，进入结算流程。请贵司根据双方确认的订货单与我方后期结算，感谢配合。\n\n【订货摘要】\n- 备件：{part_type} / {brand} / {pn} x {count}\n- 成色：{condition}\n\n- NeuOps 备件邮件询价系统"
     }
   }
 }

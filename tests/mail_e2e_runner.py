@@ -65,9 +65,13 @@ def fetch_inbox(email, pw, limit=15, since_days=2):
     _, data = imap.search(None, f'SINCE {t}')
     mails = []
     for num in reversed((data[0] or b"").split()):
-        _, d = imap.fetch(num, "(BODY[] .)")
-        raw = d[0][1] if d and d[0] else b""
-        mails.append(raw)
+        try:
+            typ, d = imap.fetch(num, "(BODY.PEEK[])")
+        except Exception:
+            continue
+        if d and d[0]:
+            raw = d[0][1] if isinstance(d[0], tuple) else d[0]
+            mails.append(raw)
         if len(mails) >= limit: break
     imap.logout()
     return mails
@@ -148,39 +152,55 @@ def step_sendbad():
     print(f"  已发送: {mid}")
 
 def step_quote():
-    print("[供应商 b2] 读取采购方 b3 收件箱中的 B 询价邮件（含 message_id）")
-    mails = raw_summaries(B3, P3(), limit=20)
-    b = None
-    for m in mails:
-        if "【询价】" in m.get("subject", "") and not b:
-            b = m
-    if not b:
-        print("  ✗ 未找到 B 询价邮件（可能 tick 未处理或失败）")
-        for m in mails: print("    -", m.get("subject", "")[:60])
+    print("[供应商 b2] 从服务器取最新 WAITING_QUOTES 任务的供应商 B message_id")
+    d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
+    target = None
+    for t in d.get("tasks", []):
+        if t.get("status") == "WAITING_QUOTES":
+            target = t
+            break
+    if not target:
+        print("  ✗ 无 WAITING_QUOTES 任务")
         return
-    print("  找到 B:", b["subject"])
-    print(f"  B message_id: {b['message_id']}")
-    # 从 B 的 To 找供应商邮箱（应含 b2）
+    tid = target["task_id"]
+    try:
+        suppliers = json.loads(target.get("suppliers_json") or "[]")
+    except Exception:
+        suppliers = []
+    b_msg = None
+    for s in suppliers:
+        if (s.get("name") or s.get("email")) and (s.get("msg_id") or ""):
+            b_msg = s["msg_id"]
+            break
+    if not b_msg:
+        print("  ✗ 任务供应商无 B message_id:", suppliers)
+        return
+    print(f"  任务 {tid} 供应商 B message_id: {b_msg}")
     reply = (
         "您好，贵司询价如下，我方报价：\n"
         "单价：1180元\n成色：全新\n数量：4\n发货时间：5天\n可提供测试报告：是\n"
     )
-    mid = send_mail(B2, P2(), B3, "Re: " + b["subject"], reply, reply_to=b["message_id"])
-    print(f"  供应商已回复报价: {mid}")
+    mid = send_mail(B2, P2(), B3, "Re: 【询价】报价", reply, reply_to=b_msg)
+    print(f"  供应商已按正确线程回复报价: {mid}")
 
 def step_approve():
-    print("[审批人 b1] 读取采购方 b3 收件箱中的 D 汇总邮件 → 回复确认采购")
-    mails = raw_summaries(B3, P3(), limit=20)
-    d_mail = None
-    for m in mails:
-        if "【询价汇总】" in m.get("subject", "") and not d_mail:
-            d_mail = m
-    if not d_mail:
-        print("  ✗ 未找到 D 汇总邮件（可能未到审批阶段）")
-        for m in mails: print("    -", m.get("subject", "")[:60])
+    print("[审批人 b1] 取服务器最新 WAITING_APPROVAL 任务的 d_mail_msg_id → 回复确认采购")
+    d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
+    target = None
+    for t in d.get("tasks", []):
+        if t.get("status") == "WAITING_APPROVAL":
+            target = t
+            break
+    if not target:
+        print("  ✗ 无 WAITING_APPROVAL 任务")
         return
-    print("  找到 D:", d_mail["subject"])
-    mid = send_mail(B1, P1(), B3, "Re: " + d_mail["subject"], "确认采购，按最低价执行。", reply_to=d_mail["message_id"])
+    d_mid = target.get("d_mail_msg_id") or ""
+    if not d_mid:
+        print("  ✗ 任务无 d_mail_msg_id")
+        return
+    print(f"  任务 {target['task_id']} d_mail_msg_id: {d_mid}")
+    mid = send_mail(B1, P1(), B3, "Re: 【询价汇总】审批确认", "确认采购，按最低价执行。",
+                    reply_to=d_mid)
     print(f"  审批人已确认: {mid}")
 
 def step_status():
@@ -189,7 +209,7 @@ def step_status():
         print(f"  {t.get('task_id')} | {t.get('status')} | {t.get('latest_step')} | 最低={t.get('lowest_supplier')}@{t.get('lowest_quote')}")
 
 def step_check():
-    for email, pw, name in ((B3, P3, "采购方b3"), (B1, P1, "工程师b1"), (B2, P2, "供应商b2")):
+    for email, pw, name in ((B3, P3(), "采购方b3"), (B1, P1(), "工程师b1"), (B2, P2(), "供应商b2")):
         print(f"\n=== {name} ({email}) 收件箱最近邮件 ===")
         try:
             for m in raw_summaries(email, pw, limit=8):

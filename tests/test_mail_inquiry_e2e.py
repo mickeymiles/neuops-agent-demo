@@ -166,7 +166,7 @@ INBOX_MAILS.append({
         "成色：全新\n"
         "数量：2\n"
         "收货地址：南京市鼓楼区中山北路100号\n"
-        "询价时间：2小时\n"
+        "紧急程度：5min\n"
         "最晚发货时间：2026-09-05 18:00\n"
     ),
     "in_reply_to": None,
@@ -233,14 +233,24 @@ INBOX_MAILS.append({
     "in_reply_to": B_MSG_IDS[1],
 })
 
-print("\n========== 第3次 tick：收报价 → DECIDING_LOWEST → 模板D ==========")
+print("\n========== 第3次 tick：收报价 → 外部最低价优选 → 内部发D审批 ==========")
 print(f"[DEBUG] BATCH_SENT_MAILS message_ids: {[m['message_id'] for m in BATCH_SENT_MAILS]}")
 print(f"[DEBUG] INBOX_MAILS count: {len(INBOX_MAILS)}")
 for i, m in enumerate(INBOX_MAILS):
     print(f"[DEBUG] INBOX[{i}]: from={m.get('from_email')}, in_reply_to={m.get('in_reply_to')}, subject={m.get('subject','')[:50]}")
 res3 = tick_mail_inquiry()
+# 报价刚入箱，可能需要多个 tick 才能从收报价→最低价优选→发D审批；循环推进直到内部流处理或超限
+int_done = False
+for _t in range(6):
+    resX = tick_mail_inquiry()
+    int_by = (resX.get("step_stats") or {}).get("internal") or {}
+    if int_by.get("processed", 0) >= 1:
+        res3 = resX; int_done = True; break
+    res3 = resX
 print(f"tick3 result: {json.dumps(res3, ensure_ascii=False, indent=2)}")
-assert (res3["step_stats"].get("WAITING_APPROVAL") or {}).get("processed", 0) >= 1, "没进入 WAITING_APPROVAL"
+# 外部流应已算出最低价并进入 R_ORDER；内部流应已发出 D 审批
+int_by = (res3.get("step_stats") or {}).get("internal") or {}
+assert int_done or int_by.get("processed", 0) >= 1, "内部流没推进"
 
 # 验证 D 邮件：回复 A 会话 + 抄送审批人 + 系统最低价提示
 D_MSG_ID = find_D_msg_id()
@@ -262,10 +272,14 @@ INBOX_MAILS.append({
     "in_reply_to": D_MSG_ID,
 })
 
-print("\n========== 第4次 tick：审批人确认 → ORDERING → 模板E ==========")
+print("\n========== 第4次 tick：审批人确认 → 外部ORDERING发E ==========")
 res4 = tick_mail_inquiry()
+# 审批确认可能在多个 tick 中才触发外部订货；循环推进直到 E 发出
+for _t in range(6):
+    tick_mail_inquiry()
+    if any("订货" in m.get("subject", "") for m in SENT_MAILS):
+        break
 print(f"tick4 result: {json.dumps(res4, ensure_ascii=False, indent=2)}")
-assert (res4["step_stats"].get("ORDERING") or {}).get("processed", 0) >= 1, "没进入 ORDERING"
 
 # 验证 E 邮件：回复选中供应商报价会话 + 带收货地址
 E_MAILS = [m for m in SENT_MAILS if "订货" in m.get("subject", "") or "下单" in m.get("subject", "") or "采购确认" in m.get("body", "")]
@@ -280,17 +294,47 @@ assert "测试报告" in E_MAIL["body"], "E 没要求测试报告"
 assert "快递单号" in E_MAIL["body"], "E 没要求快递单号"
 print("[TEST] 模板E：回复最低价供应商报价会话 + 带收货地址 + 要求测试报告/快递单号 ✓")
 
-# 11) 任务最终状态验证
+# 11) 供应商(最低价家)回复快递单号
+INBOX_MAILS.append({
+    "message_id": "msg-ship-1",
+    "from_email": "13260023678@163.com",
+    "subject": "Re: 发货通知",
+    "mail_body_text": "快递单号：SF1234567890",
+    "in_reply_to": E_MAIL.get("reply_to"),
+})
+
+print("\n========== 第5次 tick：供应商回单号 登记 ==========")
+res5 = tick_mail_inquiry()
+for _t in range(4):
+    tick_mail_inquiry()
+
+# 12) 工程师(原发件人)在内部流回复"备件更换完成" → 触发G结算 → 内部R_CLOSED/DONE
+INBOX_MAILS.append({
+    "message_id": "msg-engineer-done-1",
+    "from_email": "engineer@company.com",
+    "subject": "Re: 备件更换完成",
+    "mail_body_text": "备件已更换完成，可以结算了。",
+    "in_reply_to": D_MSG_ID,
+})
+
+print("\n========== 第6次 tick：工程师回备件更换完成 → G结算 → DONE ==========")
+res6 = tick_mail_inquiry()
+for _t in range(6):
+    tick_mail_inquiry()
+
+# 13) 任务最终状态验证
 tasks = sm.spare_mail_list_tasks({}, 10)
 assert len(tasks) >= 1, "任务不存在"
 t = tasks[0]
 assert t["status"] == "DONE", f"任务状态应为 DONE，实际 {t['status']}"
-assert "ORDER_CONFIRMED" in str(t["latest_step"]), f"latest_step 应包含 ORDER_CONFIRMED，实际 {t['latest_step']}"
-assert t["lowest_supplier"] and "供应商" in t["lowest_supplier"], f"最低价供应商应为供应商1，实际 {t['lowest_supplier']}"
+assert t["internal_status"] == "R_CLOSED", f"内部流应为 R_CLOSED，实际 {t['internal_status']}"
 assert "1280" in str(t["lowest_quote"]), f"最低价应为 1280，实际 {t['lowest_quote']}"
 assert t["target_supplier"] and "供应商" in t["target_supplier"], f"目标供应商应为最低价，实际 {t['target_supplier']}"
-print(f"[TEST] 任务最终状态: status={t['status']}, latest_step={t['latest_step']}, lowest={t['lowest_supplier']}@{t['lowest_quote']}, target={t['target_supplier']}")
+# G 结算邮件应已发给选中供应商
+G_MAILS = [m for m in SENT_MAILS if "采购结束" in m.get("subject", "")]
+assert len(G_MAILS) >= 1, f"模板G(结算)没发出，subjects={[m.get('subject','') for m in SENT_MAILS]}"
+print(f"[TEST] 任务最终状态: status={t['status']}, internal={t['internal_status']}, external={t['external_status']}, shipped_no={t.get('shipped_no')}, lowest={t.get('lowest_supplier')}@{t.get('lowest_quote')}, target={t.get('target_supplier')}")
 
-# 12) 清理
+# 14) 清理
 os.remove(TEST_DB)
 print("\n========== 全链路测试通过 ✓ ==========")
