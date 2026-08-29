@@ -2303,6 +2303,70 @@ _TICK_MAX_TASKS = 5          # 每 tick 最多推进 N 个任务
 _DEFAULT_SINCE_MINUTES = 120  # 读邮件窗口（2h）
 _INTERNAL_KEYWORDS = ("备件", "询价", "采购", "备件询价", "备件采购")
 
+# ── tick 级 IMAP 缓存：每次 tick 开头做一次 UNSEEN 拉取，后续 step 函数复用 ──
+# 避免每任务一次 IMAP SEARCH，10 个任务从 10 次缩到 1 次
+_TICK_UNSEEN_CACHE = None
+
+
+def _tick_prefetch_unseen(cfg: dict):
+    """tick 开头调用一次：拉取 UNSEEN 邮件存入模块级缓存，后续 step 复用。"""
+    global _TICK_UNSEEN_CACHE
+    _TICK_UNSEEN_CACHE = None
+    exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
+    try:
+        _TICK_UNSEEN_CACHE = tool_read_inbox_mail(use_unseen=True,
+                                                  exclude_sender_email_list=exclude)
+        print(f"[mail-inquiry tick] UNSEEN cache: {len((_TICK_UNSEEN_CACHE or {}).get('mails', []))} mails pre-fetched")
+    except Exception as e:
+        print(f"[mail-inquiry tick] UNSEEN pre-fetch failed: {e}")
+        _TICK_UNSEEN_CACHE = None
+
+
+def _tick_cached_read_inbox(since_timestamp: int = 0, exclude_sender_email_list: list = None,
+                            match_in_reply_to_msg_ids: list = None,
+                            filter_sender_email_list: list = None,
+                            force_refresh: bool = False) -> dict:
+    """优先用 tick 级 UNSEEN 缓存过滤邮件，缓存为空时 fallback 到真实 IMAP。
+
+    过滤逻辑完全对齐 tool_read_inbox_mail：黑名单排除、match_ids 命中、发件人白名单。
+    """
+    global _TICK_UNSEEN_CACHE
+    if force_refresh or not _TICK_UNSEEN_CACHE or not _TICK_UNSEEN_CACHE.get("success"):
+        # 没有缓存 → 真实 IMAP 拉取
+        return tool_read_inbox_mail(since_timestamp=since_timestamp,
+                                    exclude_sender_email_list=exclude_sender_email_list,
+                                    match_in_reply_to_msg_ids=match_in_reply_to_msg_ids,
+                                    filter_sender_email_list=filter_sender_email_list)
+
+    # 有缓存 → 内存过滤
+    exclude_set = {str(e).lower().strip() for e in (exclude_sender_email_list or []) if e}
+    match_set = {_norm_mid(m) for m in (match_in_reply_to_msg_ids or []) if m}
+    filtered = []
+    for m in _TICK_UNSEEN_CACHE.get("mails", []):
+        # 黑名单
+        if str(m.get("from_email") or "").lower() in exclude_set:
+            continue
+        # 发件人白名单
+        if filter_sender_email_list:
+            if str(m.get("from_email") or "").lower() not in [str(e).lower().strip() for e in filter_sender_email_list]:
+                continue
+        # 线程匹配
+        if match_set:
+            hit = False
+            for raw_ref in [m.get("in_reply_to", ""), m.get("references", "")]:
+                if raw_ref:
+                    for part in re.split(r"\s+", str(raw_ref).strip()):
+                        if _norm_mid(part) in match_set:
+                            hit = True
+                            break
+                if hit:
+                    break
+            if not hit:
+                continue
+        filtered.append(m)
+
+    return {"tool": "cached_read_inbox", "success": True, "total": len(filtered), "mails": filtered}
+
 # ── 工具函数 ──
 def _norm_mid(m):
     """规范化 RFC Message-ID（去掉前后 <>）。"""
@@ -2310,6 +2374,58 @@ def _norm_mid(m):
     while s.startswith("<"): s = s[1:]
     while s.endswith(">"):   s = s[:-1]
     return s.strip()
+
+
+def _fetch_sent_mail_refs(target_msg_id: str) -> str:
+    """IMAP fetch 我方邮箱 Sent Messages 文件夹，按 Message-ID 找指定邮件，
+    返回其 References 头（邮箱权威，不再用 DB 存的 refs 链）。
+    找不到返回空串（fallback 到调用方兜底逻辑）。"""
+    mid = _norm_mid(target_msg_id)
+    if not mid:
+        return ""
+    try:
+        import imaplib, email as _em, os as _os
+        from email.header import decode_header as _dh
+
+        cfg = _proc_mail_cfg()
+        user = str(cfg.get("mail_username") or "").strip()
+        pwd = str(cfg.get("mail_password") or "").strip()
+        if not user or not pwd:
+            return ""
+
+        imap = imaplib.IMAP4_SSL("imap.163.com", 993)
+        imap.login(user, pwd)
+        imaplib.Commands["ID"] = ("AUTH",)
+        try:
+            imap._simple_command("ID", '("name" "NeuOps" "vendor" "NeuOps")')
+        except Exception:
+            pass
+        # 163 免费版 Sent 文件夹实际名是 "Sent Messages"
+        for folder in ['"Sent Messages"', 'Sent Messages']:
+            try:
+                ok, _ = imap.select(folder, readonly=True)
+                if ok != "OK":
+                    continue
+                _, data = imap.search(None, "ALL")
+                for num in reversed((data[0] or b"").split()[-50:]):  # 只查最近 50 封
+                    _, d = imap.fetch(num, "(RFC822)")
+                    if not d or not d[0]:
+                        continue
+                    msg = _em.message_from_bytes(d[0][1])
+                    if _norm_mid(msg.get("Message-ID", "")) == mid:
+                        refs = msg.get("References", "") or ""
+                        imap.logout()
+                        return refs.strip()
+            except Exception:
+                continue
+        try:
+            imap.logout()
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"[_fetch_sent_mail_refs] IMAP error: {e}")
+    return ""
+
 
 def _quote_orig_body(body: str, max_chars: int = 3000) -> str:
     """将邮件正文以清晰的引用分隔符追加到回复末尾。
@@ -2481,6 +2597,9 @@ def tick_mail_inquiry():
     step_stats = {"parsing": {}, "internal": {}, "external": {}}
     spm = _ensure_mail_inquiry_imports._spm
 
+    # ── 【UNSEEN 增量优化】开头一次拉取全部 UNSEEN，后续 step 复用缓存，避免每任务一次 IMAP SEARCH ──
+    _tick_prefetch_unseen(cfg)
+
     # ── 抓取"工程师发起询价"邮件并落任务（两条流之源头）──
     try:
         parsed = _step_parsing(cfg, tpls)
@@ -2570,7 +2689,7 @@ def _step_parsing(cfg, tpls):
     since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60
     # 黑名单：采购方自己的邮箱（排除 sent 副本）
     exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
-    r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude)
+    r = _tick_cached_read_inbox(since_timestamp=since_ts, exclude_sender_email_list=exclude)
     created = 0
     if not r.get("success"):
         return {"created": 0, "msg": r.get("error", "read inbox failed")}
@@ -2931,7 +3050,7 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
     # 拉收件箱：用 match_in_reply_to_msg_ids 精确匹配线程
     since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60 * 2
     exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
-    r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude,
+    r = _tick_cached_read_inbox(since_timestamp=since_ts, exclude_sender_email_list=exclude,
                              match_in_reply_to_msg_ids=match_ids)
 
     if r.get("success"):
@@ -3204,9 +3323,8 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
     )
 
     # 在选中供应商报价邮件线程上回复——构造完整 References 链确保 RFC 会话链不中断
-    # C 报价邮件自带的 References（可能含 B/A 链） + C 的 msg_id → E 的上游链
+    # C 报价邮件自带的 References（可能含 B/A 链）作为 E 的上游链
     c_refs = (target_quote or {}).get("refs", "") or ""
-    e_refs_chain = f"{c_refs} {reply_mid}".strip() if reply_mid else c_refs
     body_full = body + _quote_orig_body((target_quote or {}).get("raw_body"))
     mail_r = tool_send_mail(
         to=[target_email] if target_email else [str(cfg.get("proc_mail_username") or "").strip()],
@@ -3215,14 +3333,11 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
         reply_refs_chain=c_refs or None,
     )
     e_mail_msg_id = (mail_r or {}).get("message_id") or ""
-    # 用工具返回的完整 refs_chain 存库（B+C），下次发 G 时拼入完整链（B+C+E）
-    e_refs_chain = (mail_r or {}).get("refs_chain") or e_refs_chain
-
+    # 不再存 e_refs_chain：发 G 时由 _fetch_sent_mail_refs 从我方邮箱 Sent Messages 实时 fetch（邮箱权威）
     _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
         "external_status": "R_WAIT_SHIPPING",
         "status": "ORDERING",
         "e_mail_msg_id": e_mail_msg_id,
-        "e_refs_chain": e_refs_chain,
         "latest_step": f"R_ORDER→R_WAIT_SHIPPING(sent_to={target_email}, e_msg_id={e_mail_msg_id})",
     })
     return True
@@ -3363,7 +3478,7 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
         match_ids.append(thread_mid)
     since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60 * 2
     exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
-    r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude,
+    r = _tick_cached_read_inbox(since_timestamp=since_ts, exclude_sender_email_list=exclude,
                              match_in_reply_to_msg_ids=match_ids)
     if not r.get("success"):
         return False
@@ -3442,12 +3557,15 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     )
                     body_g = _safe_format(tpl_g.get("body") or "", fmt_args)
                     subj_g = _safe_format(tpl_g.get("subject") or "", fmt_args)
-                    # 在 E（订货）邮件线程上回复——用 DB 存的 e_refs_chain（B+C）+ E_mid 拼完整链
+                    # 在 E（订货）邮件线程上回复——IMAP fetch 我方 Sent Messages 读 E 的 References（邮箱权威）
                     e_mid = _norm_mid(task.get("e_mail_msg_id", "")) or reply_mid
+                    # 优先 IMAP fetch E 邮件的真实 References，找不到 fallback 到 DB（兼容旧任务）
+                    e_refs_from_imap = _fetch_sent_mail_refs(e_mid) if e_mid else ""
+                    reply_chain = e_refs_from_imap or (task.get("e_refs_chain") or "").strip() or None
                     tool_send_mail(to=[target_email], subject=subj_g,
                                    body_text=body_g,
                                    reply_to_mail_id=e_mid or None,
-                                   reply_refs_chain=(task.get("e_refs_chain") or "").strip() or None)
+                                   reply_refs_chain=reply_chain)
                 spm.spare_mail_update_task(tid, {
                     "internal_status": "R_CLOSED",
                     "status": "DONE",
@@ -3512,7 +3630,7 @@ def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
 
     since_ts = int(time.time()) - _DEFAULT_SINCE_MINUTES * 60 * 2
     exclude = [str(cfg.get("proc_mail_username") or "").strip()] if cfg.get("proc_mail_username") else None
-    r = tool_read_inbox_mail(since_timestamp=since_ts, exclude_sender_email_list=exclude,
+    r = _tick_cached_read_inbox(since_timestamp=since_ts, exclude_sender_email_list=exclude,
                              match_in_reply_to_msg_ids=reply_mids)
     if not r.get("success"):
         return False

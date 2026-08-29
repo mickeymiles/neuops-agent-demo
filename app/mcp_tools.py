@@ -190,17 +190,19 @@ def _parse_mail_body(msg) -> str:
         return ""
 
 
-def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = None,
+def tool_read_inbox_mail(since_timestamp: int = 0, filter_sender_email_list: list = None,
                          exclude_sender_email_list: list = None,
-                         match_in_reply_to_msg_ids: list = None) -> dict:
+                         match_in_reply_to_msg_ids: list = None,
+                         use_unseen: bool = False) -> dict:
     """读取 163 邮箱收件箱入站邮件（IMAP 真实拉取）
 
     Args:
-        since_timestamp: Unix 时间戳，读取该时间之后的邮件（必填）
+        since_timestamp: Unix 时间戳，读取该时间之后的邮件（use_unseen=False 时必填）
         filter_sender_email_list: 可选，按发件人邮箱白名单过滤；为空则不过滤
         exclude_sender_email_list: 可选，按发件人邮箱黑名单过滤（采购方自己的邮箱）
         match_in_reply_to_msg_ids: 可选，只读取 In-Reply-To / References 命中
             这些 RFC Message-ID 的邮件（用于精确匹配到某封询价邮件的回复，避免串任务）
+        use_unseen: True=只读未读邮件（UNSEEN 搜索），用于 tick 增量；False=SINCE 日期窗口
     Returns:
         邮件报文列表，含 in_reply_to / references 字段用于线程匹配
     """
@@ -241,11 +243,14 @@ def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = 
             return {"tool": "read_inbox_mail", "success": False,
                     "error": f"IMAP select INBOX 失败: {sel_status} {sel_data}", "mails": []}
 
-        # IMAP SINCE 搜索（IMAP 日期粒度到天，再用时间戳过滤）
-        from datetime import datetime
-        since_dt = datetime.fromtimestamp(since_timestamp)
-        imap_date = since_dt.strftime("%d-%b-%Y")
-        status, data = imap.search(None, f'SINCE {imap_date}')
+        # IMAP 搜索：UNSEEN（增量 tick）或 SINCE 日期窗口（全量恢复）
+        if use_unseen:
+            status, data = imap.search(None, "UNSEEN")
+        else:
+            from datetime import datetime
+            since_dt = datetime.fromtimestamp(since_timestamp)
+            imap_date = since_dt.strftime("%d-%b-%Y")
+            status, data = imap.search(None, f'SINCE {imap_date}')
         if status != "OK":
             return {"tool": "read_inbox_mail", "success": False,
                     "error": f"IMAP search 失败: {status}", "mails": []}
