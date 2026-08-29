@@ -126,6 +126,21 @@ def wait_tick(seconds=20):
     print(f"  … 等待服务器自动 tick（{seconds}s）…")
     time.sleep(seconds)
 
+def wait_tasks(pred, timeout=360, interval=15, label="?状态?"):
+    """轮询 /tasks，直到有任务满足 pred(task)，返回该任务；超时返回 None。
+    用于等待系统 tick 推进到目标内部/外部状态，替代固定的 sleep。
+    """
+    import time as _t
+    deadline = _t.time() + timeout
+    while _t.time() < deadline:
+        d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
+        for t in d.get("tasks", []):
+            if pred(t):
+                return t
+        print(f"  … 等待{label}（还余{int(deadline-_t.time())}s）…")
+        _t.sleep(interval)
+    return None
+
 def step_cfg():
     d = api("/api/procurement-agent/mail-inquiry/config?mask=false")
     c = d.get("credentials", {}); p = d.get("participants", {})
@@ -159,14 +174,9 @@ def step_sendbad():
 
 def step_quote():
     print("[供应商 b2] 从服务器取最新 WAITING_QUOTES 任务供应商 B message_id，并从 b2 收件箱取 B 原询价构造带引用的标准报价回复")
-    d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
-    target = None
-    for t in d.get("tasks", []):
-        if t.get("status") == "WAITING_QUOTES":
-            target = t
-            break
+    target = wait_tasks(lambda t: t.get("status") == "WAITING_QUOTES", label="WAITING_QUOTES任务")
     if not target:
-        print("  ✗ 无 WAITING_QUOTES 任务")
+        print("  ✗ 超时无 WAITING_QUOTES 任务")
         return
     tid = target["task_id"]
     try:
@@ -233,14 +243,9 @@ def step_quote():
 
 def step_approve():
     print("[审批人 b5] 取服务器最新 R_APPROVAL 任务的 d_mail_msg_id → 在 D 线程上回复确认采购")
-    d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
-    target = None
-    for t in d.get("tasks", []):
-        if t.get("internal_status") == "R_APPROVAL":
-            target = t
-            break
+    target = wait_tasks(lambda t: t.get("internal_status") == "R_APPROVAL", label="R_APPROVAL任务")
     if not target:
-        print("  ✗ 无 WAITING_APPROVAL 任务")
+        print("  ✗ 超时无 R_APPROVAL 任务")
         return
     tid = target["task_id"]
     d_mid = target.get("d_mail_msg_id") or ""
@@ -284,14 +289,9 @@ def step_approve():
 def step_ship():
     """供应商 b2 在 E 订货邮件线程上回复快递单号（真实 SMTP + 引用原文）"""
     print("[供应商 b2] 取服务器最新 R_WAIT_SHIPPING 任务的 e_mail_msg_id → 在 E 线程上回快递单号")
-    d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
-    target = None
-    for t in d.get("tasks", []):
-        if t.get("external_status") == "R_WAIT_SHIPPING":
-            target = t
-            break
+    target = wait_tasks(lambda t: t.get("external_status") == "R_WAIT_SHIPPING", label="R_WAIT_SHIPPING任务")
     if not target:
-        print("  ✗ 无 R_WAIT_SHIPPING 任务")
+        print("  ✗ 超时无 R_WAIT_SHIPPING 任务")
         return
     tid = target["task_id"]
     e_mid = target.get("e_mail_msg_id") or ""
@@ -333,20 +333,11 @@ def step_ship():
 
 def step_done():
     """工程师 b1 在 D 汇总邮件线程上回复备件更换完成 → 触发 G 结算 → DONE"""
-    print("[工程师 b1] 取服务器最新 R_APPROVAL 任务的 d_mail_msg_id → 回复备件更换完成")
-    d = api("/api/procurement-agent/mail-inquiry/tasks?page_size=20")
-    target = None
-    for t in d.get("tasks", []):
-        if t.get("internal_status") == "R_APPROVAL" and t.get("shipped_no"):
-            target = t
-            break
+    print("[工程师 b1] 取服务器最新(已登记shipped_no)R_APPROVAL 任务的 d_mail_msg_id → 回复备件更换完成")
+    target = wait_tasks(lambda t: t.get("internal_status") == "R_APPROVAL" and t.get("shipped_no"),
+                        label="已收货待验收的R_APPROVAL任务")
     if not target:
-        for t in d.get("tasks", []):
-            if t.get("internal_status") == "R_APPROVAL":
-                target = t
-                break
-    if not target:
-        print("  ✗ 无 R_APPROVAL 任务")
+        print("  ✗ 超时无已登记shipped_no的待验收任务")
         return
     d_mid = target.get("d_mail_msg_id") or target.get("thread_msg_id") or ""
     print(f"  任务 {target['task_id']} 用 reply_to={d_mid[:60]}")
@@ -356,15 +347,15 @@ def step_done():
     print(f"  工程师已确认更换完成: {mid}")
 
 def step_full():
-    """跑全流程：sent → (auto tick → quote → approve → ship → done)"""
+    """跑全流程：sent → quote → approve → ship → done（各 step 内部轮询等待系统 tick 推进）"""
     print("=== 全流程自动执行 ===")
-    step_sent(); wait_tick(70)
-    step_quote(); wait_tick(70)
-    step_approve(); wait_tick(70)
-    print("  … 等服务器发 E 订货邮件 …"); wait_tick(80)
-    step_ship(); wait_tick(70)
-    print("  … 等服务器登记 shipped_no …"); wait_tick(10)
-    step_done(); wait_tick(70)
+    step_sent()
+    print("  … 等待首轮 tick 建任务并发询价 B …")
+    step_quote(); step_approve()
+    print("  … 等系统审批通过后发 E 订货邮件 …")
+    step_ship()
+    print("  … 等系统登记快递单号 …")
+    step_done()
     print("\n=== 最终状态 ===")
     step_status()
     print("\n=== 各邮箱最近邮件 ===")
