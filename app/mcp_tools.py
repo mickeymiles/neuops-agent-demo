@@ -164,6 +164,25 @@ def _decode_mime(s: str) -> str:
     return "".join(out)
 
 
+def _mail_addr_list(header) -> list:
+    """从 To/Cc 头解析出纯邮箱地址列表（处理 'Display Name <a@b.com>' 逗号分隔）。
+
+    返回规范化（小写）邮箱列表。解析不出的项丢弃。
+    """
+    from email.utils import getaddresses
+    if not header:
+        return []
+    out = []
+    try:
+        for _name, addr in getaddresses([header]):
+            a = str(addr or "").strip().lower()
+            if a and "@" in a:
+                out.append(a)
+    except Exception:
+        pass
+    return out
+
+
 def _parse_mail_body(msg) -> str:
     """提取邮件正文（优先 text/plain，其次 text/html 简化）"""
     if msg.is_multipart():
@@ -329,6 +348,16 @@ def tool_read_inbox_mail(since_timestamp: int = 0, filter_sender_email_list: lis
                 if not is_reply:
                     continue
 
+            # —— ReplyAll 基础：解析原邮件 To/Cc（纯邮箱），供后续"全体回复"用 ——
+            rc_to = _mail_addr_list(msg.get("To", ""))
+            rc_cc = _mail_addr_list(msg.get("Cc", ""))
+            # 排除自身（智能体 b3）与采购方，避免回复给自己造成死循环
+            _self_emails = {_mc["mail_username"].lower().strip()} if _mc.get("mail_username") else set()
+            def _clean(addr_list):
+                return [a for a in addr_list if a and a not in _self_emails]
+            rc_to = _clean(rc_to)
+            rc_cc = _clean(rc_cc)
+
             out.append({
                 "mail_id": mid.decode() if isinstance(mid, bytes) else str(mid),
                 "message_id": rfc_msg_id,  # RFC 2822 Message-ID，用于邮件线程回复
@@ -337,7 +366,9 @@ def tool_read_inbox_mail(since_timestamp: int = 0, filter_sender_email_list: lis
                 "subject": subject,
                 "from_email": from_email,
                 "from_name": from_full.replace(f"<{from_email}>", "").strip().strip('"'),
-                "to_email_list": [addr.strip() for addr in msg.get("To", "").split(",")],
+                "to_email_list": rc_to,
+                "cc_email_list": rc_cc,
+                "reply_all_candidates": list(dict.fromkeys(rc_to + rc_cc)),
                 "mail_body_text": body[:5000],  # 截断保护
                 "receive_timestamp": recv_ts,
             })
@@ -351,13 +382,17 @@ def tool_read_inbox_mail(since_timestamp: int = 0, filter_sender_email_list: lis
 
 def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
                    reply_to_mail_id: str = None,
-                   reply_refs_chain: str = None) -> dict:
+                   reply_refs_chain: str = None,
+                   reply_all_from: dict = None) -> dict:
     """发送单封邮件（SMTP 真实发送，163 邮箱）
     reply_to_mail_id: 邮件线程 Message-ID，设置后邮件为该邮件的回复（In-Reply-To+References）
     reply_refs_chain : 上游完整 References 链（空格分隔的 msg_id 串）。设置则 REFs = chain + reply_to_mail_id；
                        不传则 REFs 只写 reply_to_mail_id（向后兼容，但若上游有多层会断链）。
+    reply_all_from   : 原邮件元数据 dict（含 from_email/to_email_list/cc_email_list），
+                       提供时按"全部回复(Reply All)"自动把原邮件全体收件人并入收件范围，
+                       并排除自身（智能体）。（替代手动拼 to/cc；显式传的 to/cc 仍追加。）
     【修复 2026-08-24】显式调用 email.utils.make_msgid() 生成 Message-ID 并写入邮件头，
-    以便返回给调用方用于后续 In-Reply-To 匹配；之前未写入该头导致返回空 message_id="""
+   以便返回给调用方用于后续 In-Reply-To 匹配；之前未写入该头导致返回空 message_id="""
     import smtplib
     from email.mime.text import MIMEText
     from email.utils import formataddr, make_msgid
@@ -368,6 +403,29 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
                 "error": "PROC_MAIL_PASSWORD 未配置（163 邮箱授权码）"}
 
     try:
+        # —— Reply All：若给原邮件元数据，把其全体收件人并入候选 ——
+        _self_emails = {_mc["mail_username"].lower().strip()} if _mc.get("mail_username") else set()
+        to_extra, cc_extra = [], []
+        if reply_all_from and isinstance(reply_all_from, dict):
+            cands = []
+            cands += list(reply_all_from.get("to_email_list") or [])
+            cands += list(reply_all_from.get("cc_email_list") or [])
+            from_e = str(reply_all_from.get("from_email") or "").lower().strip()
+            if from_e and "@" in from_e and from_e not in _self_emails:
+                cands.append(from_e)
+            # to 专用：原 To + From；cc 专用：原 Cc + 显式 cc
+            to_extra = [a for a in dict.fromkeys(
+                list(reply_all_from.get("to_email_list") or []) + ([from_e] if from_e else []))
+                if a and a not in _self_emails]
+            cc_extra = [a for a in dict.fromkeys(
+                list(reply_all_from.get("cc_email_list") or []) + list(cc or []))
+                if a and a not in _self_emails and a not in to_extra]
+
+        final_to = list(dict.fromkeys([a for a in (list(to) + to_extra) if a and a not in _self_emails]))
+        final_cc = list(dict.fromkeys([a for a in (list(cc or []) + cc_extra) if a and a not in _self_emails]))
+        to = final_to or [str(_mc["mail_username"] or "").strip()]
+        cc = final_cc or None
+
         msg = MIMEText(body_text, "plain", "utf-8")
         msg["Subject"] = subject
         msg["From"] = formataddr(("备品备件采购智能体", _mc["mail_username"]))
@@ -393,7 +451,7 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
                 "message_id": msg["Message-ID"] or "",
                 "reply_to": reply_to_mail_id or "",
                 "refs_chain": msg.get("References", "") or "",
-                "to": to, "subject": subject}
+                "to": to, "cc": cc, "subject": subject}
     except Exception as e:
         return {"tool": "send_mail", "success": False,
                 "error": f"SMTP 异常: {type(e).__name__}: {e}"}

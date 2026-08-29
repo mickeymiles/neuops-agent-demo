@@ -2294,14 +2294,37 @@ def _ensure_mail_inquiry_imports():
         from app.db.schema import init_spare_mail_db as _init_db; _ensure_mail_inquiry_imports._init_db = _init_db
         from app.db.employees import db_upsert_employee as _upsert_emp; _ensure_mail_inquiry_imports._upsert_emp = _upsert_emp
         from app.skill_loader import load_skill as _load_sk; _ensure_mail_inquiry_imports._load_sk = _load_sk
+        from app.db.contract_mail import contract_mail_archive_append as _arc; _ensure_mail_inquiry_imports._arc = _arc
     except Exception as e:
         raise RuntimeError(f"mail-inquiry imports failed: {e}")
+
 
 # ── 常量 ──
 _SKILL_ID_MAIL_INQUIRY = "skill-proc-mail-inquiry"
 _TICK_MAX_TASKS = 5          # 每 tick 最多推进 N 个任务
 _DEFAULT_SINCE_MINUTES = 120  # 读邮件窗口（2h）
 _INTERNAL_KEYWORDS = ("备件", "询价", "采购", "备件询价", "备件采购")
+
+
+def _archive_sent_mail(tid: str, kind: str, mail_r) -> None:
+    """把一封系统发出的关键邮件原文归档到 mail_archive_json，供页面查看历史原文/To/Cc。"""
+    if not mail_r or not isinstance(mail_r, dict):
+        return
+    _ensure_mail_inquiry_imports()
+    try:
+        _ensure_mail_inquiry_imports._arc(tid, {
+            "kind": kind,
+            "flow": "external" if kind in ("B", "C", "E", "G") else "internal",
+            "msg_id": mail_r.get("message_id", "") or "",
+            "subject": mail_r.get("subject", "") or "",
+            "to": mail_r.get("to") or [],
+            "cc": mail_r.get("cc") or [],
+            "reply_to": mail_r.get("reply_to", "") or "",
+            "refs": mail_r.get("refs_chain", "") or "",
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+    except Exception as e:
+        print(f"[mail-inquiry] archive_sent_mail failed: {e}")
 
 # ── tick 级 IMAP 缓存：每次 tick 开头做一次 UNSEEN 拉取，后续 step 函数复用 ──
 # 避免每任务一次 IMAP SEARCH，10 个任务从 10 次缩到 1 次
@@ -3032,6 +3055,12 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
     # 批量发送（同一个 body 模板，每封的 {supplier} 事后回填——这里统一批发送完再组装）
     rendered_body = body_fmt.format(**body_args).replace("{supplier}", "供应商您好")
     batch_r = tool_batch_send_mail(receiver_email_list=emails, subject=subject, body_text=rendered_body)
+    # 全程归档：B 询价函（每封供应商各一条，携带 msg_id/收件人）
+    for ok_m in batch_r.get("sent", []):
+        _archive_sent_mail(tid, "B", {
+            "success": True, "message_id": ok_m.get("message_id", "") or "",
+            "subject": subject, "to": [ok_m.get("email", "")], "cc": [],
+        })
 
     # 组装 suppliers_json
     sent_map = {(s.get("email") or ""): (s.get("message_id") or "") for s in batch_r.get("sent", [])}
@@ -3056,13 +3085,22 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
     return True
 
 
+def _quote_key_missing(parsed: dict) -> bool:
+    """报价关键字段是否缺失：单价/成色/数量/发货周期 任一为空则认为需要 LLM 兜底补齐。"""
+    for k in ("unit_price", "condition", "count", "ship_time"):
+        v = parsed.get(k)
+        if v in (None, "", 0):
+            return True
+    return False
+
+
 def _llm_parse_quote_fallback(body: str, regex_result: dict) -> dict:
-    """报价解析的 LLM 兜底：当正则解析不出单价时，用 DeepSeek 从供应商报价邮件补抽。
+    """报价解析的 LLM 兜底：当正则结果任一关键字段缺失时，用 DeepSeek 补抽。
 
     返回 unit_price/condition/count/ship_time。LLM 失败时原样返回 regex_result，保证不比正则差。
     """
-    # 正则已解析出单价则无需 LLM
-    if regex_result.get("unit_price") not in (None, "", 0):
+    # 全部关键字段都已规则解析出则无需 LLM
+    if not _quote_key_missing(regex_result):
         return regex_result
     try:
         from app.agent_chat import _load_deepseek_key, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
@@ -3155,11 +3193,11 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
             if not matched_supplier:
                 continue
 
-            # 解析报价正文：单价/成色/数量/发货时间（正则为主，缺失单价时 LLM 兜底）
+            # 解析报价正文：单价/成色/数量/发货时间（正则为主，任一关键字段缺失时 LLM 兜底补齐）
             body = m.get("mail_body_text") or ""
             parsed = _parse_quote_body(body)
-            if parsed.get("unit_price") in (None, "", 0):
-                print(f"[mail-inquiry] 报价解析未命中单价({from_email})，LLM 兜底")
+            if _quote_key_missing(parsed):
+                print(f"[mail-inquiry] 报价关键字段缺失({from_email})，LLM 兜底补齐")
                 parsed = _llm_parse_quote_fallback(body, parsed)
             has_unit = parsed.get("unit_price") not in (None, "", 0)
             parse_failed = not has_unit
@@ -3185,6 +3223,11 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
                 "is_late": is_late,
                 "parse_failed": parse_failed,
                 "raw_subject": m.get("subject", ""),
+                "reply_all": {
+                    "from_email": m.get("from_email", ""),
+                    "to_email_list": m.get("to_email_list") or [],
+                    "cc_email_list": m.get("cc_email_list") or [],
+                },
                 "raw_body": body[:800],
             })
             existing_msg_ids.add(mid)
@@ -3555,14 +3598,20 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
     # 在选中供应商报价邮件线程上回复——构造完整 References 链确保 RFC 会话链不中断
     # C 报价邮件自带的 References（可能含 B/A 链）作为 E 的上游链
     c_refs = (target_quote or {}).get("refs", "") or ""
+    c_reply_all = (target_quote or {}).get("reply_all") or None
     body_full = body + _quote_orig_body((target_quote or {}).get("raw_body"))
-    mail_r = tool_send_mail(
+    e_args = dict(
         to=[target_email] if target_email else [str(cfg.get("proc_mail_username") or "").strip()],
         subject=subj, body_text=body_full,
         reply_to_mail_id=reply_mid or None,
         reply_refs_chain=c_refs or None,
     )
+    if c_reply_all:
+        # 外部流 ReplyAll：并入原供应商报价线程的全部收件人
+        e_args["reply_all_from"] = c_reply_all
+    mail_r = tool_send_mail(**e_args)
     e_mail_msg_id = (mail_r or {}).get("message_id") or ""
+    _archive_sent_mail(tid, "E", mail_r)
     # 不再存 e_refs_chain：发 G 时由 _fetch_sent_mail_refs 从我方邮箱 Sent Messages 实时 fetch（邮箱权威）
     _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
         "external_status": "R_WAIT_SHIPPING",
@@ -3642,15 +3691,30 @@ def _mi_internal_send_d(task: dict, cfg: dict, tpls: dict) -> bool:
         pn=task.get("pn", ""),
         suppliers_count=len(valid),
     ))
-    # 回复工程师询价线程 + 抄送审批人；正文末尾引用工程师原始采购申请原文（同一线程内带原文）
+    # 回复工程师询价线程 + 抄送审批人+系统抄送；正文末尾引用工程师原始采购申请原文（同一线程内带原文）
     body_d_full = body_d + _quote_orig_body(task.get("inquiry_body"))
+    # 内部流收件人：工程师始终在收件人(To)里；抄送 = 审批人 + 全局系统抄送（不含供应商）
+    engineer_email = (task.get("from_email") or "").strip()
+    d_to = [engineer_email] if (engineer_email and "@" in engineer_email) \
+        else [str(cfg.get("proc_mail_username") or "").strip()]
+    d_cc = list(approvers) if approvers else []
+    _sys_cc = _fetch_global_cc_list()
+    for _cc in (_sys_cc or []):
+        if _cc and _cc not in d_cc:
+            d_cc.append(_cc)
     d_sent = tool_send_mail(
-        to=[str(cfg.get("proc_mail_username") or "").strip()],
+        to=d_to,
         subject=subj_d, body_text=body_d_full,
-        cc=approvers if approvers else None,
+        cc=d_cc or None,
         reply_to_mail_id=task.get("thread_msg_id") or None,
+        reply_all_from={
+            "from_email": task.get("from_email", ""),
+            "to_email_list": [task.get("from_email", "")] if engineer_email else [],
+            "cc_email_list": d_cc,
+        },
     )
     d_msg_id = d_sent.get("message_id", "") if isinstance(d_sent, dict) else ""
+    _archive_sent_mail(tid, "D", d_sent)
 
     spm.spare_mail_update_task(tid, {
         "d_mail_msg_id": d_msg_id,
@@ -3733,11 +3797,20 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     )
                     body_f = _safe_format(tpl_f.get("body") or "", fmt_args)
                     subj_f = _safe_format(tpl_f.get("subject") or "", fmt_args)
+                    # 内部流收件人：工程师始终在收件人(To)里；抄送 = 审批人 + 全局系统抄送（不含供应商）
+                    eng = (task.get("from_email") or "").strip()
+                    f_to = [eng] if (eng and "@" in eng) \
+                        else [str(cfg.get("proc_mail_username") or "").strip()]
+                    f_cc = list(approvers) if approvers else []
+                    for _c in (_fetch_global_cc_list() or []):
+                        if _c and _c not in f_cc:
+                            f_cc.append(_c)
                     # 回复工程师询价线程，末尾引用原始采购申请原文
-                    tool_send_mail(to=[str(cfg.get("proc_mail_username") or "").strip()],
-                                   subject=subj_f,
-                                   body_text=body_f + _quote_orig_body(task.get("inquiry_body")),
-                                   reply_to_mail_id=task.get("thread_msg_id") or None)
+                    f_sent = tool_send_mail(to=f_to, subject=subj_f,
+                                            body_text=body_f + _quote_orig_body(task.get("inquiry_body")),
+                                            cc=f_cc or None,
+                                            reply_to_mail_id=task.get("thread_msg_id") or None)
+                    _archive_sent_mail(tid, "F", f_sent)
                     spm.spare_mail_update_task(tid, {
                         "approval_state": "rejected",
                         "approval_result": "ALL_REJECTED",
@@ -3770,10 +3843,13 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
             if re.search(r"备件更换完成|更换完成|到货更换完成", body):
                 launch_target = (task.get("target_supplier") or lowest_supplier or "")
                 target_email, reply_mid = "", ""
+                target_reply_all = None
                 for q in _safe_json_loads(task.get("quotes_json") or "[]"):
                     if q.get("supplier") == launch_target and q.get("email"):
                         target_email = q.get("email")
                         reply_mid = _norm_mid(q.get("msg_id", ""))
+                        # 复用 C 报价线程的原始收件人元数据（外部流 ReplyAll，与 E 订货保持一致）
+                        target_reply_all = q.get("reply_all") or None
                         break
                 if target_email:
                     fmt_args = dict(
@@ -3794,10 +3870,13 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     # 优先 IMAP fetch E 邮件的真实 References，找不到 fallback 到 DB（兼容旧任务）
                     e_refs_from_imap = _fetch_sent_mail_refs(e_mid) if e_mid else ""
                     reply_chain = e_refs_from_imap or (task.get("e_refs_chain") or "").strip() or None
-                    tool_send_mail(to=[target_email], subject=subj_g,
-                                   body_text=body_g,
-                                   reply_to_mail_id=e_mid or None,
-                                   reply_refs_chain=reply_chain)
+                    g_args = dict(to=[target_email], subject=subj_g, body_text=body_g,
+                                  reply_to_mail_id=e_mid or None, reply_refs_chain=reply_chain)
+                    if target_reply_all:
+                        # 外部流 ReplyAll：并入原供应商报价线程的全部收件人
+                        g_args["reply_all_from"] = target_reply_all
+                    g_sent = tool_send_mail(**g_args)
+                    _archive_sent_mail(tid, "G", g_sent)
                 spm.spare_mail_update_task(tid, {
                     "internal_status": "R_CLOSED",
                     "external_status": "R_WAIT_SETTLE",
