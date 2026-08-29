@@ -2970,6 +2970,7 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
                 "count": parsed.get("count", ""),
                 "ship_time": parsed.get("ship_time", ""),
                 "msg_id": mid,
+                "refs": (m.get("references") or "").strip(),
                 "is_late": is_late,
                 "raw_subject": m.get("subject", ""),
                 "raw_body": body[:800],
@@ -3202,19 +3203,26 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
         count=task.get("count", ""),
     )
 
-    # 在选中供应商报价邮件线程上回复——这样 E 的 References 已经串到 C→B→A
+    # 在选中供应商报价邮件线程上回复——构造完整 References 链确保 RFC 会话链不中断
+    # C 报价邮件自带的 References（可能含 B/A 链） + C 的 msg_id → E 的上游链
+    c_refs = (target_quote or {}).get("refs", "") or ""
+    e_refs_chain = f"{c_refs} {reply_mid}".strip() if reply_mid else c_refs
     body_full = body + _quote_orig_body((target_quote or {}).get("raw_body"))
     mail_r = tool_send_mail(
         to=[target_email] if target_email else [str(cfg.get("proc_mail_username") or "").strip()],
         subject=subj, body_text=body_full,
         reply_to_mail_id=reply_mid or None,
+        reply_refs_chain=c_refs or None,
     )
     e_mail_msg_id = (mail_r or {}).get("message_id") or ""
+    # 用工具返回的完整 refs_chain 存库（B+C），下次发 G 时拼入完整链（B+C+E）
+    e_refs_chain = (mail_r or {}).get("refs_chain") or e_refs_chain
 
     _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
         "external_status": "R_WAIT_SHIPPING",
         "status": "ORDERING",
         "e_mail_msg_id": e_mail_msg_id,
+        "e_refs_chain": e_refs_chain,
         "latest_step": f"R_ORDER→R_WAIT_SHIPPING(sent_to={target_email}, e_msg_id={e_mail_msg_id})",
     })
     return True
@@ -3434,11 +3442,12 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     )
                     body_g = _safe_format(tpl_g.get("body") or "", fmt_args)
                     subj_g = _safe_format(tpl_g.get("subject") or "", fmt_args)
-                    # 在 E（订货）邮件线程上回复——线程链自然串起 A/B/C/D/E，G 自动带全历史
-                    e_reply_mid = _norm_mid(task.get("e_mail_msg_id", "")) or reply_mid
+                    # 在 E（订货）邮件线程上回复——用 DB 存的 e_refs_chain（B+C）+ E_mid 拼完整链
+                    e_mid = _norm_mid(task.get("e_mail_msg_id", "")) or reply_mid
                     tool_send_mail(to=[target_email], subject=subj_g,
                                    body_text=body_g,
-                                   reply_to_mail_id=e_reply_mid or None)
+                                   reply_to_mail_id=e_mid or None,
+                                   reply_refs_chain=(task.get("e_refs_chain") or "").strip() or None)
                 spm.spare_mail_update_task(tid, {
                     "internal_status": "R_CLOSED",
                     "status": "DONE",

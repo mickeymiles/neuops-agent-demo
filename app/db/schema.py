@@ -411,6 +411,7 @@ def init_spare_mail_db():
         external_status TEXT DEFAULT '',
         shipped_no TEXT DEFAULT '',
         e_mail_msg_id TEXT DEFAULT '',
+        e_refs_chain TEXT DEFAULT '',
         status TEXT DEFAULT '',
         latest_step TEXT DEFAULT '',
         created_at TEXT DEFAULT '',
@@ -427,7 +428,7 @@ def init_spare_mail_db():
                 "external_status": "TEXT DEFAULT ''",
                 "shipped_no": "TEXT DEFAULT ''",
                 "inquiry_body": "TEXT DEFAULT ''",
-                "e_mail_msg_id": "TEXT DEFAULT ''",
+                "e_mail_msg_id": "TEXT DEFAULT ''", "e_refs_chain": "TEXT DEFAULT ''",
             }
             existing = {r[1] for r in conn.execute("PRAGMA table_info(spare_mail_task)").fetchall()}
             for c, ddl in _add_cols.items():

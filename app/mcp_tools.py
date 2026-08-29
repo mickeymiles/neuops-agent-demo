@@ -342,9 +342,12 @@ def tool_read_inbox_mail(since_timestamp: int, filter_sender_email_list: list = 
 
 
 def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
-                   reply_to_mail_id: str = None) -> dict:
+                   reply_to_mail_id: str = None,
+                   reply_refs_chain: str = None) -> dict:
     """发送单封邮件（SMTP 真实发送，163 邮箱）
     reply_to_mail_id: 邮件线程 Message-ID，设置后邮件为该邮件的回复（In-Reply-To+References）
+    reply_refs_chain : 上游完整 References 链（空格分隔的 msg_id 串）。设置则 REFs = chain + reply_to_mail_id；
+                       不传则 REFs 只写 reply_to_mail_id（向后兼容，但若上游有多层会断链）。
     【修复 2026-08-24】显式调用 email.utils.make_msgid() 生成 Message-ID 并写入邮件头，
     以便返回给调用方用于后续 In-Reply-To 匹配；之前未写入该头导致返回空 message_id="""
     import smtplib
@@ -361,18 +364,15 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
         msg["Subject"] = subject
         msg["From"] = formataddr(("备品备件采购智能体", _mc["mail_username"]))
         msg["To"] = ",".join(to)
-        # 【关键修复】必须在 sendmail 之前显式生成并写入 Message-ID，
-        # 否则 msg["Message-ID"] 读出来是空字符串，后续回写的 _sent_ok 恒为 False。
         msg["Message-ID"] = make_msgid()
         if cc:
             msg["Cc"] = ",".join(cc)
-        # 邮件线程化：回复时设置 In-Reply-To + References
+        # 邮件线程化：回复时设置 In-Reply-To + 完整 References 链
         if reply_to_mail_id:
             msg["In-Reply-To"] = reply_to_mail_id
-            # 合并到 References（已有就追加，没有就用回复的 msg_id 初始化）
-            existing_refs = msg.get("References", "")
-            if existing_refs:
-                msg["References"] = f"{existing_refs} {reply_to_mail_id}"
+            if reply_refs_chain:
+                # 上游链 + 当前回复 msg_id → 完整 RFC 会话链
+                msg["References"] = f"{reply_refs_chain} {reply_to_mail_id}".strip()
             else:
                 msg["References"] = reply_to_mail_id
 
@@ -384,6 +384,7 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
         return {"tool": "send_mail", "success": True,
                 "message_id": msg["Message-ID"] or "",
                 "reply_to": reply_to_mail_id or "",
+                "refs_chain": msg.get("References", "") or "",
                 "to": to, "subject": subject}
     except Exception as e:
         return {"tool": "send_mail", "success": False,
@@ -391,14 +392,16 @@ def tool_send_mail(to: list, subject: str, body_text: str, cc: list = None,
 
 
 def tool_batch_send_mail(receiver_email_list: list, subject: str, body_text: str,
-                         cc: list = None, reply_to_mail_id: str = None) -> dict:
+                         cc: list = None, reply_to_mail_id: str = None,
+                         reply_refs_chain: str = None) -> dict:
     """批量发送相同内容邮件给多个收件人（独立发送，非群发；每封邮件都带同样的 CC）
     返回 sent 列表，含每个收件人的 message_id（用于后续按邮件线程匹配供应商回复）
-    """
+    reply_refs_chain 透传到 tool_send_mail，保证每封都带完整 References 链"""
     fail_list, ok_count, sent_list = [], 0, []
     for addr in receiver_email_list:
         r = tool_send_mail(to=[addr], subject=subject, body_text=body_text, cc=cc,
-                           reply_to_mail_id=reply_to_mail_id)
+                           reply_to_mail_id=reply_to_mail_id,
+                           reply_refs_chain=reply_refs_chain)
         if r.get("success"):
             ok_count += 1
             sent_list.append({"email": addr, "message_id": r.get("message_id") or "",

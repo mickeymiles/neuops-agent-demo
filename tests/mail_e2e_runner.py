@@ -134,16 +134,21 @@ def step_cfg():
     print("供应商:", [(s.get("name"), s.get("email")) for s in p.get("default_suppliers", [])])
 
 def step_sent():
-    print("[工程师 b1 → 采购方 b3] 发送询价 A（含紧急程度 5min）")
+    print("[工程师 b1 → 采购方 b3] 发送正式询价（必填字段齐全）")
+    import time as _t
+    seq = int(_t.time()) % 100000
+    project_no = f"PRJ-E2E-{seq}"
+    project_name = f"自动化E2E测试#{seq}"
     body = (
-        "您好，我是运维部工程师，现发起备件询价申请。\n\n"
-        "项目编号：PRJ-E2E-002\n项目名称：真邮箱双流测试\n"
+        f"您好，需要采购以下备件，请协助询价。\n\n"
+        f"项目编号：{project_no}\n项目名称：{project_name}\n"
         "类型：硬盘\n品牌：Seagate\nPN：ST-E2E-200\n规格：1TB 7200转\n"
         "成色：全新\n数量：3\n"
         "收货地址：大连市高新园区测试路2号 王工 15900000001\n"
         "紧急程度：5min\n最晚发货时间：2026-09-12\n"
     )
-    mid = send_mail(B1, P1(), B3, "【备件询价】PRJ-E2E-002 硬盘询价", body, name="运维工程师")
+    mid = send_mail(B1, P1(), B3, f"【备件询价】{project_no} 硬盘询价", body, name="运维工程师")
+    print(f"  项目编号: {project_no}")
     print(f"  已发送: {mid}")
 
 def step_sendbad():
