@@ -3942,6 +3942,7 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                         task_no=_task_neu_no(task),
                     )
                     # 追加"采购确认全量信息块"：申请/到货时间、快递单号、报价明细等（补模板仅摘要之不足）
+                    body_g = _safe_format(tpl_g.get("body") or "", fmt_args)
                     _g_rows = [
                         ("项目号", task.get("project_no", "")),
                         ("项目名称", task.get("project_name", "")),
