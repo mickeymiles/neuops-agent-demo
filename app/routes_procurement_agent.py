@@ -3737,6 +3737,7 @@ def _mi_internal_send_d(task: dict, cfg: dict, tpls: dict) -> bool:
         brand=task.get("brand", ""),
         pn=task.get("pn", ""),
         suppliers_count=len(valid),
+        task_no=_task_neu_no(task),
     ))
     # 回复工程师询价线程 + 抄送审批人+系统抄送；正文末尾引用工程师原始采购申请原文（同一线程内带原文）
     body_d_full = body_d + _quote_orig_body(task.get("inquiry_body"))
