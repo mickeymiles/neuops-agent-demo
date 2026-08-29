@@ -2551,6 +2551,14 @@ def _step_parsing(cfg, tpls):
         # 正则为主、LLM 兜底：关键字段（brand/pn/part_type/count/spec）缺失时调 DeepSeek 补抽
         if _extract_needs_llm(fields):
             fields = _llm_fallback_extract(body, subject, fields)
+
+        # ── R-FR-02：必填字段校验 + 格式异常回信阻断（不建任务、不询价）──
+        missing = [k for k in _MI_LLM_REQUIRED if not (fields.get(k) or "").strip()]
+        if missing:
+            _reply_missing_fields(m, missing, fields)
+            existing_threads.add(mid)  # 标记已处理，避免重复回信
+            continue
+
         task_id = _gen_task_id()
         deadline = _inquiry_deadline_ts(fields.get("inquiry_dur", "48h"))
 
@@ -2707,6 +2715,40 @@ def _llm_fallback_extract(body: str, subject: str, regex_fields: dict) -> dict:
         return _merge(result)
     except Exception:
         return regex_fields
+
+
+# ── 必填字段中文名（用于异常回信）──
+_MI_FIELD_LABELS = {
+    "part_type": "备件类型", "brand": "品牌", "pn": "PN/型号",
+    "count": "数量", "spec": "规格", "condition": "成色",
+    "project_no": "项目编号", "project_name": "项目名称",
+    "address": "收货地址", "inquiry_dur": "询价时限", "latest_ship_time": "最晚发货时间",
+}
+
+def _reply_missing_fields(mail: dict, missing: list, fields: dict):
+    """R-FR-02：向工程师回信指出缺失的必填字段，并提示补齐后重新发送。
+
+    不创建任务、不进入询价流程。缺失字段由 missing(list) 给出。
+    """
+    try:
+        from_email = str(mail.get("from_email") or "").strip()
+        if not from_email:
+            return
+        reply_mid = _norm_mid(mail.get("message_id", ""))
+        labels = [_MI_FIELD_LABELS.get(k, k) for k in missing]
+        subject = "【询价申请】信息不完整，请补充后重新发送"
+        body = (
+            "您好，已收到您的备件询价申请，但以下必填信息缺失，本次未进入询价流程。\n\n"
+            "缺少字段：\n"
+            + "\n".join(f"  - {lb}" for lb in labels)
+            + "\n\n请补充上述字段后，重新发送一封完整的询价申请邮件。"
+            "\n\n（提示：请尽量包含 备件类型/品牌/PN型号/规格/成色/数量/收货地址/询价时限/最晚发货时间）"
+            "\n\n- NeuOps 备件邮件询价系统"
+        )
+        tool_send_mail(to=[from_email], subject=subject, body_text=body,
+                       reply_to_mail_id=reply_mid or None)
+    except Exception as e:
+        print(f"[mail-inquiry] reply_missing_fields failed: {e}")
 
 
 def _step_sending_b(task: dict, cfg: dict, tpls: dict):
