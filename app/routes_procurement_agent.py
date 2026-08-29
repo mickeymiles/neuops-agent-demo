@@ -2578,12 +2578,14 @@ def tick_mail_inquiry():
         R_APPROVAL：识别审批人确认/拒绝 与 工程师"备件更换完成"回执
         R_CLOSED：工程师回执后对外发模板 G 结算邮件 → 终态 DONE
     - 外部流（external_status）：智能体↔供应商 —— R_SEND→R_WAIT_QUOTES→R_DECIDING
-        →R_ORDER→R_WAIT_SHIPPING
+        →R_ORDER→R_WAIT_SHIPPING→R_WAIT_ACCEPTANCE→R_WAIT_SETTLE
         R_SEND：发模板 B 询价
         R_WAIT_QUOTES：收报价
         R_DECIDING：算最低价 + 未选中供应商标记截止
         R_ORDER：审批确认后发模板 E 订货
         R_WAIT_SHIPPING：等选中供应商回快递单号
+        R_WAIT_ACCEPTANCE：供应商已发货、收货待测试（采购确认）——等工程师验收回执
+        R_WAIT_SETTLE：工程师验收通过 → 已通知供应商结算、等待结算（终态）
     每条流各自按状态推进；每个任务独立 try/except，单任务异常不阻塞其它。
     """
     _ensure_mail_inquiry_imports()
@@ -2622,12 +2624,14 @@ def tick_mail_inquiry():
         return {"enabled": True, "progress": progress, "step_stats": step_stats}
 
     _INTERNAL_STATES = {"R_INIT", "R_APPROVAL"}
-    _EXTERNAL_STATES = {"R_SEND", "R_WAIT_QUOTES", "R_DECIDING", "R_ORDER", "R_WAIT_SHIPPING"}
+    _EXTERNAL_STATES = {"R_SEND", "R_WAIT_QUOTES", "R_DECIDING", "R_ORDER", "R_WAIT_SHIPPING",
+                        "R_WAIT_ACCEPTANCE", "R_WAIT_SETTLE"}
     # legacy 别名：老 status 名 → 双流维度下的统计键（dashboard/测试兼容）
     _LEGACY = {
         "R_SEND": "SENDING_B", "R_WAIT_QUOTES": "WAITING_QUOTES",
         "R_DECIDING": "DECIDING_LOWEST", "R_APPROVAL": "WAITING_APPROVAL",
         "R_ORDER": "ORDERING", "R_WAIT_SHIPPING": "SHIPPING",
+        "R_WAIT_ACCEPTANCE": "WAITING_ACCEPTANCE", "R_WAIT_SETTLE": "WAITING_SETTLE",
     }
 
     # ── 内部流：按 internal_status 推进 ──
@@ -3795,8 +3799,9 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                                    reply_refs_chain=reply_chain)
                 spm.spare_mail_update_task(tid, {
                     "internal_status": "R_CLOSED",
+                    "external_status": "R_WAIT_SETTLE",
                     "status": "DONE",
-                    "latest_step": "R_APPROVAL→R_CLOSED(ENGINEER_CONFIRMED, settlement(G) sent)",
+                    "latest_step": "R_APPROVAL→R_CLOSED(工程师验收通过, settlement(G) sent, 外部流→R_WAIT_SETTLE)",
                 })
                 return True
 
@@ -3824,19 +3829,26 @@ def _mi_step_external(task: dict, cfg: dict, tpls: dict) -> bool:
         return _step_ordering(task, cfg, tpls)
     if st == "R_WAIT_SHIPPING":
         return _mi_step_wait_shipping(task, cfg, tpls)
+    if st == "R_WAIT_ACCEPTANCE":
+        # 收货待测试（采购确认）：等内部流工程师验收回执，验收通过后由内部流把外部流推进到 R_WAIT_SETTLE
+        return False
+    if st == "R_WAIT_SETTLE":
+        # 已通知供应商结算、等待结算：终态，无进一步动作
+        return False
     return False
 
 
 def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
-    """外部流 R_WAIT_SHIPPING：等选中供应商在 E 订货线程回复快递单号 → 存 shipped_no → R_CLOSED。
-    注意：全流程 DONE 以内部流工程师回执 + 结算邮件为准，回单号只是外部流登记。
+    """外部流 R_WAIT_SHIPPING：等选中供应商在 E 订货线程回复快递单号 → 存 shipped_no → R_WAIT_ACCEPTANCE。
+    收到单号后进入"收货待测试（采购确认）"，等内部流工程师验收通过再推进到 R_WAIT_SETTLE 并发结算。
     """
     tid = task["task_id"]
     target = task.get("target_supplier", "")
     if task.get("shipped_no"):
-        # 已登记过单号，外部流收尾
+        # 已登记过单号，进入收货待测试（不再直接闭环）
         _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
-            "external_status": "R_CLOSED",
+            "external_status": "R_WAIT_ACCEPTANCE",
+            "latest_step": "R_WAIT_SHIPPING→R_WAIT_ACCEPTANCE(收货待测试/采购确认)",
         })
         return True
     if not target:
@@ -3876,9 +3888,9 @@ def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
             shipped_no = m_no.group(1).strip() if m_no else "".join(
                 re.findall(r"[A-Za-z0-9-]{6,}", body)[:1])
             spm.spare_mail_update_task(tid, {
-                "external_status": "R_CLOSED",
+                "external_status": "R_WAIT_ACCEPTANCE",
                 "shipped_no": shipped_no,
-                "latest_step": f"R_WAIT_SHIPPING→R_CLOSED(shipped_no={shipped_no})",
+                "latest_step": f"R_WAIT_SHIPPING→R_WAIT_ACCEPTANCE(收货待测试/采购确认, shipped_no={shipped_no})",
             })
             return True
 
