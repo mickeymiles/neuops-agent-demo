@@ -184,3 +184,15 @@ def spare_mail_update_task(task_id: str, patch: dict) -> int:
             return cur.rowcount
         finally:
             conn.close()
+
+
+def spare_mail_delete_all_tasks() -> int:
+    """清空全部 spare_mail_task 任务（调试/测试用）。返回删除行数。"""
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            cur = conn.execute("DELETE FROM spare_mail_task")
+            conn.commit()
+            return cur.rowcount
+        finally:
+            conn.close()

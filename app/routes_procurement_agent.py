@@ -3498,6 +3498,15 @@ async def mail_inquiry_advance_task(task_id: str, to_status: str = "DECIDING_LOW
     return {"success": False, "error": f"unsupported to_status={to_status}"}
 
 
+@router.post("/mail-inquiry/tasks/clear")
+async def mail_inquiry_clear_tasks():
+    """清空全部备件邮件询价任务（调试/测试用）。"""
+    _ensure_mail_inquiry_imports()
+    _ensure_mail_inquiry_imports._init_db()
+    n = _ensure_mail_inquiry_imports._spm.spare_mail_delete_all_tasks()
+    return {"success": True, "deleted": n}
+
+
 @router.get("/mail-inquiry/tasks")
 async def mail_inquiry_tasks(status: str = "", keyword: str = "", page_size: int = 100):
     """备件邮件询价任务列表（简版）。status 过滤可选。"""
