@@ -87,7 +87,7 @@ _TASK_COLS = (
     "condition", "count", "address", "urgent", "latest_ship_time", "inquiry_deadline",
     "suppliers_json", "quotes_json", "lowest_supplier",
     "lowest_quote", "approval_state", "approval_result", "target_supplier",
-    "internal_status", "external_status", "shipped_no",
+    "internal_status", "external_status", "shipped_no", "shipped_mail_meta",
     "e_mail_msg_id", "e_refs_chain",
     "status", "latest_step", "created_at", "updated_at",
 )

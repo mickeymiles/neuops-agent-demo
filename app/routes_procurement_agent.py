@@ -3961,27 +3961,30 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     ]
                     _g_detail = "\n".join(f"  {k}：{v}" for k, v in _g_rows if str(v or "").strip())
                     body_g_full = body_g + "\n\n【本次采购确认详细信息】\n" + _g_detail
-                    # 携带之前的邮件信息：引用工程师询价原文 + 选中供应商报价原文（同一线程内带原文）
-                    _prev_blocks = []
-                    if (task.get("inquiry_body") or "").strip():
-                        _prev_blocks.append(task.get("inquiry_body"))
-                    if (target_quote_g or {}).get("raw_body", "").strip():
-                        _prev_blocks.append((target_quote_g or {}).get("raw_body", ""))
-                    for _pb in _prev_blocks:
-                        body_g_full += "\n\n" + _quote_orig_body(_pb)
                     subj_g = _safe_format(tpl_g.get("subject") or "", fmt_args)
-                    # 在 E（订货）邮件线程上回复——IMAP fetch 我方 Sent Messages 读 E 的 References（邮箱权威）
-                    e_mid = _norm_mid(task.get("e_mail_msg_id", "")) or reply_mid
-                    # 优先 IMAP fetch E 邮件的真实 References，找不到 fallback 到 DB（兼容旧任务）
-                    e_refs_from_imap = _fetch_sent_mail_refs(e_mid) if e_mid else ""
-                    reply_chain = e_refs_from_imap or (task.get("e_refs_chain") or "").strip() or None
-                    # 外部流 G：发选中供应商；抄送=审批人+全局抄送+工程师+询价收/抄送+供应商报价抄送（口径与E一致）
+                    # —— 全员回复供应商"带单号的发货回执邮件"：天然携带之前的邮件信息（引用原文由回复线程承接）——
+                    # 定位供应商发货回执邮件的 message_id + 收/抄送人（用于 Reply All）
+                    _smeta = {}
+                    try:
+                        _smeta = json.loads(task.get("shipped_mail_meta") or "{}")
+                    except Exception:
+                        _smeta = {}
+                    g_reply_mid = _norm_mid(_smeta.get("msg_id") or "") or _norm_mid(task.get("e_mail_msg_id", "")) or reply_mid
+                    reply_chain = _fetch_sent_mail_refs(g_reply_mid) if g_reply_mid else ""
+                    reply_chain = reply_chain or (task.get("e_refs_chain") or "").strip() or None
+                    g_reply_all = {
+                        "from_email": _smeta.get("from_email") or task.get("from_email", ""),
+                        "to_email_list": _smeta.get("to_email_list") or [],
+                        "cc_email_list": _smeta.get("cc_email_list") or [],
+                    }
+                    # 内部闭环仍需让工程师/审批人/全局抄送知情
                     g_cc = _external_flow_cc(task, cfg, exclude_to=(target_email,),
                                              extra_cc=((target_quote_g or {}).get("reply_all") or {}).get("cc_email_list") or [])
                     g_sent = tool_send_mail(to=[target_email], subject=subj_g, body_text=body_g_full,
                                             cc=g_cc or None,
-                                            reply_to_mail_id=e_mid or None,
-                                            reply_refs_chain=reply_chain)
+                                            reply_to_mail_id=g_reply_mid or None,
+                                            reply_refs_chain=reply_chain,
+                                            reply_all_from=g_reply_all)
                     _archive_sent_mail(tid, "G", g_sent)
                 spm.spare_mail_update_task(tid, {
                     "internal_status": "R_CLOSED",
@@ -4073,9 +4076,18 @@ def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
             m_no = re.search(r"([A-Za-z]{0,6}[\d]{6,})", body)
             shipped_no = m_no.group(1).strip() if m_no else "".join(
                 re.findall(r"[A-Za-z0-9-]{6,}", body)[:1])
+            # 记录"带单号的发货回执邮件"的 message_id 与收/抄送人，供 G 全员回复用（天然携带之前邮件信息）
+            m_message_id = _norm_mid(m.get("message_id", ""))
+            shipped_mail_meta = json.dumps({
+                "msg_id": m_message_id,
+                "from_email": m.get("from_email", ""),
+                "to_email_list": m.get("to_email_list") or [],
+                "cc_email_list": m.get("cc_email_list") or [],
+            }, ensure_ascii=False)
             spm.spare_mail_update_task(tid, {
                 "external_status": "R_WAIT_ACCEPTANCE",
                 "shipped_no": shipped_no,
+                "shipped_mail_meta": shipped_mail_meta,
                 "latest_step": f"R_WAIT_SHIPPING→R_WAIT_ACCEPTANCE(收货待测试/采购确认, shipped_no={shipped_no})",
             })
             return True

@@ -66,7 +66,7 @@ _WRITE_COLS = (
     "condition", "count", "purchase_qty", "address", "urgent", "inquiry_deadline",
     "suppliers_json", "quotes_json", "lowest_supplier", "lowest_quote",
     "approval_state", "approval_result", "approver_email", "target_supplier",
-    "internal_status", "external_status", "shipped_no", "mail_archive_json",
+    "internal_status", "external_status", "shipped_no", "shipped_mail_meta", "mail_archive_json",
     "from_email", "inquiry_to_json", "inquiry_cc_json", "source", "latest_ship_time", "latest_step",
     # NOT NULL 无默认的既有列，必须显式写入
     "spare_part_model", "contract_no", "creator",
@@ -111,7 +111,7 @@ def _ensure_columns(conn) -> None:
         "approval_state": "TEXT DEFAULT ''", "approval_result": "TEXT DEFAULT ''",
         "approver_email": "TEXT DEFAULT ''", "target_supplier": "TEXT DEFAULT ''",
         "internal_status": "TEXT DEFAULT ''", "external_status": "TEXT DEFAULT ''",
-        "shipped_no": "TEXT DEFAULT ''", "mail_archive_json": "TEXT DEFAULT '[]'",
+        "shipped_no": "TEXT DEFAULT ''", "shipped_mail_meta": "TEXT DEFAULT '{}'", "mail_archive_json": "TEXT DEFAULT '[]'",
         "from_email": "TEXT DEFAULT ''", "source": "TEXT DEFAULT ''",
         "inquiry_to_json": "TEXT DEFAULT '[]'", "inquiry_cc_json": "TEXT DEFAULT '[]'",
         "latest_ship_time": "TEXT DEFAULT ''", "latest_step": "TEXT DEFAULT ''",
