@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
 
 
 async def _proc_scheduler_loop():
-    """采购询比价自动调度：每 2 分钟触发 IMAP 轮询（报价+发货）+ 进度告警"""
+    """采购询比价自动调度：每 2 分钟触发 IMAP 轮询（报价+发货+备件邮件询价）+ 进度告警"""
     import httpx
     await asyncio.sleep(30)  # 启动后等 30 秒再开始
     while True:
@@ -65,6 +65,8 @@ async def _proc_scheduler_loop():
                 await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=quote", timeout=30)
                 await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=delivery", timeout=30)
                 await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=progress", timeout=30)
+                # 备件邮件询价数字员工：自动解析工程师询价/供应商报价/审批人确认
+                await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=mail-inquiry", timeout=30)
         except Exception:
             pass
         await asyncio.sleep(120)  # 2 分钟
