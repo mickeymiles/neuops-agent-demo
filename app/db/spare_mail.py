@@ -95,6 +95,7 @@ _TASK_COLS = (
 def spare_mail_create_task(task: dict) -> str:
     """新建/upsert 任务，返回 task_id。
     task_id 必填；缺省字段填空串，时间戳自动补齐。
+    同时同步到 contract-9006 平台库（mail_inquiry_task），供页面观察。
     """
     tid = str((task or {}).get("task_id") or "").strip()
     if not tid:
@@ -118,6 +119,12 @@ def spare_mail_create_task(task: dict) -> str:
             conn.commit()
         finally:
             conn.close()
+    # 同步到 contract-9006 平台库（失败不影响主流程）
+    try:
+        from .contract_mail import contract_mail_upsert
+        contract_mail_upsert(task)
+    except Exception as e:
+        print(f"[spare_mail] sync create to 9006 failed: {e}")
     return tid
 
 
@@ -164,7 +171,8 @@ def spare_mail_list_tasks(filter: Optional[dict] = None, page_size: int = 100) -
 
 
 def spare_mail_update_task(task_id: str, patch: dict) -> int:
-    """更新任务部分字段（自动过滤未知列）。返回受影响行数。"""
+    """更新任务部分字段（自动过滤未知列）。返回受影响行数。
+    同时同步到 contract-9006 平台库（mail_inquiry_task）。"""
     task_id = str(task_id or "").strip()
     if not task_id:
         return 0
@@ -182,9 +190,16 @@ def spare_mail_update_task(task_id: str, patch: dict) -> int:
                 list(safe.values()) + [task_id]
             )
             conn.commit()
-            return cur.rowcount
+            rowcount = cur.rowcount
         finally:
             conn.close()
+    # 同步增量补丁到 contract-9006（失败不影响主流程）
+    try:
+        from .contract_mail import contract_mail_upsert
+        contract_mail_upsert({"task_id": task_id}, patch)
+    except Exception as e:
+        print(f"[spare_mail] sync update to 9006 failed: {e}")
+    return rowcount
 
 
 def spare_mail_delete_all_tasks() -> int:
