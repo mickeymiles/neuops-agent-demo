@@ -2986,7 +2986,6 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
     emails = [s["email"] for s in suppliers]
     urgent = task.get("urgent") or "24h"
     subject = (tpl_b.get("subject") or "").format(
-        project_no=task.get("project_no", ""),
         brand=task.get("brand", ""),
         pn=task.get("pn", ""),
         count=task.get("count", ""),
@@ -2995,9 +2994,10 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
         task_no=tid,
     )
     body_fmt = tpl_b.get("body") or ""
+    # 注意：B 询价对外不暴露内部项目编号/项目名称（供应商不该看到），一律置空
     body_args = dict(
-        project_no=task.get("project_no", ""),
-        project_name=task.get("project_name", ""),
+        project_no="",
+        project_name="",
         part_type=task.get("part_type", ""),
         brand=task.get("brand", ""),
         pn=task.get("pn", ""),
@@ -3036,6 +3036,63 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
         "latest_step": f"R_SEND→R_WAIT_QUOTES(sent={sum(1 for x in suppliers_out if x['sent_ok'])}/{len(suppliers_out)})",
     })
     return True
+
+
+def _llm_parse_quote_fallback(body: str, regex_result: dict) -> dict:
+    """报价解析的 LLM 兜底：当正则解析不出单价时，用 DeepSeek 从供应商报价邮件补抽。
+
+    返回 unit_price/condition/count/ship_time。LLM 失败时原样返回 regex_result，保证不比正则差。
+    """
+    # 正则已解析出单价则无需 LLM
+    if regex_result.get("unit_price") not in (None, "", 0):
+        return regex_result
+    try:
+        from app.agent_chat import _load_deepseek_key, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+    except Exception:
+        return regex_result
+    key = _load_deepseek_key()
+    if not key:
+        return regex_result
+    prompt = (
+        "你是专业的供应商报价邮件解析助手。请从【供应商报价邮件】正文中抽取报价字段，"
+        "输出严格的 JSON（不要多余文字、不要代码块标记）。\n"
+        "字段说明：\n"
+        "- unit_price 单价（数字，如 1280 或 1280.5；若报价为范围取较低值；不出现则空）\n"
+        "- condition 成色（全新/原厂翻新/拆机二手，没有则空）\n"
+        "- count 采购数量（数字字符串，没有则空）\n"
+        "- ship_time 交货/发货周期（如 3个工作日，没有则空）\n"
+        "规范：只把邮件里真实出现的信息填进去，未出现一律空字符串，绝不编造。"
+    )
+    user_msg = f"【邮件正文】\n{body}\n\n【应输出 JSON】\n"
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": user_msg},
+    ]
+    payload = {
+        "model": DEEPSEEK_MODEL, "messages": messages, "temperature": 0.05,
+        "max_tokens": 400, "response_format": {"type": "json_object"},
+    }
+    try:
+        import httpx as _httpx
+        with _httpx.Client(timeout=60) as client:
+            r = client.post(f"{DEEPSEEK_BASE_URL}/chat/completions",
+                            headers={"Authorization": f"Bearer {key}",
+                                     "Content-Type": "application/json"},
+                            json=payload)
+            if r.status_code != 200:
+                return regex_result
+            data = r.json()
+            content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+        result = json.loads(content)
+        if not isinstance(result, dict):
+            return regex_result
+        merged = dict(regex_result)
+        for k, v in result.items():
+            if v not in (None, "") and k in merged:
+                merged[k] = v
+        return merged
+    except Exception:
+        return regex_result
 
 
 def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
@@ -3080,9 +3137,14 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
             if not matched_supplier:
                 continue
 
-            # 解析报价正文：单价/成色/数量/发货时间
+            # 解析报价正文：单价/成色/数量/发货时间（正则为主，缺失单价时 LLM 兜底）
             body = m.get("mail_body_text") or ""
             parsed = _parse_quote_body(body)
+            if parsed.get("unit_price") in (None, "", 0):
+                print(f"[mail-inquiry] 报价解析未命中单价({from_email})，LLM 兜底")
+                parsed = _llm_parse_quote_fallback(body, parsed)
+            has_unit = parsed.get("unit_price") not in (None, "", 0)
+            parse_failed = not has_unit
 
             # 迟到判断
             deadline_str = task.get("inquiry_deadline", "")
@@ -3103,6 +3165,7 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
                 "msg_id": mid,
                 "refs": (m.get("references") or "").strip(),
                 "is_late": is_late,
+                "parse_failed": parse_failed,
                 "raw_subject": m.get("subject", ""),
                 "raw_body": body[:800],
             })
@@ -3223,7 +3286,12 @@ def _parse_quote_body(body: str) -> dict:
 
 def _step_deciding_lowest(task: dict, cfg: dict, tpls: dict):
     """外部流 R_DECIDING：算最低价 + 将未选中供应商标记截止 → 设 external_status=R_ORDER；
-    内部流随后（R_INIT）才会发送模板 D 审批汇总。无有效报价 → 模板 F 中止 → 双流终态。
+    内部流随后（R_INIT）才会发送模板 D 审批汇总。
+
+    无有效报价时区分两种情况：
+    - quotes 为空（根本没有供应商回复）→ 模板 F 中止（ABORT_NO_QUOTE），双流终态。
+    - 收到报价但单价解析失败（parse_failed）→ 不解散，向对应供应商发澄清邮件让其补正，
+      任务回退 R_WAIT_QUOTES 继续等，避免误中止已报价的供应商。
     """
     tid = task["task_id"]
     quotes = _safe_json_loads(task.get("quotes_json") or "[]")
@@ -3234,7 +3302,42 @@ def _step_deciding_lowest(task: dict, cfg: dict, tpls: dict):
     valid = [q for q in quotes if not q.get("is_late") and q.get("unit_price") not in ("", None)]
 
     if not valid:
-        # 中止：模板 F，回复模板 A 会话（工程师询价线程）
+        # 收到报价但解析失败（parse_failed 且未迟到）：发澄清回退继续等，不中止
+        # 已澄清过（clarify_sent=True）仍解析失败 → 视为确实无法得到有效报价，转入中止
+        bad = [q for q in quotes if q.get("parse_failed") and not q.get("is_late")]
+        already_clarified = [q for q in bad if q.get("clarify_sent")]
+        if bad and not already_clarified:
+            for q in bad:
+                email = (q.get("email") or "").strip()
+                reply_mid = _norm_mid(q.get("msg_id", ""))
+                if not email:
+                    continue
+                subj_clar = (f"【询价补充】补正报价信息 - 任务 {tid}")
+                body_clar = (
+                    "您好，我们已收到贵司对本次备件询价的报价邮件，但未能从中识别到明确的【含税单价】，"
+                    "无法纳入比价。\n\n"
+                    "请回复本邮件补充以下信息（缺一项补一项即可）：\n"
+                    "  - 含税单价（例如：￥1,280）\n"
+                    "  - 成色（全新 / 原厂翻新 / 拆机二手）\n"
+                    "  - 可发货数量\n"
+                    "  - 交货周期（例如：3 个工作日）\n\n"
+                    "请直接在一条回复里说明，谢谢！\n"
+                    "（说明：如果误发，可忽略本邮件。）\n\n- NeuOps 备件邮件询价系统"
+                )
+                tool_send_mail(to=[email], subject=subj_clar, body_text=body_clar,
+                               reply_to_mail_id=reply_mid or None)
+                q["clarify_sent"] = True
+                print(f"[mail-inquiry] 报价解析失败，向 {email} 发澄清邮件")
+            # 回退 R_WAIT_QUOTES，继续等待供应商补正，不推进 D/汇总，也不 ABORT
+            spm.spare_mail_update_task(tid, {
+                "quotes_json": json.dumps(quotes, ensure_ascii=False),
+                "external_status": "R_WAIT_QUOTES",
+                "status": "WAITING_QUOTES",
+                "latest_step": "R_DECIDING→R_WAIT_QUOTES(parse_failed, clarification sent)",
+            })
+            return True
+
+        # 完全没收到任何报价 → 中止：模板 F，回复模板 A 会话（工程师询价线程）
         reason = "无有效报价（全部迟到或供应商未回复）" if quotes else "无供应商回复"
         fmt_args = dict(
             project_no=task.get("project_no", ""),
