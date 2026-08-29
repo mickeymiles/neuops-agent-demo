@@ -2327,10 +2327,11 @@ def _archive_sent_mail(tid: str, kind: str, mail_r) -> None:
         print(f"[mail-inquiry] archive_sent_mail failed: {e}")
 
 
-def _external_flow_cc(task: dict, cfg: dict, exclude_to=()) -> list:
-    """外部流(E订货/G结算)的抄送名单：审批人 + 全局系统抄送 + 工程师 + 工程师询价邮件原始收/抄送人。
+def _external_flow_cc(task: dict, cfg: dict, exclude_to=(), extra_cc=()) -> list:
+    """外部流(E订货/G结算)的抄送名单：审批人 + 全局系统抄送 + 工程师 + 工程师询价邮件收/抄送人 + 供应商报价邮件抄送人。
 
     exclude_to 为收件人(To)，在抄送里剔除，避免重复。始终排除自身(智能体)。
+    extra_cc 为被回复的供应商报价邮件所携带的抄送地址（追加进去，满足"给供应商回复带其抄送"）。
     """
     cc, seen = [], set()
     def _add(e):
@@ -2350,6 +2351,8 @@ def _external_flow_cc(task: dict, cfg: dict, exclude_to=()) -> list:
     except Exception:
         ito, icc = [], []
     for e in list(ito) + list(icc):
+        _add(e)
+    for e in (extra_cc or []):
         _add(e)
     self_e = str((cfg or {}).get("proc_mail_username") or "").strip().lower()
     exclude_low = {str(x).strip().lower() for x in (exclude_to or []) if x}
@@ -3103,12 +3106,14 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
     )
     # 批量发送（同一个 body 模板，每封的 {supplier} 事后回填——这里统一批发送完再组装）
     rendered_body = body_fmt.format(**body_args).replace("{supplier}", "供应商您好")
-    batch_r = tool_batch_send_mail(receiver_email_list=emails, subject=subject, body_text=rendered_body)
-    # 全程归档：B 询价函（每封供应商各一条，携带 msg_id/收件人）
+    # 步2起：B 询价函同样携带系统设置的全局抄送人
+    b_cc = _fetch_global_cc_list() or None
+    batch_r = tool_batch_send_mail(receiver_email_list=emails, subject=subject, body_text=rendered_body, cc=b_cc)
+    # 全程归档：B 询价函（每封供应商各一条，携带 msg_id/收件人/抄送）
     for ok_m in batch_r.get("sent", []):
         _archive_sent_mail(tid, "B", {
             "success": True, "message_id": ok_m.get("message_id", "") or "",
-            "subject": subject, "to": [ok_m.get("email", "")], "cc": [],
+            "subject": subject, "to": [ok_m.get("email", "")], "cc": b_cc or [],
         })
 
     # 组装 suppliers_json
@@ -3647,9 +3652,10 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
     # 在选中供应商报价邮件线程上回复——构造完整 References 链确保 RFC 会话链不中断
     # C 报价邮件自带的 References（可能含 B/A 链）作为 E 的上游链
     c_refs = (target_quote or {}).get("refs", "") or ""
+    c_cc = ((target_quote or {}).get("reply_all") or {}).get("cc_email_list") or []
     body_full = body + _quote_orig_body((target_quote or {}).get("raw_body"))
-    # 外部流 E：发选中供应商；抄送=审批人+全局抄送+工程师+询价邮件的全部收/抄送人
-    e_cc = _external_flow_cc(task, cfg, exclude_to=(target_email,))
+    # 外部流 E：发选中供应商；抄送=审批人+全局抄送+工程师+询价收/抄送+供应商报价抄送
+    e_cc = _external_flow_cc(task, cfg, exclude_to=(target_email,), extra_cc=c_cc)
     e_args = dict(
         to=[target_email] if target_email else [str(cfg.get("proc_mail_username") or "").strip()],
         subject=subj, body_text=body_full, cc=e_cc or None,
@@ -3749,6 +3755,15 @@ def _mi_internal_send_d(task: dict, cfg: dict, tpls: dict) -> bool:
     _sys_cc = _fetch_global_cc_list()
     for _cc in (_sys_cc or []):
         if _cc and _cc not in d_cc:
+            d_cc.append(_cc)
+    # 内部邮件包含工程师 + 工程师询价邮件所携带的抄送地址
+    try:
+        _inq_cc = json.loads(task.get("inquiry_cc_json") or "[]")
+    except Exception:
+        _inq_cc = []
+    for _cc in _inq_cc:
+        _cc = str(_cc).strip()
+        if _cc and _cc not in d_cc and _cc != engineer_email:
             d_cc.append(_cc)
     d_sent = tool_send_mail(
         to=d_to,
@@ -3853,6 +3868,15 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     for _c in (_fetch_global_cc_list() or []):
                         if _c and _c not in f_cc:
                             f_cc.append(_c)
+                    # 内部邮件包含工程师 + 工程师询价邮件所携带的抄送地址
+                    try:
+                        _finq_cc = json.loads(task.get("inquiry_cc_json") or "[]")
+                    except Exception:
+                        _finq_cc = []
+                    for _c in _finq_cc:
+                        _c = str(_c).strip()
+                        if _c and _c not in f_cc and _c != eng:
+                            f_cc.append(_c)
                     # 回复工程师询价线程，末尾引用原始采购申请原文
                     f_sent = tool_send_mail(to=f_to, subject=subj_f,
                                             body_text=body_f + _quote_orig_body(task.get("inquiry_body")),
@@ -3891,10 +3915,12 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
             if re.search(r"备件更换完成|更换完成|到货更换完成", body):
                 launch_target = (task.get("target_supplier") or lowest_supplier or "")
                 target_email, reply_mid = "", ""
+                target_quote_g = None
                 for q in _safe_json_loads(task.get("quotes_json") or "[]"):
                     if q.get("supplier") == launch_target and q.get("email"):
                         target_email = q.get("email")
                         reply_mid = _norm_mid(q.get("msg_id", ""))
+                        target_quote_g = q
                         break
                 if target_email:
                     fmt_args = dict(
@@ -3904,20 +3930,54 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                         part_type=task.get("part_type", ""),
                         brand=task.get("brand", ""),
                         pn=task.get("pn", ""),
-                        count=task.get("count", ""),
+                        spec=task.get("spec", ""),
                         condition=task.get("condition", ""),
+                        count=task.get("count", ""),
+                        address=task.get("address", ""),
+                        unit_price=(target_quote_g or {}).get("unit_price", ""),
+                        ship_time=(target_quote_g or {}).get("ship_time", ""),
+                        request_time=task.get("created_at", ""),
+                        ship_no=task.get("shipped_no", ""),
+                        arrive_time=task.get("latest_ship_time", ""),
                         task_no=_task_neu_no(task),
                     )
-                    body_g = _safe_format(tpl_g.get("body") or "", fmt_args)
+                    # 追加"采购确认全量信息块"：申请/到货时间、快递单号、报价明细等（补模板仅摘要之不足）
+                    _g_rows = [
+                        ("项目号", task.get("project_no", "")),
+                        ("项目名称", task.get("project_name", "")),
+                        ("申请时间", task.get("created_at", "")),
+                        ("备件", f"{task.get('part_type','')} / {task.get('brand','')} / {task.get('pn','')} {task.get('spec','')}"),
+                        ("成色", task.get("condition", "")),
+                        ("数量", str(task.get("count", ""))),
+                        ("成交供应商", launch_target),
+                        ("成交单价", f"¥{(target_quote_g or {}).get('unit_price','')}"),
+                        ("成交货期", (target_quote_g or {}).get("ship_time", "")),
+                        ("收货地址", task.get("address", "")),
+                        ("报价截止", task.get("inquiry_deadline", "")),
+                        ("快递单号", task.get("shipped_no", "")),
+                        ("到货/最晚发货时间", task.get("latest_ship_time", "")),
+                        ("验收时间", task.get("updated_at", "")),
+                    ]
+                    _g_detail = "\n".join(f"  {k}：{v}" for k, v in _g_rows if str(v or "").strip())
+                    body_g_full = body_g + "\n\n【本次采购确认详细信息】\n" + _g_detail
+                    # 携带之前的邮件信息：引用工程师询价原文 + 选中供应商报价原文（同一线程内带原文）
+                    _prev_blocks = []
+                    if (task.get("inquiry_body") or "").strip():
+                        _prev_blocks.append(task.get("inquiry_body"))
+                    if (target_quote_g or {}).get("raw_body", "").strip():
+                        _prev_blocks.append((target_quote_g or {}).get("raw_body", ""))
+                    for _pb in _prev_blocks:
+                        body_g_full += "\n\n" + _quote_orig_body(_pb)
                     subj_g = _safe_format(tpl_g.get("subject") or "", fmt_args)
                     # 在 E（订货）邮件线程上回复——IMAP fetch 我方 Sent Messages 读 E 的 References（邮箱权威）
                     e_mid = _norm_mid(task.get("e_mail_msg_id", "")) or reply_mid
                     # 优先 IMAP fetch E 邮件的真实 References，找不到 fallback 到 DB（兼容旧任务）
                     e_refs_from_imap = _fetch_sent_mail_refs(e_mid) if e_mid else ""
                     reply_chain = e_refs_from_imap or (task.get("e_refs_chain") or "").strip() or None
-                    # 外部流 G：发选中供应商；抄送=审批人+全局抄送+工程师+询价邮件的全部收/抄送人（口径与E一致）
-                    g_cc = _external_flow_cc(task, cfg, exclude_to=(target_email,))
-                    g_sent = tool_send_mail(to=[target_email], subject=subj_g, body_text=body_g,
+                    # 外部流 G：发选中供应商；抄送=审批人+全局抄送+工程师+询价收/抄送+供应商报价抄送（口径与E一致）
+                    g_cc = _external_flow_cc(task, cfg, exclude_to=(target_email,),
+                                             extra_cc=((target_quote_g or {}).get("reply_all") or {}).get("cc_email_list") or [])
+                    g_sent = tool_send_mail(to=[target_email], subject=subj_g, body_text=body_g_full,
                                             cc=g_cc or None,
                                             reply_to_mail_id=e_mid or None,
                                             reply_refs_chain=reply_chain)
