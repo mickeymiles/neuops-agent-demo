@@ -2326,6 +2326,38 @@ def _archive_sent_mail(tid: str, kind: str, mail_r) -> None:
     except Exception as e:
         print(f"[mail-inquiry] archive_sent_mail failed: {e}")
 
+
+def _external_flow_cc(task: dict, cfg: dict, exclude_to=()) -> list:
+    """外部流(E订货/G结算)的抄送名单：审批人 + 全局系统抄送 + 工程师 + 工程师询价邮件原始收/抄送人。
+
+    exclude_to 为收件人(To)，在抄送里剔除，避免重复。始终排除自身(智能体)。
+    """
+    cc, seen = [], set()
+    def _add(e):
+        e = str(e or "").strip()
+        if e and "@" in e and e not in seen:
+            seen.add(e); cc.append(e)
+    for e in (cfg or {}).get("approver_emails") or []:
+        _add(e)
+    for e in (_fetch_global_cc_list() or []):
+        _add(e)
+    eng = (task.get("from_email") or "").strip()
+    if eng and "@" in eng:
+        _add(eng)
+    try:
+        ito = json.loads(task.get("inquiry_to_json") or "[]")
+        icc = json.loads(task.get("inquiry_cc_json") or "[]")
+    except Exception:
+        ito, icc = [], []
+    for e in list(ito) + list(icc):
+        _add(e)
+    self_e = str((cfg or {}).get("proc_mail_username") or "").strip().lower()
+    exclude_low = {str(x).strip().lower() for x in (exclude_to or []) if x}
+    out = [e for e in cc
+           if not (self_e and e.lower() == self_e)
+           and e.lower() not in exclude_low]
+    return out
+
 # ── tick 级 IMAP 缓存：每次 tick 开头做一次 UNSEEN 拉取，后续 step 函数复用 ──
 # 避免每任务一次 IMAP SEARCH，10 个任务从 10 次缩到 1 次
 _TICK_UNSEEN_CACHE = None
@@ -2796,6 +2828,9 @@ def _step_parsing(cfg, tpls):
             "task_id": task_id,
             "thread_msg_id": mid,
             "from_email": str(m.get("from_email") or "").strip(),
+            # 记录工程师询价邮件的原始收件/抄送人，供外部流(E/G)按需抄送
+            "inquiry_to_json": json.dumps(m.get("to_email_list") or [], ensure_ascii=False),
+            "inquiry_cc_json": json.dumps(m.get("cc_email_list") or [], ensure_ascii=False),
             "inquiry_body": body[:4000],
             "project_no": fields.get("project_no", ""),
             "project_name": fields.get("project_name", ""),
@@ -3598,17 +3633,15 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
     # 在选中供应商报价邮件线程上回复——构造完整 References 链确保 RFC 会话链不中断
     # C 报价邮件自带的 References（可能含 B/A 链）作为 E 的上游链
     c_refs = (target_quote or {}).get("refs", "") or ""
-    c_reply_all = (target_quote or {}).get("reply_all") or None
     body_full = body + _quote_orig_body((target_quote or {}).get("raw_body"))
+    # 外部流 E：发选中供应商；抄送=审批人+全局抄送+工程师+询价邮件的全部收/抄送人
+    e_cc = _external_flow_cc(task, cfg, exclude_to=(target_email,))
     e_args = dict(
         to=[target_email] if target_email else [str(cfg.get("proc_mail_username") or "").strip()],
-        subject=subj, body_text=body_full,
+        subject=subj, body_text=body_full, cc=e_cc or None,
         reply_to_mail_id=reply_mid or None,
         reply_refs_chain=c_refs or None,
     )
-    if c_reply_all:
-        # 外部流 ReplyAll：并入原供应商报价线程的全部收件人
-        e_args["reply_all_from"] = c_reply_all
     mail_r = tool_send_mail(**e_args)
     e_mail_msg_id = (mail_r or {}).get("message_id") or ""
     _archive_sent_mail(tid, "E", mail_r)
@@ -3843,13 +3876,10 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
             if re.search(r"备件更换完成|更换完成|到货更换完成", body):
                 launch_target = (task.get("target_supplier") or lowest_supplier or "")
                 target_email, reply_mid = "", ""
-                target_reply_all = None
                 for q in _safe_json_loads(task.get("quotes_json") or "[]"):
                     if q.get("supplier") == launch_target and q.get("email"):
                         target_email = q.get("email")
                         reply_mid = _norm_mid(q.get("msg_id", ""))
-                        # 复用 C 报价线程的原始收件人元数据（外部流 ReplyAll，与 E 订货保持一致）
-                        target_reply_all = q.get("reply_all") or None
                         break
                 if target_email:
                     fmt_args = dict(
@@ -3870,12 +3900,12 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     # 优先 IMAP fetch E 邮件的真实 References，找不到 fallback 到 DB（兼容旧任务）
                     e_refs_from_imap = _fetch_sent_mail_refs(e_mid) if e_mid else ""
                     reply_chain = e_refs_from_imap or (task.get("e_refs_chain") or "").strip() or None
-                    g_args = dict(to=[target_email], subject=subj_g, body_text=body_g,
-                                  reply_to_mail_id=e_mid or None, reply_refs_chain=reply_chain)
-                    if target_reply_all:
-                        # 外部流 ReplyAll：并入原供应商报价线程的全部收件人
-                        g_args["reply_all_from"] = target_reply_all
-                    g_sent = tool_send_mail(**g_args)
+                    # 外部流 G：发选中供应商；抄送=审批人+全局抄送+工程师+询价邮件的全部收/抄送人（口径与E一致）
+                    g_cc = _external_flow_cc(task, cfg, exclude_to=(target_email,))
+                    g_sent = tool_send_mail(to=[target_email], subject=subj_g, body_text=body_g,
+                                            cc=g_cc or None,
+                                            reply_to_mail_id=e_mid or None,
+                                            reply_refs_chain=reply_chain)
                     _archive_sent_mail(tid, "G", g_sent)
                 spm.spare_mail_update_task(tid, {
                     "internal_status": "R_CLOSED",

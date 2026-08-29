@@ -67,13 +67,34 @@ _WRITE_COLS = (
     "suppliers_json", "quotes_json", "lowest_supplier", "lowest_quote",
     "approval_state", "approval_result", "approver_email", "target_supplier",
     "internal_status", "external_status", "shipped_no", "mail_archive_json",
-    "from_email", "source", "latest_ship_time", "latest_step",
+    "from_email", "inquiry_to_json", "inquiry_cc_json", "source", "latest_ship_time", "latest_step",
     # NOT NULL 无默认的既有列，必须显式写入
     "spare_part_model", "contract_no", "creator",
 )
 
 # 需要落库为 JSON 的列
 _JSON_COLS = ("suppliers_json", "quotes_json", "lowest_quote", "mail_archive_json")
+
+
+def _derive_task_status(internal_status: str, external_status: str, status: str = "") -> str:
+    """由内/外部双流状态推导 contract procurement_task.task_status（覆盖旧值）。
+    仅对决定性状态覆盖；中间态保持旧值（由 contract 侧继续)."""
+    int_s = (internal_status or "").upper()
+    ext_s = (external_status or "").upper()
+    # 终止：全部拒绝 / 无报价中止 / 明确中止
+    if ext_s in ("R_ABORT",) or status in ("DONE",) and ext_s == "R_ABORT":
+        return "任务已取消"
+    if int_s == "R_CLOSED" and ext_s == "R_WAIT_SETTLE":
+        return "流程闭环"
+    if ext_s in ("R_WAIT_SETTLE",):
+        return "流程闭环"
+    if ext_s == "R_WAIT_ACCEPTANCE":
+        return "供应商发货中"
+    if ext_s == "R_WAIT_SHIPPING":
+        return "已选型确认"
+    if ext_s in ("R_ORDER", "R_DECIDING", "R_DECIDING_LOWEST"):
+        return "已选型确认"
+    return ""  # 中间态不覆盖
 
 
 def _ensure_columns(conn) -> None:
@@ -92,6 +113,7 @@ def _ensure_columns(conn) -> None:
         "internal_status": "TEXT DEFAULT ''", "external_status": "TEXT DEFAULT ''",
         "shipped_no": "TEXT DEFAULT ''", "mail_archive_json": "TEXT DEFAULT '[]'",
         "from_email": "TEXT DEFAULT ''", "source": "TEXT DEFAULT ''",
+        "inquiry_to_json": "TEXT DEFAULT '[]'", "inquiry_cc_json": "TEXT DEFAULT '[]'",
         "latest_ship_time": "TEXT DEFAULT ''", "latest_step": "TEXT DEFAULT ''",
     }
     for col, ddl in additions.items():
@@ -148,11 +170,17 @@ def contract_mail_upsert(task: dict, patch: dict = None) -> bool:
                     merged["purchase_qty"] = 0
             # emergency_level / reply_deadline 为 procurement_task NOT NULL 列
             # spare_mail 用 urgent/inquiry_deadline，做映射 + 规范到 ENUM 值
+            # inventory_status：由内/外部双流状态推导 contract task_status，覆盖决定性状态
+            _derived_ts = _derive_task_status(merged.get("internal_status", ""),
+                                              merged.get("external_status", ""),
+                                              merged.get("status", ""))
+            if _derived_ts:
+                merged["task_status"] = _derived_ts
             if not merged.get("emergency_level"):
                 merged["emergency_level"] = _norm_emergency(merged.get("urgent"))
             if not merged.get("reply_deadline"):
                 merged["reply_deadline"] = merged.get("inquiry_deadline") or _now()
-            _WRITE_ALL_COLS = _WRITE_COLS + ("emergency_level", "reply_deadline")
+            _WRITE_ALL_COLS = _WRITE_COLS + ("emergency_level", "reply_deadline", "task_status")
             cols = [k for k in _WRITE_ALL_COLS if k in merged] + ["create_time"]
             vals = list(merged[k] for k in cols)
             # JSON 序列化
