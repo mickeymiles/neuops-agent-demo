@@ -3202,10 +3202,82 @@ def _step_waiting_quotes(task: dict, cfg: dict, tpls: dict) -> bool:
     return False
 
 
+def _parse_quote_table(body: str) -> dict:
+    """解析"列用制表符/多个空格分隔"的报价表格（用户模板型）。
+
+    模板形如（逐列 Tab 或 ≥2 空格分隔，首列是序号）：
+      序 日期 品牌 型号、描述 数量 单价 总价 货期 成色 备注
+      1  2025年8月31日  Seagate ST-E2E-200  3 1000 3000 7天 全新
+    识别含"单价/数量/货期"的表头行定位列号，再从序号为数字的数据行读取对应列。
+    与本 Markdown 竖线表格不同的场景。解析不出时返回 {}。
+    """
+    out = {}
+    lines = [ln.rstrip() for ln in str(body or "").splitlines()]
+    header_cells = None
+    header_idx = None
+    # 找表头行：切成列后同时含"单价"类 与 至少一个辅助列词
+    for i, ln in enumerate(lines):
+        if not ln.strip():
+            continue
+        for delim in (r"\t", r" {2,}"):
+            cells = [c for c in re.split(delim, ln.strip()) if c]
+            if len(cells) < 3:
+                continue
+            has_price = any(("单价" in c or "价格" in c or "报价" in c) for c in cells)
+            has_aux = any(("数量" in c or "总价" in c or "货期" in c or "成色" in c or "型号" in c or "日期" in c) for c in cells)
+            if has_price and has_aux:
+                header_cells, header_idx = cells, i
+                break
+        if header_cells:
+            break
+    if not header_cells:
+        return out
+
+    def _find(keys):
+        for j, c in enumerate(header_cells):
+            if any(k in c for k in keys):
+                return j
+        return None
+    j_price = _find(("单价", "单位价格"))
+    j_count = _find(("数量", "交付数量"))
+    j_lead = _find(("货期", "交货周期", "周期", "交货"))
+    j_cond = _find(("成色", "新旧"))
+
+    for ln in lines[header_idx + 1:]:
+        if not ln.strip():
+            continue
+        cells = [c for c in re.split(r"\t+| {2,}", ln.strip()) if c]
+        if not cells:
+            continue
+        # 数据行首列应为序号数字
+        if not re.match(r"^\d+", cells[0]):
+            continue
+        if j_price is not None and j_price < len(cells) and out.get("unit_price") is None:
+            pm = re.search(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", cells[j_price])
+            if pm:
+                out["unit_price"] = float(pm.group(0).replace(",", ""))
+        if j_count is not None and j_count < len(cells) and "count" not in out:
+            qm = re.search(r"\d+", cells[j_count])
+            if qm:
+                out["count"] = int(qm.group(0))
+        if j_lead is not None and j_lead < len(cells) and "ship_time" not in out:
+            lm = re.search(r"[\d\u4e00-\u9fff]+", cells[j_lead].replace(",", ""))
+            if lm:
+                out["ship_time"] = lm.group(0).strip()
+        if j_cond is not None and j_cond < len(cells) and "condition" not in out:
+            cm = re.search(r"全新|原厂翻新|拆机二手|二手|全新原装", cells[j_cond])
+            if cm:
+                out["condition"] = cm.group(0)
+        if out.get("unit_price") is not None:
+            break
+    return out
+
+
 def _parse_quote_body(body: str) -> dict:
     """从供应商报价正文抽单价/成色/数量/发货时间（正则，失败留空）。
 
-    同时支持普通文本字段与 Markdown 表格（| 表头 | 行数据 |）两种常见报价格式。
+    同时支持普通文本字段、Markdown 表格（| 表头 | 行数据 |）、以及用户模板型的
+    "制表符/多空格分隔"报价表格三种常见报价格式。
     先剥离"回复引用旧询价"的内容（> 前缀行 / '在 ... 中写道' 之后），
     确保解析只看供应商自己新写的报价，避免被原询价里的 单价/数量 干扰。
     """
@@ -3268,6 +3340,12 @@ def _parse_quote_body(body: str) -> dict:
                 if cm: out["condition"] = cm.group(0)
 
     # ── 普通文本格式（表格未解出时兜底）──
+    # 先尝试"制表符/多空格分隔"的报价表格（用户模板型），再退到键值正则
+    if out.get("unit_price") is None:
+        _tbl = _parse_quote_table(body)
+        for _k, _v in _tbl.items():
+            if _v not in (None, "") and out.get(_k) in (None, ""):
+                out[_k] = _v
     if out.get("unit_price") is None:
         # 支持千分位：￥1,280 / 1,280.00 / 1280
         m = re.search(r"(?:单价|报价|含税价|价格)\s*[:：]?\s*[¥￥$]?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)", body)
@@ -3279,8 +3357,8 @@ def _parse_quote_body(body: str) -> dict:
         m = re.search(r"(?:数量|订货量)\s*[:：]?\s*(\d+)", body)
         if m: out["count"] = int(m.group(1))
     if "ship_time" not in out:
-        m = re.search(r"(?:发货(?:时间|周期)?|交货(?:时间|周期)?|到货)\s*[:：]?\s*([\d\u4e00-\u9fff\s]+?(?:天|日|周|小时内?)|\d{4}[-/]\d{1,2}[-/]\d{1,2})", body)
-        if m: out["ship_time"] = m.group(1).strip()
+        m = re.search(r"(?:发货(?:时间|周期)?|交货(?:时间|周期)?|货期|交期|到货)\s*[:：]?\s*(?:约)?([\d\u4e00-\u9fff\s]{1,12}?(?:天|日|周|小时内?|工作日))|\d{4}[-/]\d{1,2}[-/]\d{1,2}", body)
+        if m: out["ship_time"] = m.group(1).strip() if m.group(1) else m.group(0).strip()
     return out
 
 
