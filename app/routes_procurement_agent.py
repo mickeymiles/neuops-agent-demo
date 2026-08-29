@@ -2772,6 +2772,7 @@ def _step_parsing(cfg, tpls):
         task = {
             "task_id": task_id,
             "thread_msg_id": mid,
+            "from_email": str(m.get("from_email") or "").strip(),
             "inquiry_body": body[:4000],
             "project_no": fields.get("project_no", ""),
             "project_name": fields.get("project_name", ""),

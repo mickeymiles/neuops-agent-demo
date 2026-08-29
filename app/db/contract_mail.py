@@ -133,7 +133,8 @@ def contract_mail_upsert(task: dict, patch: dict = None) -> bool:
             # 缺失非空字段置默认（新行 INSERT 需要 NOT NULL 列）
             merged.setdefault("spare_part_model", merged.get("pn") or "")
             merged.setdefault("contract_no", merged.get("project_no") or "")
-            merged.setdefault("creator", merged.get("from_email") or "")
+            if not merged.get("creator"):
+                merged["creator"] = merged.get("from_email") or merged.get("creator") or ""
             # purchase_qty 为 procurement_task NOT NULL 列，缺省时用 count 映射
             if "purchase_qty" not in merged or merged.get("purchase_qty") in (None, ""):
                 try:
