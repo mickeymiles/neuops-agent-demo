@@ -2495,8 +2495,15 @@ def _gen_task_id() -> str:
     return f"MI-{ts}-{r}"
 
 def _urgent_to_seconds(urgent: str) -> int:
-    """紧急程度字符串 → 秒。支持 5min/1h/24小时/3天。解析失败默认 24h。"""
+    """紧急程度字符串 → 秒。支持 5min/1h/24小时/3天/高/中/低。解析失败默认 24h。"""
     s = str(urgent or "").strip().lower().replace(" ", "")
+    # 文本紧急程度映射
+    if s in ("高", "urgent", "critical"):
+        return 6 * 3600       # 高 → 6h
+    if s in ("中", "medium"):
+        return 24 * 3600      # 中 → 24h
+    if s in ("低", "low", "normal"):
+        return 48 * 3600      # 低 → 48h
     m = re.match(r"(\d+)\s*(分钟|min|m|小时|h|天|d)", s)
     if not m:
         return 24 * 3600
@@ -2804,8 +2811,10 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     # 数量
     m = re.search(r"(?:采购数量|数量)\s*[:：]?\s*(\d+)", merged)
     if m: out["count"] = m.group(1)
-    # 紧急程度（决定报价截止）：如 紧急程度：5min / 1h / 24小时 / 3天
-    m = re.search(r"紧急程度\s*[:：]?\s*([\d]+\s*(?:分钟?|min|m|小时?|h|天|d))", merged, re.I)
+    # 紧急程度（决定报价截止）：支持 数字时间(5min/1h/24小时) 和 文本程度(高/中/低)
+    m = re.search(r"紧急程度\s*[:：]?\s*([\d]+\s*(?:分钟?|min|m|小时?|h|天|d|周|wk))", merged, re.I)
+    if not m:
+        m = re.search(r"紧急(?:程度|性)?\s*[:：]?\s*(高|中|低|urgent|normal|critical)\b", merged, re.I)
     if m:
         out["urgent"] = m.group(1).strip()
     elif not (out.get("urgent") or ""):
@@ -2816,9 +2825,24 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
     # 最晚发货时间
     m = re.search(r"(?:最晚发货(?:时间)?\s*[:：]?\s*)(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?)", merged)
     if m: out["latest_ship_time"] = m.group(1).replace("/", "-").replace("年", "-").replace("月", "-").replace("日", "")
-    # 规格（取本冒号后到行尾，不再吞并后续换行/字段）
-    m = re.search(r"规格(?:参数)?\s*[:：]?\s*([^\n：:]{1,40})", merged)
-    if m: out["spec"] = m.group(1).strip()
+    # 规格：先匹配显式"规格:"字段，再从品牌/型号/描述里推断（如 "4TB 企业级硬盘" / "DDR4 3200MHz 16GB"）
+    m = re.search(r"规格(?:参数)?\s*[:：]?\s*([^\n：:]{1,80})", merged)
+    if m:
+        out["spec"] = m.group(1).strip()
+    elif not (out.get("spec") or ""):
+        # 从 subject + 品牌描述里提取容量/频率/尺寸等规格关键词
+        spec_keywords = re.findall(r"(\d+\s*(?:TB|GB|MB|MHz|GHz|U|寸|inch|英寸))", subject + merged, re.I)
+        type_kw = re.search(r"(企业级|台式机|服务器|笔记本|SAS|SATA|NVMe|PCIe|固态硬盘|机械硬盘|内存|显卡|电源|主板)", subject + merged)
+        pieces = []
+        if spec_keywords:
+            pieces.extend(spec_keywords[:2])
+        if type_kw:
+            pieces.append(type_kw.group(1))
+        if pieces:
+            out["spec"] = " ".join(pieces)
+    # 规格兜底：至少把型号 PN 带上（PN 本身可作为规格参考）
+    if not (out.get("spec") or "") and out.get("pn"):
+        out["spec"] = out["pn"]
     # 收货地址
     m = re.search(r"(?:收货地址|收货地址(?:详情)?|地址)\s*[:：︓]?\s*([^\n]{3,80})", merged)
     if m: out["address"] = m.group(1).strip()
