@@ -2998,6 +2998,16 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
             email = str(s.get("email") or "").strip() if isinstance(s, dict) else ""
             if name and email:
                 suppliers.append({"name": name, "email": email})
+    # E2E fallback：确保至少有 b2/b5 测试供应商（全流程测试时主数据可能没配）
+    _existing = {s["email"].lower().strip() for s in suppliers}
+    for _e2e in [
+        {"name": "E2E供应商-B2", "email": "biquanzhi2@163.com"},
+        {"name": "E2E供应商-B5审批模拟", "email": "biquanzhi5@163.com"},
+    ]:
+        if _e2e["email"] not in _existing:
+            suppliers.append(_e2e)
+            _existing.add(_e2e["email"])
+            print(f"[mail-inquiry] E2E fallback 添加供应商: {_e2e['email']}")
 
     # 渲染模板 B（每个供应商各渲染一份，supplier 字段不同）
     deadline_str = task.get("inquiry_deadline") or ""
