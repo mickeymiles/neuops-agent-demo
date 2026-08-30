@@ -87,7 +87,7 @@ async def _proc_scheduler_loop():
 
 
 async def _ont_scheduler_loop():
-    """本体轨 emp-009：阶段B全流程自走（SEEN认领+入向回复+决策执行）。
+    """本体轨 emp-009：全流程自走（SEEN认领+入向回复+LLM决策执行）。
     governor 放行才真正发信/落库；默认 off 时零副作用。"""
     import httpx
     await asyncio.sleep(40)
@@ -95,10 +95,10 @@ async def _ont_scheduler_loop():
         try:
             async with httpx.AsyncClient() as client:
                 await client.post("http://127.0.0.1:9007/api/ontology-emp009/run-full",
-                                  json={"use_llm": False}, timeout=40)
+                                  json={"use_llm": False}, timeout=60)
         except Exception:
             pass
-        await asyncio.sleep(60)  # 1 分钟，与现轨对齐
+        await asyncio.sleep(60)  # 1 分钟
 
 
 app = FastAPI(title="NeuOps Agent Demo", lifespan=lifespan)

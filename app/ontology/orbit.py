@@ -3,6 +3,7 @@
 只有 Governor 放行（ontology/split + exec）才真正驱动；否则仅诊断。
 状态与数据全部落在 O_*（独立于现轨 spare_mail_task）。
 """
+import os
 import re
 import time
 
@@ -211,24 +212,36 @@ def drive(mode="off", use_llm=False, mg=None):
     if mode not in ("ontology", "split"):
         return []
     reports = []
+    g = execution.governor()
+    trusted = bool(g.get("llm"))
+    shadow = bool(g.get("llm") is False and os.getenv("ONT_SHADOW", "0") == "1")
     for t in store.list_tasks(limit=100):
         if t.get("mode") != "ontology" or t.get("status") in _TERMINAL:
             continue
         ctx = ctx_from_task(t)
-        import hashlib
-        h = int(hashlib.sha256((t["task_id"] + str(time.time())).encode()).hexdigest(), 16) % 1000 / 1000.0
-        if mode == "split" and h > 0.0:
-            pass  # 已认领的按本体轨驱动
-        aid, reason, via_llm = _decide(ctx, t, use_llm)
-        ok, detail = execution.execute_action(aid, t, ctx, mg=mg, force=False)
-        reports.append({"task_id": t["task_id"], "action": aid, "reason": reason[:40],
-                        "via_llm": via_llm, "ok": ok, "detail": detail})
+        # 影子/信任模式都先算规则基准（参照系）
+        rule_act, rule_reason, _ = _decide(ctx, t, False)
+        chosen, reason, via_llm = rule_act, rule_reason, False
+        aligned = True
+        if trusted or shadow:
+            llm_act, llm_reason, via2 = _decide(ctx, t, True)
+            aligned = (llm_act == rule_act)
+            store.audit("Task", t["task_id"], f"align:{llm_act}",
+                        operator="emp-009",
+                        snapshot={"rule": rule_act, "llm": llm_act, "aligned": aligned,
+                                  "llm_reason": llm_reason[:200]},
+                        remark="本体知识层 LLM 决策 影子对齐")
+        if trusted and via_llm:
+            chosen, reason, via_llm = (llm_act, llm_reason, True)
+        ok, detail = execution.execute_action(chosen, t, ctx, mg=mg, force=False)
+        reports.append({"task_id": t["task_id"], "action": chosen, "reason": reason[:40],
+                        "via_llm": via_llm, "aligned": aligned, "ok": ok, "detail": detail})
     return reports
 
 
 def _decide(ctx, task, use_llm):
     from .engine import decide_action
-    return decide_action(ctx, use_llm=use_llm)
+    return decide_action(ctx, use_llm=use_llm, task=task)
 
 
 def _shake(s):

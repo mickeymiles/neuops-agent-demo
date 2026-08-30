@@ -3,11 +3,15 @@
 独立 FastAPI router；挂载到 main.py，与现轨 /api/procurement-agent/* 并存。
 """
 from fastapi import APIRouter, Request
+import asyncio
 
 from . import store, actions as act, engine, schema
 from .decision import build_fact_context, propose_action
 
 router = APIRouter(prefix="/api/ontology-emp009", tags=["ontology-emp009"])
+
+# 进程级串行锁：run-full（可能含 LLM 决定）在 async 事件循环中经 to_thread 执行，串行化防并发重复发信。
+_RUN_LOCK = asyncio.Lock()
 
 
 @router.get("/health")
@@ -89,10 +93,12 @@ def get_governor():
 async def set_governor(request: Request):
     body = await request.json()
     from . import execution
+    llm_val = body.get("llm")
     try:
         g = execution.set_governor(mode=body.get("mode", "off"),
                                    roll=float(body.get("roll", 0)),
-                                   exec_enabled=bool(body.get("exec_enabled", False)))
+                                   exec_enabled=bool(body.get("exec_enabled", False)),
+                                   llm=(llm_val if llm_val is None else bool(llm_val)))
         return {"success": True, "governor": g}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -136,8 +142,11 @@ async def run_managed(request: Request):
 
 @router.post("/run-full")
 async def run_full(request: Request):
-    """本体轨全流程自走：SEEN 认领新询价 + 入向回复归集 + 决策执行。
-    仅 governor=ontology/split 且 exec=True 时真正发信/落库；否则零副作用。"""
+    """本体轨全流程自走：SEEN 认领新询价 + 入向回复归集 + LLM/规则决策执行。
+    仅 governor=ontology/split 且 exec=True 时真正发信/落库；否则零副作用。
+
+    注意：决策可能调用 LLM（阻塞式 http），故放到线程池执行，避免冻结 async 事件循环；
+    并用进程级锁串行化，防止「定时调度 + 手动触发」并发对同一任务重复发信。"""
     body = await request.json()
     use_llm = bool(body.get("use_llm", False))
     from . import orbit, mail_gateway as mg, execution
@@ -145,11 +154,12 @@ async def run_full(request: Request):
         g = execution.governor()
         return {"success": True, "note": "governor 未放行",
                 "claim": [], "replies": [], "drive": [], "governor": g}
-    try:
-        r = orbit.run_full(mg, use_llm=use_llm)
-        return {"success": True, **r}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    async with _RUN_LOCK:
+        try:
+            r = await asyncio.to_thread(orbit.run_full, mg, use_llm=use_llm)
+            return {"success": True, **r}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
 
 def shake(s: str) -> str:

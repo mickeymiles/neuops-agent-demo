@@ -12,15 +12,20 @@ import time
 from . import store, schema, mail_tpl
 
 # 治理：本轨是否接管任务并执行变更。默认 ontology+exec（切主后 emp-009 为唯一采购邮件轨）；
-# 可用 ONT_MODE=off / ONT_EXEC=0 回退到仅诊断。
-_GOV = {"mode": os.getenv("ONT_MODE", "ontology"), "roll": float(os.getenv("ONT_ROLL", "0")), "exec": os.getenv("ONT_EXEC", "1") == "1"}
+# 可用 ONT_MODE=off / ONT_EXEC=0 回退到仅诊断。llm=是否由 LLM 决策接管（否则规则驱动 + 影子对齐）。
+_GOV = {"mode": os.getenv("ONT_MODE", "ontology"), "roll": float(os.getenv("ONT_ROLL", "0")),
+        "exec": os.getenv("ONT_EXEC", "1") == "1", "llm": os.getenv("ONT_LLM", "0") == "1"}
 
 
-def set_governor(mode: str = "off", roll: float = 0.0, exec_enabled: bool = False):
-    """mode: off|legacy|ontology|split。roll∈[0,1] = 分给本体轨的比例。exec_enabled=允许真实发信/落库。"""
+def set_governor(mode: str = "off", roll: float = 0.0, exec_enabled=False, llm: bool = None):
+    """mode: off|legacy|ontology|split。roll∈[0,1]=分给本体轨比例。exec_enabled=允许真实发信/落库。
+    llm=None 保持现值；True→LLM 决策接管并执行；False→规则驱动(可开影子对齐)。"""
     if mode not in ("off", "legacy", "ontology", "split"):
         raise ValueError("mode must be off|legacy|ontology|split")
-    _GOV.update({"mode": mode, "roll": max(0.0, min(1.0, roll)), "exec": bool(exec_enabled)})
+    g = {"mode": mode, "roll": max(0.0, min(1.0, roll)), "exec": bool(exec_enabled)}
+    if llm is not None:
+        g["llm"] = bool(llm)
+    _GOV.update(g)
     return dict(_GOV)
 
 
