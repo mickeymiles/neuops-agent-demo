@@ -2945,7 +2945,9 @@ def _extract_inquiry_fields(body: str, subject: str) -> dict:
 
 
 # ── mail-inquiry 字段 LLM 兜底（正则为主，仅关键字段缺失时调用）──
-_MI_LLM_REQUIRED = ("brand", "pn", "part_type", "count", "spec", "urgent")
+# 必填校验范围：除 latest_ship_time 外的全部关键字段都算必填（缺任一即回信拦截/LLM 补抽）
+_MI_LLM_REQUIRED = ("project_no", "project_name", "part_type", "brand", "pn",
+                    "spec", "condition", "count", "address", "urgent")
 
 def _extract_needs_llm(fields: dict) -> bool:
     """正则结果是否缺关键字段 → 本轮需走 LLM 兜底。"""
@@ -4077,6 +4079,9 @@ def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
     target_senders = {str(q.get("email") or "").lower() for q in
                       _safe_json_loads(task.get("quotes_json") or "[]")
                       if q.get("supplier") == target and q.get("email")}
+    asked = bool(task.get("shipped_ask_sent") or "")
+    seen_reply_no_no = False   # 目标供应商回了发货回执但没带单号
+    ask_to = ""
     for m in r.get("mails", []):
         from_email = str(m.get("from_email") or "").lower().strip()
         if from_email not in target_senders:
@@ -4103,6 +4108,28 @@ def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
                 "latest_step": f"R_WAIT_SHIPPING→R_WAIT_ACCEPTANCE(收货待测试/采购确认, shipped_no={shipped_no})",
             })
             return True
+        # 收到供应商回执但正文未给出快递单号 → 标记需主动索取
+        seen_reply_no_no = True
+        ask_to = from_email
+
+    # 缺陷修复：供应商回"已发货"但没带单号 → 主动发邮件请其补充（只发一次，防每 tick 重复）
+    if seen_reply_no_no and not asked and ask_to:
+        _neu = _task_neu_no(task)
+        tool_send_mail(
+            to=[ask_to],
+            subject=f"Re: 【订货确认】请补充快递单号 [{_neu}]",
+            body_text=(
+                f"您好，已收到贵司关于任务 {_neu} 的发货回执，但邮件中未看到快递单号。\n\n"
+                "请直接回复本邮件补上快递单号（例如：SF123456789），"
+                "以便我方登记物流并跟踪到货验收。\n\n- NeuOps 备件邮件询价系统"
+            ),
+            reply_to_mail_id=e_mid or None,
+        )
+        spm.spare_mail_update_task(tid, {
+            "shipped_ask_sent": "1",
+            "latest_step": "R_WAIT_SHIPPING(asked supplier to supply courier no)",
+        })
+        return False
 
     spm.spare_mail_update_task(tid, {"latest_step": "R_WAIT_SHIPPING(waiting courier no)"})
     return False

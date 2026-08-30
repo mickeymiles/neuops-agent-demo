@@ -414,6 +414,7 @@ def init_spare_mail_db():
         external_status TEXT DEFAULT '',
         shipped_no TEXT DEFAULT '',
         shipped_mail_meta TEXT DEFAULT '{}',
+        shipped_ask_sent TEXT DEFAULT '',
         e_mail_msg_id TEXT DEFAULT '',
         e_refs_chain TEXT DEFAULT '',
         status TEXT DEFAULT '',
@@ -436,6 +437,7 @@ def init_spare_mail_db():
                 "from_email": "TEXT DEFAULT ''",
                 "inquiry_to_json": "TEXT DEFAULT '[]'", "inquiry_cc_json": "TEXT DEFAULT '[]'",
                 "shipped_mail_meta": "TEXT DEFAULT '{}'",
+                "shipped_ask_sent": "TEXT DEFAULT ''",
             }
             existing = {r[1] for r in conn.execute("PRAGMA table_info(spare_mail_task)").fetchall()}
             for c, ddl in _add_cols.items():
