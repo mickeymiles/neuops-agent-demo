@@ -2775,14 +2775,12 @@ def _step_parsing(cfg, tpls):
     if not r.get("success"):
         return {"created": 0, "msg": r.get("error", "read inbox failed")}
 
-    # 已创建的线程/业务键集合（避免重复入库）
-    # thread_msg_id 去重（同一封邮件） + project_no 去重（同一项目不再开新任务）
+    # 已创建的线程集合（避免同一封初始询价邮件重复入库）
     _all_tasks = _ensure_mail_inquiry_imports._spm.spare_mail_list_tasks(page_size=2000)
+    # 去重仅按"工程师初始询价邮件自身的 message-id"：同一封邮件重复扫描不重复建任务。
+    # 不用项目号去重——同一项目会有多次采购，各自建独立任务（每个任务有自己的 NEU 任务号，
+    # 工程师初始邮件尚无任务号，故以其邮件本身为唯一键，后续同任务邮件按线程 In-Reply-To/References 匹配）。
     existing_threads = {t.get("thread_msg_id", "") for t in _all_tasks if t.get("thread_msg_id")}
-    existing_project_nos = {
-        (t.get("project_no") or "").strip() for t in _all_tasks
-        if (t.get("project_no") or "").strip() and (t.get("status") or "") != "REJECTED"
-    }
 
     for m in r.get("mails", []):
         body = (m.get("mail_body_text") or "")
@@ -2830,14 +2828,8 @@ def _step_parsing(cfg, tpls):
                 print(f"[mail-inquiry] persist rejected marker failed: {e}")
             continue
 
-        # ── 业务键去重：同一 project_no 已存在有效任务 → 跳过，不开新任务 ──
-        # 工程师邮件本身带项目号（如 TRGHDHF202608311124），与时间无关；只要该项目已有
-        # 任务（未 reject），即便收件箱反复扫到同主题邮件，也不重复建任务。
-        pno = (fields.get("project_no") or "").strip()
-        if pno and pno in existing_project_nos:
-            print(f"[mail-inquiry] 项目 {pno} 已有任务，跳过重复创建")
-            continue
-
+        # ── 创建去重：按工程师初始询价邮件的 message-id（同一封不重复建任务）。
+        # 不再按 project_no 去重——同一项目可有多次采购，各自建独立任务并生成各自的 NEU 任务号。
         task_id = _gen_task_id()
         deadline = _inquiry_deadline(m, fields.get("urgent", "24h"))
 
@@ -2870,8 +2862,6 @@ def _step_parsing(cfg, tpls):
         }
         _ensure_mail_inquiry_imports._spm.spare_mail_create_task(task)
         existing_threads.add(mid)
-        if pno:
-            existing_project_nos.add(pno)
         created += 1
 
     return {"created": created, "total_scanned": len(r.get("mails", []))}
