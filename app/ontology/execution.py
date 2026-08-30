@@ -11,10 +11,10 @@ import time
 
 from . import store, schema, mail_tpl
 
-# 治理：本轨是否接管任务并执行变更。默认 ontology+exec（切主后 emp-009 为唯一采购邮件轨）；
-# 可用 ONT_MODE=off / ONT_EXEC=0 回退到仅诊断。llm=是否由 LLM 决策接管（否则规则驱动 + 影子对齐）。
-_GOV = {"mode": os.getenv("ONT_MODE", "ontology"), "roll": float(os.getenv("ONT_ROLL", "0")),
-        "exec": os.getenv("ONT_EXEC", "1") == "1", "llm": os.getenv("ONT_LLM", "0") == "1"}
+# 治理：本轨默认 off（不接管、不执行变更，零影响现轨，本体轨暂停改走传统状态机）。
+# 需要时可用 ONT_MODE / ONT_EXEC / ONT_LLM 开启。
+_GOV = {"mode": os.getenv("ONT_MODE", "off"), "roll": float(os.getenv("ONT_ROLL", "0")),
+        "exec": os.getenv("ONT_EXEC", "0") == "1", "llm": os.getenv("ONT_LLM", "0") == "1"}
 
 
 def set_governor(mode: str = "off", roll: float = 0.0, exec_enabled=False, llm: bool = None):

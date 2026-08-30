@@ -48,22 +48,17 @@ async def lifespan(app: FastAPI):
     pm.start()
     # 业务告警检测引擎（LLM APM + ops 真实指标，后续扩展）
     threading.Thread(target=_alert_engine_loop, daemon=True).start()
-    # 【切主】采购询比价自动调度（现轨 emp-008）已停用，采购邮件流统一交由本体轨 emp-009 驱动。
-    # 本体轨 emp-009：注册数字员工+技能（幂等，独立于现轨）；驱动全流程自走
+    # 【恢复传统状态机】采购询比价自动调度（现轨 emp-008）：每 1 分钟拉 IMAP 邮件 + 进度/超时告警
+    proc_task = asyncio.create_task(_proc_scheduler_loop())
+    # 确保 emp-008 数字员工启用（传统方式）；本体轨 emp-009 暂时停用（代码保留、governor=off 零副作用）
     try:
-        # 幂等停用现轨 emp-008（页面/对话/邮件均不再受理采购）
         from app.routes_procurement_agent import mail_inquiry_register_employee
         await mail_inquiry_register_employee()
     except Exception as _e:
-        print(f"[cutover] disable emp-008 failed: {_e}")
-    try:
-        from app.ontology.registration import register_emp009
-        register_emp009()
-        proc_ont_task = asyncio.create_task(_ont_scheduler_loop())
-    except Exception as _e:  # 本体轨失败不阻塞主流程
-        print(f"[ont-emp009] init failed: {_e}")
-        proc_ont_task = None
+        print(f"[register] emp-008 enable failed: {_e}")
+    proc_ont_task = None
     yield
+    proc_task.cancel()
     if proc_ont_task:
         proc_ont_task.cancel()
     pm.stop()

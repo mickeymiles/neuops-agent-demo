@@ -4214,22 +4214,23 @@ async def mail_inquiry_register_employee():
     _ensure_mail_inquiry_imports()
     _ensure_mail_inquiry_imports._init_db()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # 1) 【切主 2026-08-30】现轨 emp-008 全面停用：采购邮件流已交由本体轨 emp-009。
-    #    保留 emp-008 记录仅为可见性与可回滚，enabled=False + 技能全部关闭，不再受理 页面/对话/邮件 采购。
+    # 【恢复传统状态机 2026-08-30】现轨 emp-008 重新启用为统一备件采购数字员工
+    #（页面/对话/邮件三入口；本体轨 emp-009 保留但不接管）。保留记录可回退。
     emp_008 = {
         "id": "emp-008",
         "name": "备品备件采购询比价专员",
-        "desc": "（已停用，见 emp-009）原统一备件采购数字员工；现采购邮件流由本体轨 emp-009 接管。",
+        "desc": "统一备件采购数字员工：支持 页面/Agent对话/工程师邮件 三入口。邮件双流引擎(skill-proc-mail-inquiry)负责工程师询价→报价→内部审批→订货→回单→结算全流程；chat 负责对话创建与进度查询。",
         "type": "采购询比价",
         "created": "2026-08-21",
         "updated": now_str,
-        "rag_kb": "",
-        "prompt": "【已停用】采购流程请切换至 emp-009（本体化备件询价决策）。",
+        "rag_kb": "采购知识库-询比价流程与邮件模板",
+        "prompt": "你是备品备件采购询比价专员（emp-008），统一处理三入口采购：页面/Agent对话/工程师邮件。",
         "model": "deepseek-v4",
-        "skills": [],
-        "skill_states": {"skill-proc-chat": False, "skill-proc-mail-compose": False,
-                         "skill-proc-parse": False, _SKILL_ID_MAIL_INQUIRY: False},
-        "enabled": False,
+        "skills": ["skill-proc-chat", "skill-proc-mail-compose", "skill-proc-parse",
+                   _SKILL_ID_MAIL_INQUIRY],
+        "skill_states": {"skill-proc-chat": True, "skill-proc-mail-compose": True,
+                         "skill-proc-parse": True, _SKILL_ID_MAIL_INQUIRY: True},
+        "enabled": True,
     }
     _ensure_mail_inquiry_imports._upsert_emp(emp_008)
     # 2) 停用旧 emp-mail-inquiry（方案A：不再作为独立数字员工暴露）
