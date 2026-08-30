@@ -3665,11 +3665,13 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
     mail_r = tool_send_mail(**e_args)
     e_mail_msg_id = (mail_r or {}).get("message_id") or ""
     _archive_sent_mail(tid, "E", mail_r)
-    # 不再存 e_refs_chain：发 G 时由 _fetch_sent_mail_refs 从我方邮箱 Sent Messages 实时 fetch（邮箱权威）
+    # 落库 E 的完整 References 链（DB 优先，G 不再现取邮箱）
+    e_built_refs = ((c_refs or "") + " " + (reply_mid or "")).strip() if c_refs else (reply_mid or "")
     _ensure_mail_inquiry_imports._spm.spare_mail_update_task(tid, {
         "external_status": "R_WAIT_SHIPPING",
         "status": "ORDERING",
         "e_mail_msg_id": e_mail_msg_id,
+        "e_refs_chain": e_built_refs,
         "latest_step": f"R_ORDER→R_WAIT_SHIPPING(sent_to={target_email}, e_msg_id={e_mail_msg_id})",
     })
     return True
@@ -3970,8 +3972,11 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                     except Exception:
                         _smeta = {}
                     g_reply_mid = _norm_mid(_smeta.get("msg_id") or "") or _norm_mid(task.get("e_mail_msg_id", "")) or reply_mid
-                    reply_chain = _fetch_sent_mail_refs(g_reply_mid) if g_reply_mid else ""
-                    reply_chain = reply_chain or (task.get("e_refs_chain") or "").strip() or None
+                    # DB 优先取 References 链（发货回执 refs → E 存库链），缺时才 IMAP 兜底
+                    reply_chain = (_smeta.get("refs") or "").strip() or (task.get("e_refs_chain") or "").strip()
+                    if not reply_chain and g_reply_mid:
+                        reply_chain = _fetch_sent_mail_refs(g_reply_mid) or ""
+                    reply_chain = reply_chain or None
                     g_reply_all = {
                         "from_email": _smeta.get("from_email") or task.get("from_email", ""),
                         "to_email_list": _smeta.get("to_email_list") or [],
@@ -4076,10 +4081,11 @@ def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
             m_no = re.search(r"([A-Za-z]{0,6}[\d]{6,})", body)
             shipped_no = m_no.group(1).strip() if m_no else "".join(
                 re.findall(r"[A-Za-z0-9-]{6,}", body)[:1])
-            # 记录"带单号的发货回执邮件"的 message_id 与收/抄送人，供 G 全员回复用（天然携带之前邮件信息）
+            # 记录"带单号的发货回执邮件"的 message_id、References 与收/抄送人，供 G 全员回复用（DB 优先，不再现取邮箱）
             m_message_id = _norm_mid(m.get("message_id", ""))
             shipped_mail_meta = json.dumps({
                 "msg_id": m_message_id,
+                "refs": (m.get("references") or "").strip(),
                 "from_email": m.get("from_email", ""),
                 "to_email_list": m.get("to_email_list") or [],
                 "cc_email_list": m.get("cc_email_list") or [],
