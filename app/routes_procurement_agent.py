@@ -3943,8 +3943,12 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                         arrive_time=task.get("latest_ship_time", ""),
                         task_no=_task_neu_no(task),
                     )
-                    # 追加"采购确认全量信息块"：申请/到货时间、快递单号、报价明细等（补模板仅摘要之不足）
-                    body_g = _safe_format(tpl_g.get("body") or "", fmt_args)
+                    # 采购确认正文：仅"全量信息块"，不再用模板的【订货摘要】+签名
+                    _smeta = {}
+                    try:
+                        _smeta = json.loads(task.get("shipped_mail_meta") or "{}")
+                    except Exception:
+                        _smeta = {}
                     _g_rows = [
                         ("项目号", task.get("project_no", "")),
                         ("项目名称", task.get("project_name", "")),
@@ -3962,15 +3966,16 @@ def _mi_internal_wait_approval(task: dict, cfg: dict, tpls: dict) -> bool:
                         ("验收时间", task.get("updated_at", "")),
                     ]
                     _g_detail = "\n".join(f"  {k}：{v}" for k, v in _g_rows if str(v or "").strip())
-                    body_g_full = body_g + "\n\n【本次采购确认详细信息】\n" + _g_detail
+                    body_g_full = (
+                        "您好，本次采购已确认验收并进入结算，现向贵司确认以下采购信息：\n\n"
+                        "【本次采购确认详细信息】\n" + _g_detail
+                    )
+                    # 引用"供应商发货回执邮件"原文，使回复中可见之前的邮件流（回复目标即该发货邮件）
+                    _sbody = (_smeta.get("body") or "").strip()
+                    if _sbody:
+                        body_g_full += "\n\n" + _quote_orig_body(_sbody)
                     subj_g = _safe_format(tpl_g.get("subject") or "", fmt_args)
                     # —— 全员回复供应商"带单号的发货回执邮件"：天然携带之前的邮件信息（引用原文由回复线程承接）——
-                    # 定位供应商发货回执邮件的 message_id + 收/抄送人（用于 Reply All）
-                    _smeta = {}
-                    try:
-                        _smeta = json.loads(task.get("shipped_mail_meta") or "{}")
-                    except Exception:
-                        _smeta = {}
                     g_reply_mid = _norm_mid(_smeta.get("msg_id") or "") or _norm_mid(task.get("e_mail_msg_id", "")) or reply_mid
                     # DB 优先取 References 链（发货回执 refs → E 存库链），缺时才 IMAP 兜底
                     reply_chain = (_smeta.get("refs") or "").strip() or (task.get("e_refs_chain") or "").strip()
@@ -4081,7 +4086,7 @@ def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
             m_no = re.search(r"([A-Za-z]{0,6}[\d]{6,})", body)
             shipped_no = m_no.group(1).strip() if m_no else "".join(
                 re.findall(r"[A-Za-z0-9-]{6,}", body)[:1])
-            # 记录"带单号的发货回执邮件"的 message_id、References 与收/抄送人，供 G 全员回复用（DB 优先，不再现取邮箱）
+            # 记录"带单号的发货回执邮件"的 message_id、References、正文与收/抄送人，供 G 全员回复用（DB 优先，不再现取邮箱）
             m_message_id = _norm_mid(m.get("message_id", ""))
             shipped_mail_meta = json.dumps({
                 "msg_id": m_message_id,
@@ -4089,6 +4094,7 @@ def _mi_step_wait_shipping(task: dict, cfg: dict, tpls: dict) -> bool:
                 "from_email": m.get("from_email", ""),
                 "to_email_list": m.get("to_email_list") or [],
                 "cc_email_list": m.get("cc_email_list") or [],
+                "body": (m.get("mail_body_text") or "")[:3000],
             }, ensure_ascii=False)
             spm.spare_mail_update_task(tid, {
                 "external_status": "R_WAIT_ACCEPTANCE",
