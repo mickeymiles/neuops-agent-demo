@@ -78,3 +78,41 @@ def test_engine_end_to_end_alignment():
     r = engine.evaluate_task(_full())
     assert "proposed_action" in r
     assert r["dry_run"] is True
+
+
+def test_decide_action_llm_fallback_when_llm_off(tmp_path=None):
+    from app.ontology.engine import decide_action
+    ctx = build_fact_context(_full(suppliers_json='[{"email":"s1@x.com"}]'))
+    aid, reason, via_llm = decide_action(ctx, use_llm=False)
+    assert aid == "distributeInquiry"  # 已建未询价且字段齐 → 发询价
+    assert via_llm is False
+
+
+def test_governor_off_blocks_execution():
+    from app.ontology import execution
+    execution.set_governor(mode="off", exec_enabled=False)
+    task = _full(task_id="T-EXEC", suppliers_json='[{"email":"s1@x.com"}]')
+    ctx = build_fact_context(task)
+    ok, _ = execution.execute_action("createTask", task, ctx, mg=None, force=False)
+    assert ok is False  # 未放行则拒绝执行
+
+
+def test_governor_on_allows_exec_gen():
+    from app.ontology import execution as ex
+    ex.set_governor(mode="ontology", exec_enabled=True)
+    try:
+        task = _full(task_id="T-EXEC2", from_email="eng@x.com",
+                     suppliers_json='[{"email":"s1@x.com"}]')
+        ctx = build_fact_context(task)
+        ok, d = ex.execute_action("createTask", task, ctx, mg=None)
+        assert ok is True
+    finally:
+        ex.set_governor(mode="off", exec_enabled=False)
+
+
+def test_parse_inquiry_fields():
+    from app.ontology.ingest import parse_inquiry_fields
+    f = parse_inquiry_fields("项目编号：PRJ-1\n类型：硬盘\n品牌：Seagate\n数量：3\n紧急程度：5min")
+    assert f["project_no"] == "PRJ-1"
+    assert f["brand"] == "Seagate"
+    assert f["count"] == "3"

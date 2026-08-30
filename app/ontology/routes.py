@@ -75,3 +75,65 @@ def audit(biz_type: str = "", biz_id: str = "", limit: int = 100):
 @router.get("/tasks")
 def list_tasks():
     return {"success": True, "tasks": store.list_tasks()}
+
+
+# ── 阶段 B 治理 / 受控执行 ──────────────────────────────────────────
+
+@router.get("/governor")
+def get_governor():
+    from . import execution
+    return {"success": True, "governor": execution.governor()}
+
+
+@router.post("/governor")
+async def set_governor(request: Request):
+    body = await request.json()
+    from . import execution
+    try:
+        g = execution.set_governor(mode=body.get("mode", "off"),
+                                   roll=float(body.get("roll", 0)),
+                                   exec_enabled=bool(body.get("exec_enabled", False)))
+        return {"success": True, "governor": g}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/run")
+async def run_managed(request: Request):
+    """受控执行：在 governor 放行下，采集新工程师询价→建 O_Task→发询价B。
+    use_llm=true 走 LLM 决策。默认仅能力演示，governor=off 时不产生任何变更。"""
+    body = await request.json()
+    use_llm = bool(body.get("use_llm", False))
+    from .ingest import fetch_new_inquiry_facts
+    from . import mail_gateway as mg, execution, store
+    from .engine import decide_action
+    from .decision import build_fact_context
+    try:
+        facts = fetch_new_inquiry_facts(mg, hours=int(body.get("hours", 2)), store=store)
+    except Exception as e:
+        return {"success": False, "error": f"inbox scan failed: {e}"}
+    created, executed = [], []
+    for it in facts:
+        fields = it["fields"]
+        ctx = dict(fields)
+        aid, reason, via_llm = decide_action(ctx, use_llm=use_llm)
+        # 建任务占位（O_Task）
+        tid = f"OT-{shake(fields.get('message_id'))}"
+        task = {"task_id": tid, "from_email": fields.get("from_email", ""),
+                "threat_msg_id": fields.get("message_id", ""), "urgency_raw": fields.get("urgent", ""),
+                "status": "PRE", "mode": "ontology", "spare_info": fields,
+                "internal_status": "R_INIT", "external_status": "R_SEND"}
+        created.append({"task_id": tid, "proposed_action": aid, "reason": reason, "via_llm": via_llm})
+        if execution.needs_exec():
+            ok, detail = execution.execute_action(aid, task, ctx, mg=mg, force=False)
+            executed.append({"task_id": tid, "ok": ok, "detail": detail})
+        elif fields.get("from_email"):
+            # 未放行时也建 O_Task 占位（仅诊断，不触发真实发信）
+            execution.execute_action("createTask", task, ctx, mg=mg, force=True)
+    return {"success": True, "facts": len(facts), "created": created, "executed": executed,
+            "governor": execution.governor()}
+
+
+def shake(s: str) -> str:
+    import hashlib
+    return hashlib.md5((s or "x").encode()).hexdigest()[:8].upper()

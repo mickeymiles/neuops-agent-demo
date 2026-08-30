@@ -6,6 +6,15 @@ from . import knowledge, store
 from .decision import build_fact_context, propose_action
 
 
+def decide_action(ctx, use_llm: bool = False):
+    """统一决策入口：LLM 提议+规则校验（KNO-R-02），或规则式基线。返回 (action, reason, via_llm)。"""
+    if use_llm:
+        from .llm import llm_decide_action
+        return llm_decide_action(ctx)
+    aid, ex, inn, reason = propose_action(ctx)
+    return aid, reason or "", False
+
+
 def _legacy_desc(task):
     return {
         "internal_status": task.get("internal_status"),
