@@ -3035,12 +3035,14 @@ def _reply_missing_fields(mail: dict, missing: list, fields: dict):
             return
         reply_mid = _norm_mid(mail.get("message_id", ""))
         labels = [_MI_FIELD_LABELS.get(k, k) for k in missing]
-        subject = "【询价申请】信息不完整，请补充后重新发送"
+        subject = "【询价申请】信息不完整，请补充后重新发送（请勿回复本邮件）"
         body = (
             "您好，已收到您的备件询价申请，但以下必填信息缺失，本次未进入询价流程。\n\n"
             "缺少字段：\n"
             + "\n".join(f"  - {lb}" for lb in labels)
-            + "\n\n请补充上述字段后，重新发送一封完整的询价申请邮件。"
+            + "\n\n请补充上述字段后，【重新发送】一封完整的询价申请邮件。"
+            "\n\n❗请勿回复本邮件：直接回复本邮件不会被系统识别。"
+            "请【新写一封】询价申请邮件发送到本邮箱即可（不必保留本项目邮件）。"
             "\n\n（提示：请尽量包含 备件类型/品牌/PN型号/规格/成色/数量/收货地址/询价时限/最晚发货时间）"
             "\n\n- NeuOps 备件邮件询价系统"
         )
