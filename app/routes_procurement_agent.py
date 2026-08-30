@@ -3082,6 +3082,7 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
     )
     body_fmt = tpl_b.get("body") or ""
     # 注意：B 询价对外不暴露内部项目编号/项目名称（供应商不该看到），一律置空
+    ship_time = (task.get("latest_ship_time") or "").strip() or "尽快发货"  # 首封未写则按设计用"尽快发货"
     body_args = dict(
         project_no="",
         project_name="",
@@ -3091,17 +3092,35 @@ def _step_sending_b(task: dict, cfg: dict, tpls: dict):
         spec=task.get("spec", ""),
         condition=task.get("condition", ""),
         count=task.get("count", ""),
-        latest_ship_time=task.get("latest_ship_time", ""),
+        latest_ship_time=ship_time,
         urgent=urgent,
         inquiry_dur=urgent,
         deadline=deadline_str,
         task_no=_task_neu_no(task),
         supplier="{supplier}",
     )
-    # 批量发送（同一个 body 模板，每封的 {supplier} 事后回填——这里统一批发送完再组装）
+    # 渲染模板 B（每个供应商各渲染一份，supplier 字段不同）
     rendered_body = body_fmt.format(**body_args).replace("{supplier}", "供应商您好")
-    # 步2起：B 询价函同样携带系统设置的全局抄送人
-    b_cc = _fetch_global_cc_list() or None
+    # B 询价函也要带上"采购发起人（工程师）+ 首封邮件 to/cc + 系统全局抄送"（对外询价不暴露审批人）
+    def _sp_cc():
+        out, seen = [], set()
+        for e in (_fetch_global_cc_list() or []):
+            e = str(e or "").strip()
+            if e and "@" in e and e not in seen:
+                seen.add(e); out.append(e)
+        eng = str(task.get("from_email") or "").strip()
+        try:
+            ito = json.loads(task.get("inquiry_to_json") or "[]")
+            icc = json.loads(task.get("inquiry_cc_json") or "[]")
+        except Exception:
+            ito, icc = [], []
+        for e in ([eng] if (eng and "@" in eng) else []) + list(ito) + list(icc):
+            e = str(e or "").strip()
+            if e and "@" in e and e not in seen:
+                seen.add(e); out.append(e)
+        self_e = str((cfg or {}).get("proc_mail_username") or "").strip().lower()
+        return [e for e in out if not (self_e and e.lower() == self_e)]
+    b_cc = _sp_cc()
     batch_r = tool_batch_send_mail(receiver_email_list=emails, subject=subject, body_text=rendered_body, cc=b_cc)
     # 全程归档：B 询价函（每封供应商各一条，携带 msg_id/收件人/抄送）
     for ok_m in batch_r.get("sent", []):
@@ -3610,7 +3629,7 @@ def _step_ordering(task: dict, cfg: dict, tpls: dict):
              if s.get("name") == target),
             "")
 
-    latest_ship_time = task.get("latest_ship_time") or datetime.now().strftime("%Y-%m-%d")
+    latest_ship_time = (task.get("latest_ship_time") or "").strip() or "尽快发货"  # 首封未写最晚发货时间 → 尽快发货
     condition_display_map = {
         "全新": "全新原装", "原厂翻新": "原厂翻新（带保修）", "拆机二手": "拆机二手（无保修）",
     }
