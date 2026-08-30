@@ -17,6 +17,8 @@
 | NO-007 | 运维一体化平台 | 生效 | 2026-08-17 | `app/routes_ops.py`、`static/ops.html` |
 | NO-008 | 知识库与 RAG | 生效 | 2026-08-17 | `app/knowledge.py` |
 | NO-009 | 投标业务专家能力 | 生效 | 2026-08-18 | `app/bidding/`、`app/bidding/screenshot.py`、`static/bidding.html`、`static/manage.app.js`（工作成果入口） |
+| NO-011 | 邮件询价智能体 | 试行 | 2026-08-29 | `app/routes_procurement_agent.py`、（意见稿见 `docs/备件邮件询价数字员工-整体逻辑文档.md`） |
+| NO-012 | 本体化（LLM 自主决策）| 规划中 | 2026-08-30 | `app/`（新，独立本体轨 emp-009），设计见 `012-ontology-emp009/design.md` |
 
 ## 状态定义
 

@@ -9,10 +9,11 @@ Governor 默认 'off'（不接管、不执行任何变更，零影响现轨）�
 import os
 import time
 
-from . import store, schema
+from . import store, schema, mail_tpl
 
-# 治理：本轨是否接管任务并执行变更
-_GOV = {"mode": os.getenv("ONT_MODE", "off"), "roll": float(os.getenv("ONT_ROLL", "0")), "exec": os.getenv("ONT_EXEC", "0") == "1"}
+# 治理：本轨是否接管任务并执行变更。默认 ontology+exec（切主后 emp-009 为唯一采购邮件轨）；
+# 可用 ONT_MODE=off / ONT_EXEC=0 回退到仅诊断。
+_GOV = {"mode": os.getenv("ONT_MODE", "ontology"), "roll": float(os.getenv("ONT_ROLL", "0")), "exec": os.getenv("ONT_EXEC", "1") == "1"}
 
 
 def set_governor(mode: str = "off", roll: float = 0.0, exec_enabled: bool = False):
@@ -65,6 +66,37 @@ def _suppliers_from_config(cfg_leak):
     return cfg_leak or []
 
 
+def _self_email():
+    """系统自身发件邮箱（用于 Reply-All 排除）。"""
+    try:
+        from app.mcp_tools import _proc_mail_cfg
+        return (_proc_mail_cfg() or {}).get("mail_username") or ""
+    except Exception:
+        return ""
+
+
+def _send_tpl(mg, tpl_key, ctx, task, *, to, cc=None, reply_to=None, refs=None,
+              original_body=None, reply_all_from=None):
+    """按模板渲染并发信；携带原文（===）、线程头（In-Reply-To/References）、可选 Reply-All。
+    返回 (ok, detail, sent_r)。"""
+    subj, body = mail_tpl.render(tpl_key, ctx, task)
+    if original_body:
+        body += mail_tpl.quote_orig(original_body)
+    if reply_all_from:
+        to, cc = mail_tpl.reply_recipients(reply_all_from, to, cc=cc, self_email=_self_email())
+    r = mg.send_mail(to=to, subject=subj, body_text=body, cc=cc or None,
+                     reply_to_mail_id=reply_to or None, reply_refs_chain=refs or None)
+    return True, f"mail {tpl_key} sent", (r or {})
+
+
+def _sel_quote(meta, target):
+    """按选中供应商邮箱取对应报价（含 msg_id/refs/raw/reply_all）。"""
+    for q in (meta.get("quotes") or []):
+        if str(q.get("email") or "").strip().lower() == str(target or "").strip().lower():
+            return q or {}
+    return {}
+
+
 def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool = False, log=print):
     """执行一个动作。task 为 O_Task 镜像。返回 (ok, detail)。未包治理时只审计不执行。"""
     if not needs_exec(force):
@@ -79,37 +111,106 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         return True, "task created"
 
     if action_id == "distributeInquiry" and mg:
-        to = [s.get("email") for s in ctx.get("target_supplier_list") or []]
+        to = ctx.get("target_supplier_list") or []  # 已是 email 字符串列表
+        b_mids = []
+        by_sup = dict((task.get("spare_info") or {}).get("b_msg_by_supplier") or {})
         for email in to:
-            mg.send_mail(to=[email],
-                         subject=f"【询价】{ctx.get('part_type')} {ctx.get('brand')} {ctx.get('pn')} x {ctx.get('count')} — 请回复报价",
-                         body_text=f"您好，请就以下备件报价：\n类型：{ctx.get('part_type')} 品牌：{ctx.get('brand')} PN：{ctx.get('pn')} 数量：{ctx.get('count')}\n请回复单价/货期/成色。\n- NeuOps 备件询价(emp-009)")
-        store.upsert_task({**task, "external_status": "INVITE_QUOTE"})
-        store.audit("Task", task["task_id"], "distributeInquiry", operator="emp-009", snapshot={"to": to})
+            subj, _body = mail_tpl.render("B", ctx, task)
+            r = mg.send_mail(to=[email], subject=subj, body_text=_body)
+            _mid = (r or {}).get("message_id") or (r or {}).get("msg_id") if isinstance(r, dict) else ""
+            if _mid:
+                b_mids.append(_mid)
+                by_sup[str(email).strip()] = _mid
+        meta = dict(task.get("spare_info") or {})
+        meta["b_msg_ids"] = list(dict.fromkeys(list(meta.get("b_msg_ids") or []) + b_mids))
+        meta["b_msg_by_supplier"] = by_sup
+        store.upsert_task({**task, "external_status": "INVITE_QUOTE", "spare_info": meta})
+        store.audit("Task", task["task_id"], "distributeInquiry", operator="emp-009", snapshot={"to": to, "b_mids": b_mids})
         return True, "inquiry B sent"
 
     if action_id == "confirmOrderToSupplier" and mg:
-        sel = ctx.get("target_supplier") or ""
-        mg.send_mail(to=[sel],
-                     subject=f"【订货确认】请安排发货",
-                     body_text=f"请按已报价备件安排发货，并提供快递单号。\n- NeuOps 备件询价(emp-009)")
-        store.upsert_task({**task, "external_status": "ORDER_CONFIRM"})
-        store.audit("Task", task["task_id"], "confirmOrderToSupplier", operator="emp-009", snapshot={"supplier": sel})
+        sel = str(ctx.get("target_supplier") or "").strip()
+        meta = dict(task.get("spare_info") or {})
+        q = _sel_quote(meta, sel)
+        # E 订货：回复选中供应商报价(C)线程，携带其报价原文；外部流 Reply-All 全员回复
+        reply_to = (q.get("msg_id") or "").strip()
+        refs = (q.get("refs") or "").strip() or ((meta.get("b_msg_by_supplier") or {}).get(sel) or "")
+        ok, detail, r = _send_tpl(mg, "E", ctx, task, to=[sel],
+                                  cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or []),
+                                  reply_to=reply_to or None, refs=refs or None,
+                                  original_body=q.get("raw"),
+                                  reply_all_from=q.get("reply_all"))
+        meta["e_msg_id"] = ((r or {}).get("message_id") or (r or {}).get("msg_id")
+                            if isinstance(r, dict) else "") or meta.get("e_msg_id", "")
+        store.upsert_task({**task, "external_status": "ORDER_CONFIRM", "internal_status": "R_APPROVAL", "spare_info": meta})
+        store.audit("Task", task["task_id"], "confirmOrderToSupplier", operator="emp-009",
+                    snapshot={"supplier": sel, "reply_to": reply_to, "refs": refs})
         return True, "order E sent"
 
     if action_id == "submitApproval" and mg:
-        mg.send_mail(to=[ctx.get("from_email")], cc=ctx.get("approver_emails") or [],
-                     subject="【询价汇总】请审批",
-                     body_text=f"最低价供应商：{ctx.get('target_supplier')}\n请回复确认。")
-        store.upsert_task({**task, "internal_status": "R_APPROVAL"})
+        meta = dict(task.get("spare_info") or {})
+        # D 内部流：回复工程师询价(A)线程，携带原始采购申请原文；To工程师 + Cc审批人
+        ok, detail, r = _send_tpl(mg, "D", ctx, task, to=[ctx.get("from_email")],
+                                  cc=ctx.get("approver_emails") or [],
+                                  reply_to=(meta.get("inquiry_mid") or "").strip() or None,
+                                  refs=((meta.get("inquiry_refs") or "") + " " +
+                                        (meta.get("inquiry_mid") or "")).strip() or None,
+                                  original_body=meta.get("inquiry_raw"))
+        meta["d_msg_id"] = ((r or {}).get("message_id") or (r or {}).get("msg_id")
+                            if isinstance(r, dict) else "") or meta.get("d_msg_id", "")
+        store.upsert_task({**task, "internal_status": "R_APPROVAL", "external_status": "R_DECIDING", "spare_info": meta})
         store.audit("Task", task["task_id"], "submitApproval", operator="emp-009")
         return True, "approval D sent"
 
-    if action_id in ("receiveTrackingNumber", "engineerFinalClose", "abortTask", "processApprovalDecision"):
-        store.upsert_task({**task, "external_status": action_id,
+    if action_id == "receiveTrackingNumber":
+        store.upsert_task({**task, "external_status": "R_WAIT_SHIPPING",
                            "tracking_number": ctx.get("tracking_number_candidate", "")})
-        store.audit("Task", task["task_id"], action_id, operator="emp-009")
-        return True, f"{action_id} applied"
+        store.audit("Task", task["task_id"], "receiveTrackingNumber", operator="emp-009",
+                    snapshot={"tracking_no": ctx.get("tracking_number_candidate", "")})
+        return True, "tracking recorded"
+
+    if action_id == "engineerFinalClose":
+        meta = dict(task.get("spare_info") or {})
+        if mg:
+            sup = ctx.get("target_supplier") or meta.get("target_supplier") or ""
+            q = _sel_quote(meta, sup)
+            # G 结算：回复选中供应商报价(C)线程，携带报价原文；外部流 Reply-All 全员回复
+            reply_to = (q.get("msg_id") or "").strip()
+            refs = (q.get("refs") or "").strip()
+            orig = (q.get("raw") or "") + "\n" + (meta.get("ship_raw") or "")
+            ok, detail, r = _send_tpl(mg, "G", ctx, task, to=[sup] if sup else [ctx.get("from_email")],
+                                      cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or []),
+                                      reply_to=reply_to or None, refs=refs or None,
+                                      original_body=orig, reply_all_from=q.get("reply_all"))
+            meta["g_msg_id"] = ((r or {}).get("message_id") or (r or {}).get("msg_id")
+                                if isinstance(r, dict) else "") or meta.get("g_msg_id", "")
+        store.upsert_task({**task, "external_status": "R_SETTLE", "internal_status": "R_CLOSED",
+                           "status": "CLOSED", "spare_info": meta})
+        store.audit("Task", task["task_id"], "engineerFinalClose", operator="emp-009",
+                    snapshot={"tracking_number": meta.get("tracking_no", ""), "g_msg_id": meta.get("g_msg_id")})
+        return True, "task closed + settlement G"
+
+    if action_id == "abortTask":
+        meta = dict(task.get("spare_info") or {})
+        if mg:
+            # F 中止：回复工程师询价(A)线程，携带原始采购申请原文；To工程师 + Cc审批人
+            _send_tpl(mg, "F", ctx, task, to=[ctx.get("from_email")],
+                      cc=ctx.get("approver_emails") or [],
+                      reply_to=(meta.get("inquiry_mid") or "").strip() or None,
+                      refs=((meta.get("inquiry_refs") or "") + " " +
+                            (meta.get("inquiry_mid") or "")).strip() or None,
+                      original_body=meta.get("inquiry_raw"))
+        store.upsert_task({**task, "external_status": "CLOSED_ABORT", "status": "CLOSED", "spare_info": meta})
+        store.audit("Task", task["task_id"], "abortTask", operator="emp-009")
+        return True, "task aborted"
+
+    if action_id == "processApprovalDecision":
+        meta = dict(task.get("spare_info") or {})
+        meta["target_supplier"] = ctx.get("target_supplier", "") or ctx.get("approval_choice", "")
+        store.upsert_task({**task, "internal_status": "R_APPROVAL", "spare_info": meta})
+        store.audit("Task", task["task_id"], "processApprovalDecision", operator="emp-009",
+                    snapshot={"target_supplier": meta["target_supplier"]})
+        return True, "approval decision recorded"
 
     store.audit("Task", task.get("task_id"), f"noop:{action_id}", operator="emp-009",
                 remark="action has no executor yet")

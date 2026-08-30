@@ -45,6 +45,8 @@ _DDL = [
         tracking_number TEXT DEFAULT '',
         close_feedback TEXT DEFAULT '',
         status TEXT DEFAULT 'INIT',
+        internal_status TEXT DEFAULT 'R_INIT',
+        external_status TEXT DEFAULT 'R_SEND',
         mode TEXT DEFAULT 'ontology',
         create_time TEXT,
         close_time TEXT,
@@ -117,6 +119,12 @@ def init():
         try:
             for ddl in _DDL:
                 conn.execute(ddl)
+            # 幂等迁移：老库补 internal/external 状态列
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(o_task)").fetchall()]
+            if "internal_status" not in cols:
+                conn.execute("ALTER TABLE o_task ADD COLUMN internal_status TEXT DEFAULT 'R_INIT'")
+            if "external_status" not in cols:
+                conn.execute("ALTER TABLE o_task ADD COLUMN external_status TEXT DEFAULT 'R_SEND'")
             conn.commit()
         finally:
             conn.close()

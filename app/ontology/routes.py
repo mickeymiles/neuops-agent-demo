@@ -134,6 +134,24 @@ async def run_managed(request: Request):
             "governor": execution.governor()}
 
 
+@router.post("/run-full")
+async def run_full(request: Request):
+    """本体轨全流程自走：SEEN 认领新询价 + 入向回复归集 + 决策执行。
+    仅 governor=ontology/split 且 exec=True 时真正发信/落库；否则零副作用。"""
+    body = await request.json()
+    use_llm = bool(body.get("use_llm", False))
+    from . import orbit, mail_gateway as mg, execution
+    if execution.governor()["mode"] not in ("ontology", "split"):
+        g = execution.governor()
+        return {"success": True, "note": "governor 未放行",
+                "claim": [], "replies": [], "drive": [], "governor": g}
+    try:
+        r = orbit.run_full(mg, use_llm=use_llm)
+        return {"success": True, **r}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def shake(s: str) -> str:
     import hashlib
     return hashlib.md5((s or "x").encode()).hexdigest()[:8].upper()

@@ -48,9 +48,14 @@ async def lifespan(app: FastAPI):
     pm.start()
     # 业务告警检测引擎（LLM APM + ops 真实指标，后续扩展）
     threading.Thread(target=_alert_engine_loop, daemon=True).start()
-    # 采购询比价自动调度：每 2 分钟拉 IMAP 邮件 + 进度/超时告警
-    proc_task = asyncio.create_task(_proc_scheduler_loop())
-    # 本体轨 emp-009：注册数字员工+技能（幂等，独立于现轨）；驱动阶段A只读对照调度
+    # 【切主】采购询比价自动调度（现轨 emp-008）已停用，采购邮件流统一交由本体轨 emp-009 驱动。
+    # 本体轨 emp-009：注册数字员工+技能（幂等，独立于现轨）；驱动全流程自走
+    try:
+        # 幂等停用现轨 emp-008（页面/对话/邮件均不再受理采购）
+        from app.routes_procurement_agent import mail_inquiry_register_employee
+        await mail_inquiry_register_employee()
+    except Exception as _e:
+        print(f"[cutover] disable emp-008 failed: {_e}")
     try:
         from app.ontology.registration import register_emp009
         register_emp009()
@@ -59,7 +64,6 @@ async def lifespan(app: FastAPI):
         print(f"[ont-emp009] init failed: {_e}")
         proc_ont_task = None
     yield
-    proc_task.cancel()
     if proc_ont_task:
         proc_ont_task.cancel()
     pm.stop()
@@ -83,17 +87,18 @@ async def _proc_scheduler_loop():
 
 
 async def _ont_scheduler_loop():
-    """本体轨 emp-009：阶段 A 只读对照——每 2 分钟对现轨活动任务做决策对比（不执行副作用）。"""
+    """本体轨 emp-009：阶段B全流程自走（SEEN认领+入向回复+决策执行）。
+    governor 放行才真正发信/落库；默认 off 时零副作用。"""
     import httpx
     await asyncio.sleep(40)
     while True:
         try:
             async with httpx.AsyncClient() as client:
-                await client.post("http://127.0.0.1:9007/api/ontology-emp009/scheduler/tick",
-                                  json={"dry_run": True}, timeout=30)
+                await client.post("http://127.0.0.1:9007/api/ontology-emp009/run-full",
+                                  json={"use_llm": False}, timeout=40)
         except Exception:
             pass
-        await asyncio.sleep(120)  # 2 分钟
+        await asyncio.sleep(60)  # 1 分钟，与现轨对齐
 
 
 app = FastAPI(title="NeuOps Agent Demo", lifespan=lifespan)

@@ -61,6 +61,12 @@ def eval_node(node, ctx):
         found, v = _path(ctx, arg[0])
         n = len(v) if (found and isinstance(v, (list, dict))) else 0
         return (n >= int(arg[1])), ("")
+    if op == "in_ctx_list":
+        found, v = _path(ctx, arg[0])
+        _, lst = _path(ctx, arg[1])
+        if not found or not isinstance(lst, list):
+            return False, arg[0]
+        return (str(v).strip() in [str(x) for x in lst]), ("" if str(v).strip() in [str(x) for x in lst] else arg[0])
     return True, ""
 
 
@@ -108,7 +114,7 @@ RULES = [
                        {"eq": ["collection_done", True]}]},
      "desc": "有有效报价且收集结束 → 发 D 汇总审批（内部流 R_APPROVAL）"},
     {"id": "approval_valid", "target": "processApprovalDecision",
-     "check": {"in": ["approval_choice", {"ctx": "valid_supplier_emails"}]},
+     "check": {"in_ctx_list": ["approval_choice", "valid_supplier_emails"]},
      "desc": "审批所选供应商必须在有效候选池；非法回信重选"},
     {"id": "order_ready", "target": "confirmOrderToSupplier",
      "check": {"and": [{"is_non_empty": "target_supplier"}, {"eq": ["internal_status", "R_APPROVAL"]}]},

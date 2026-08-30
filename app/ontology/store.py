@@ -25,18 +25,21 @@ def upsert_task(task: dict):
             conn.execute(
                 "INSERT INTO o_task (task_id, session_id, threat_msg_id, from_email, spare_info, urgency_raw,"
                 " quote_deadline, target_supplier_list, target_supplier, tracking_number, close_feedback,"
-                " status, mode, create_time, close_time, update_time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                " status, internal_status, external_status, mode, create_time, close_time, update_time) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(task_id) DO UPDATE SET status=excluded.status, spare_info=excluded.spare_info,"
                 " urgency_raw=excluded.urgency_raw, quote_deadline=excluded.quote_deadline,"
                 " target_supplier_list=excluded.target_supplier_list, target_supplier=excluded.target_supplier,"
                 " tracking_number=excluded.tracking_number, close_feedback=excluded.close_feedback,"
+                " internal_status=excluded.internal_status, external_status=excluded.external_status,"
                 " close_time=excluded.close_time, update_time=excluded.update_time",
                 (task.get("task_id"), task.get("session_id"), task.get("threat_msg_id", ""),
                  task.get("from_email", ""), json.dumps(task.get("spare_info") or {}, ensure_ascii=False),
                  task.get("urgency_raw", ""), task.get("quote_deadline", ""),
                  json.dumps(task.get("target_supplier_list") or [], ensure_ascii=False),
                  task.get("target_supplier", ""), task.get("tracking_number", ""),
-                 task.get("close_feedback", ""), task.get("status", "INIT"), task.get("mode", "ontology"),
+                 task.get("close_feedback", ""), task.get("status", "INIT"),
+                 task.get("internal_status", "R_INIT"), task.get("external_status", "R_SEND"),
+                 task.get("mode", "ontology"),
                  task.get("create_time") or _now(), task.get("close_time"),
                  task.get("update_time") or _now()),
             )

@@ -77,40 +77,46 @@ def propose_action(ctx: dict):
     internal = ctx.get("internal_status") or "R_INIT"
     external = ctx.get("external_status") or "R_SEND"
 
-    # 新建任务、尚未分发询价 → 谈 distributeInquiry（发 B）
-    if external in ("R_SEND", "R_INIT") and (ctx.get("target_supplier_list") or []):
-        return ("distributeInquiry", "INVITE_QUOTE", "R_INIT", "向目标供应商分发询价 B")
-
     # 收集/超时判定
     collection_done = ctx.get("collection_done")
     valid_n = ctx.get("valid_quote_count") or 0
     raw_n = ctx.get("raw_quote_count") or 0
     deadline_passed = ctx.get("deadline_passed")
 
-    if external in ("R_WAIT_QUOTES", "INVITE_QUOTE", "R_SEND", "R_INIT"):
+    # S1 立项·尚未分发：有目标供应商 → 分发询价 B
+    if external in ("R_SEND", "R_INIT") and (ctx.get("target_supplier_list") or []):
+        return ("distributeInquiry", "INVITE_QUOTE", "R_INIT", "向目标供应商分发询价 B")
+
+    # S2 询价收集阶段：收报价，直到收集结束/到期
+    if external in ("R_SEND", "R_INIT", "INVITE_QUOTE", "R_WAIT_QUOTES"):
         if deadline_passed and valid_n == 0 and raw_n == 0:
             return ("abortTask", "CLOSED_ABORT", internal, "无任何报价且到期")
-        if not collection_done and not deadline_passed:
+        if not collection_done:
             return ("receiveSupplierQuote", external, internal, "继续收集报价")
-
-    if external == "R_WAIT_QUOTES" or (collection_done and valid_n > 0):
-        if internal == "R_INIT":
+        # 收集结束且内部审批尚未发出 → 发 D 审批汇总
+        if internal != "R_APPROVAL":
             return ("submitApproval", "R_DECIDING", "R_APPROVAL", "发起审批汇总 D")
-        # 审批已发
-        ok, _ = knowledge.check_target("approval_valid", ctx)
-        if ok and ctx.get("target_supplier"):
-            return ("confirmOrderToSupplier", "R_ORDER", "R_APPROVAL", "审批合法，下达订货")
-        if external in ("R_DECIDING", "R_WAIT_APPROVAL"):
-            return ("processApprovalDecision", external, "R_APPROVAL", "等待/处理审批选择")
+        # 审批已发出但仍滞留收集中（收尾）→ 确认下单
+        if ctx.get("target_supplier"):
+            return ("confirmOrderToSupplier", "R_ORDER", "R_APPROVAL", "审批选定，下达订货")
+        return ("processApprovalDecision", external, "R_APPROVAL", "等待审批选择")
 
-    if external in ("R_ORDER", "R_WAIT_ORDER"):
+    # S3 审批阶段：等审批人选定/确认供应商 → 发出订货 E
+    if external in ("R_APPROVAL", "R_DECIDING", "R_WAIT_APPROVAL"):
+        if internal == "R_APPROVAL" and ctx.get("target_supplier"):
+            return ("confirmOrderToSupplier", "R_ORDER", "R_APPROVAL", "审批合法，下达订货")
+        return ("processApprovalDecision", external, "R_APPROVAL", "等待/处理审批选择")
+
+    # S4 已下达订货：等供应商回快递单号
+    if external in ("R_ORDER", "R_WAIT_ORDER", "ORDER_CONFIRM"):
         if ctx.get("tracking_number_candidate"):
             return ("receiveTrackingNumber", "R_WAIT_SHIPPING", internal, "登记快递单号")
-        return ("requestTrackingNo", "R_ORDER", internal, "回执无单号，主动索取")
+        return ("requestTrackingNo", external, internal, "回执无单号，主动索取")
 
-    if external == "R_WAIT_SHIPPING":
+    # S5 已发货：等工程师确认完成 → 发结算 G
+    if external in ("R_WAIT_SHIPPING", "R_WAIT_ENGINEER_CLOSE"):
         if internal == "R_CLOSED":
             return ("engineerFinalClose", "R_SETTLE", "R_CLOSED", "工程师确认完成，发 G 结算")
-        return ("receiveTrackingNumber", external, internal, "等待供应商单号")
+        return ("receiveTrackingNumber", external, internal, "等待供应商单号/工程师确认")
 
     return ("finalizeQuoteCollection", external, internal, "维持现状")
