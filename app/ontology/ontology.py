@@ -128,6 +128,13 @@ ACTIONS = {
         "不变量": ["存在有效报价或已下订货时禁止中止"],
         "幂等": True,
     },
+    "requestQuoteClarification": {
+        "定义": "供应商回了询价但无法解析出{单价/货期}（解析失败）。主动回信告知缺哪些、请补充后重发，保持收集，不中止。",
+        "条件": ["收到无法解析的报价回复"],
+        "效果": "回信向该供应商说明报价缺字段/格式，请补充后重发；外部流保持收集。",
+        "不变量": ["收到未解析回复≠无回复，不应走中止；应在仍收集期内催促补全"],
+        "幂等": False,
+    },
     "manualCloseTask": {
         "定义": "后台有权限人员手动关闭/取消任务(不属邮件链路)。",
         "条件": ["由后台授权操作发起"],
@@ -187,6 +194,7 @@ def build_abox(task: dict) -> dict:
         "tracking_number": meta.get("tracking_no", ""),
         "engineer_feedback_finished": engineer_done,
         "deadline_passed": bool(meta.get("deadline_passed")),
+        "unparseable_supplier_emails": list(meta.get("unparseable_replies") or []),
     }
     return facts
 
@@ -238,6 +246,7 @@ def validate_action(action_id: str, abox: dict, rejected_prev=None):
         "已到报价截止": bool(abox.get("deadline_passed")),
         "无有效报价": abox.get("quote_count", 0) == 0,
         "由后台授权操作发起": False,
+        "收到无法解析的报价回复": bool(abox.get("unparseable_supplier_emails")),
     }
     for c in cond:
         if facts.get(c) is False:

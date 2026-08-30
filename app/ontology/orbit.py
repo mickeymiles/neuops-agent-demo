@@ -88,6 +88,7 @@ def ctx_from_task(task):
         "tracking_number_candidate": meta.get("tracking_no", ""),
         "collection_done": bool(deadline_passed or (valid and len(quotes) >= len(target_list) and target_list)),
         "deadline_passed": bool(deadline_passed),
+        "unparseable_supplier_emails": list(meta.get("unparseable_replies") or []),
     }
     return ctx
 
@@ -197,7 +198,19 @@ def process_replies(mg):
                            "msg_id": mid, "refs": (m.get("references") or "").strip(),
                            "reply_all": mail_meta,
                            "receive_time": time.strftime("%Y-%m-%d %H:%M:%S")})
-            meta["quotes"] = quotes; emit = "quote"
+            meta["quotes"] = quotes
+            # 已给有效报价 → 从"解析失败"清单移除
+            un = list(meta.get("unparseable_replies") or [])
+            if from_e in un:
+                un.remove(from_e)
+                meta["unparseable_replies"] = un
+            emit = "quote"
+        elif meta.get("b_msg_ids"):  # 收到线程回复但未识别为报价/运单/审批/完成 → 报价解析失败
+            un = list(meta.get("unparseable_replies") or [])
+            if from_e not in un:
+                un.append(from_e)
+                meta["unparseable_replies"] = un
+            emit = "unparseable"
         meta["received_reply_ids"] = rec
         cur = {**cur, "spare_info": meta}
         store.upsert_task(cur)

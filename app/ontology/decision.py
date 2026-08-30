@@ -92,6 +92,10 @@ def propose_action(ctx: dict):
         if deadline_passed and valid_n == 0 and raw_n == 0:
             return ("abortTask", "CLOSED_ABORT", internal, "无任何报价且到期")
         if not collection_done:
+            # 收到回复但解析失败 → 主动回信催促补全（≠无回复，不应干等）
+            if ctx.get("unparseable_supplier_emails"):
+                return ("requestQuoteClarification", external, internal,
+                        "报价解析失败，催促供应商补全后重发")
             return ("receiveSupplierQuote", external, internal, "继续收集报价")
         # 收集结束且内部审批尚未发出 → 发 D 审批汇总
         if internal != "R_APPROVAL":

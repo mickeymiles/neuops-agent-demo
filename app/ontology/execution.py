@@ -209,6 +209,23 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         store.audit("Task", task["task_id"], "abortTask", operator="emp-009")
         return True, "task aborted"
 
+    if action_id == "requestQuoteClarification" and mg:
+        un = ctx.get("unparseable_supplier_emails") or []
+        meta = dict(task.get("spare_info") or {})
+        by_sup = meta.get("b_msg_by_supplier") or {}
+        for email in un:
+            bmid = (by_sup.get(str(email).strip()) or "")
+            subj = "Re: 【询价】报价需补充完整后重发"
+            body = ("您好，收到您的回复但未能识别出完整报价，请按以下字段重新回复：\n"
+                    f"备件：{ctx.get('part_type')} {ctx.get('brand')} {ctx.get('pn')} x {ctx.get('count')}\n"
+                    "请务必注明：单价、货期、成色。谢谢配合！\n"
+                    f"- NeuOps 备件询价(emp-009)\n任务编号：{task.get('task_id')}")
+            mg.send_mail(to=[email], subject=subj, body_text=body,
+                         reply_to_mail_id=bmid or None, reply_refs_chain=bmid or None)
+        store.audit("Task", task["task_id"], "requestQuoteClarification", operator="emp-009",
+                    snapshot={"suppliers": un})
+        return True, "clarification requested"
+
     if action_id == "processApprovalDecision":
         meta = dict(task.get("spare_info") or {})
         meta["target_supplier"] = ctx.get("target_supplier", "") or ctx.get("approval_choice", "")

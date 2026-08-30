@@ -30,7 +30,7 @@ def test_ontology_structure():
         assert spec.get("定义"), aid
         assert isinstance(spec.get("条件"), list), aid
         assert isinstance(spec.get("效果"), str), aid
-        assert spec.get("幂等") is True, aid
+        assert "幂等" in spec, aid
     assert INV, "应有全局不变量"
 
 
@@ -81,3 +81,32 @@ def test_no_close_before_shipment():
         "engineerFinalClose",
         _abox(order_sent=True, tracking_number="SF1", engineer_feedback_finished=True))
     assert ok2
+
+
+def test_ontology_has_clarification_action():
+    # 解析失败语义：存在未解析回复→requestQuoteClarification 合法
+    ok, why = ontology.validate_action("requestQuoteClarification",
+                                       _abox(unparseable_supplier_emails=["s2@x.com"]))
+    assert ok, why
+    ok2, _ = ontology.validate_action("requestQuoteClarification", _abox())
+    assert not ok2, "无未解析回复时不应触发催补"
+
+
+def test_propose_returns_clarification_when_unparseable(monkeypatch):
+    import os
+    from app.ontology import decision
+    from app.ontology import orbit
+    # 构造 ctx：未发询价、未收集完、存在未解析供应商
+    task = {
+        "task_id": "OT-Y", "from_email": "eng@x.com", "status": "INIT",
+        "internal_status": "R_INIT", "external_status": "INVITE_QUOTE",
+        "spare_info": {
+            "project_no": "P", "pn": "PN", "count": "2", "brand": "K", "part_type": "内存条",
+            "condition": "全新", "project_name": "N", "spec": "s", "address": "a", "urgent": "5min",
+            "suppliers": [{"name": "供", "email": "s2@x.com"}], "quotes": [], "b_msg_ids": ["<B1@x>"],
+            "unparseable_replies": ["s2@x.com"],
+        },
+    }
+    ctx = orbit.ctx_from_task(task)
+    aid, _, _, _ = decision.propose_action(ctx)
+    assert aid == "requestQuoteClarification", f"应催补, 得到 {aid}"
