@@ -196,6 +196,18 @@ def _supplier_mentioned_in(body, suppliers):
     return None
 
 
+def _strip_quoted(body):
+    """去掉回复中引用的历史邮件（以 > 开头的行），只保留发件人自己新写的内容。
+
+    真实邮件客户端『携带原文回复』时，引用的旧邮件里可能含有供应商名/价格/关键词，
+    若不过滤会被误判（如审批人引用了含两供应商名称的 D 邮件，导致选错供应商）。
+    """
+    if not body:
+        return ""
+    return "\n".join(ln for ln in (body or "").splitlines()
+                     if not ln.lstrip().startswith(">"))
+
+
 def _thread_match(inrep, known):
     """判断邮件是否归属某任务的已知线程。known 为 message_id/refs 集合（去 <> 后匹配）。"""
     if not inrep or not known:
@@ -347,32 +359,33 @@ def process_replies(mg):
             continue
         rec.append(mid)
         body = (m.get("mail_body_text") or "")
+        body_new = _strip_quoted(body)  # 仅看发件人新写内容，忽略引用的历史邮件
         from_e = (m.get("from_email") or "").lower().strip()
         # 该邮件线程元数据（Reply-All 用）：原邮件 To/Cc/From 排除系统自身由 send 端处理
         mail_meta = {"from_email": (m.get("from_email") or "").strip(),
                      "to_email_list": m.get("to_email_list") or [],
                      "cc_email_list": m.get("cc_email_list") or []}
         emit = None
-        if from_e == str(cur.get("from_email") or "").lower().strip() and any(k in body for k in _CLOSE_KW):
-            meta["engineer_close"] = body[:500]
+        if from_e == str(cur.get("from_email") or "").lower().strip() and any(k in body_new for k in _CLOSE_KW):
+            meta["engineer_close"] = body_new[:500]
             meta["engineer_close_mid"] = mid
             meta["engineer_close_refs"] = (m.get("references") or "").strip()
             meta["engineer_close_reply_from"] = mail_meta
             emit = "engineer_close"
         elif from_e in [a.lower() for a in (meta.get("approver_emails") or [])]:
-            if any(k in body for k in _REJECT_KW):
+            if any(k in body_new for k in _REJECT_KW):
                 # 审批驳回：显式中止，不再无限重发审批 D
                 meta["approval_rejected"] = True
                 meta["target_supplier"] = ""
                 meta["approval_choice"] = ""
                 emit = "approval_reject"
-            elif any(k in body for k in _APPROVE_KW):
+            elif any(k in body_new for k in _APPROVE_KW):
                 # 智能体固定规则：比价后选最低价。审批人「确认采购」→ 沿用最低价；
                 # 仅当审批人「显式点名其他供应商」(且确已报价) 才覆盖。
                 qq = [q for q in (meta.get("quotes") or []) if q.get("email") and q.get("unit_price")]
                 low = min(qq, key=lambda q: float(q.get("unit_price") or 10 ** 12)) if qq else None
                 low_email = low["email"] if low else ""
-                named = _supplier_mentioned_in(body, config()["suppliers"])
+                named = _supplier_mentioned_in(body_new, config()["suppliers"])
                 # 覆盖条件：点名存在、确已报价、且与最低价不同
                 if named and named != low_email and any(str(q.get("email")) == named for q in qq):
                     chosen = named
@@ -384,15 +397,15 @@ def process_replies(mg):
                 meta["approval_choice"] = chosen
                 meta["approval_rejected"] = False
                 emit = "approval"
-        elif any(k in body for k in _SHIP_KW):
-            mn = re.search(r"([A-Za-z]{0,6}[\d]{6,})", body)
+        elif any(k in body_new for k in _SHIP_KW):
+            mn = re.search(r"([A-Za-z]{0,6}[\d]{6,})", body_new)
             meta["tracking_no"] = mn.group(1) if mn else body[:80]
             meta["ship_raw"] = body
             meta["ship_mid"] = mid
             meta["ship_reply_from"] = mail_meta
             emit = "shipping"
-        elif _parse_quote(body):
-            q = _parse_quote(body)
+        elif _parse_quote(body_new):
+            q = _parse_quote(body_new)
             q.update({"email": from_e, "raw": body, "msg_id": mid,
                       "refs": (m.get("references") or "").strip(),
                       "reply_all": mail_meta,

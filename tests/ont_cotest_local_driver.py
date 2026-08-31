@@ -120,7 +120,8 @@ def _imap_find(email, pw, from_addr=None, contains=None, limit=40, after_ts=None
             ts = _date_ts(msg)
             if ts is not None and ts < after_ts - 120:
                 continue
-        out.append((_dec(msg.get("Message-ID", "")), subj, _body_of(msg), raw, _dec(msg.get("Cc", ""))))
+        out.append((_dec(msg.get("Message-ID", "")), subj, _body_of(msg), raw,
+                    _dec(msg.get("Cc", "")), _dec(msg.get("To", "")), _dec(msg.get("From", ""))))
         if len(out) >= limit:
             break
     imap.logout()
@@ -149,10 +150,75 @@ def task_no_of(subj):
 EXPECT_CC = [B5, "biqzh@neusoft.com", "260110550@qq.com"]
 
 
-def _cc_has(cc_raw, *addrs):
-    """检查某封邮件的 Cc 头是否包含全部给定邮箱（大小写不敏感）。"""
-    cc = (cc_raw or "").lower()
-    return all(a.lower().strip() in cc for a in addrs)
+def _cc_has(cc_raw, to_raw, *addrs):
+    """检查某封邮件的 Cc 或 To 头是否包含全部给定邮箱（大小写不敏感）。
+
+    注意：智能体「回复全部」时，观察者可能落在 To 也可能落在 Cc
+    （reply_recipients 会按原邮件线程合并收件人，去重后归并到 To），
+    故断言时 To+Cc 一起检查，避免误判『未携带抄送观察者』。
+    """
+    blob = ((cc_raw or "") + " " + (to_raw or "")).lower()
+    return all(a.lower().strip() in blob for a in addrs)
+
+
+def _parse_addrs(header):
+    """从 From/To/Cc 头解析出小写邮箱地址列表（忽略显示名）。"""
+    import email.utils as eu
+    out = []
+    for _name, addr in eu.getaddresses([header or ""]):
+        if addr:
+            out.append(addr.lower())
+    return out
+
+
+def _quote_body(orig):
+    """根据原始邮件元组生成『携带原文』的引文（发件人/时间/主题 + 逐行 > 引用）。"""
+    import email.utils as eu
+    _mid, subj, obody, raw, occ, oto, ofrm = orig
+    date_s = ""
+    try:
+        import email as em
+        m = em.message_from_bytes(raw)
+        dt = eu.parsedate_to_datetime(m.get("Date"))
+        if dt is not None:
+            if dt.tzinfo is not None:
+                dt = dt.astimezone().replace(tzinfo=None)
+            date_s = dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        pass
+    head = ["\n\n----- 原始邮件 -----",
+            f"发件人：{ofrm}",
+            f"发送时间：{date_s}" if date_s else None,
+            f"主题：{subj}",
+            ""]
+    head = [h for h in head if h is not None]
+    lines = list(head)
+    for ln in (obody or "").splitlines():
+        lines.append("> " + ln)
+    return "\n".join(lines)
+
+
+def _reply_all_send(replier, pw, orig, body, name=None, subject=None):
+    """全员回复：To=原始发件人；Cc=原始 To+Cc 中除自己与发件人外的人；并携带原文引文。
+
+    - 这样本地模拟角色发出的回信会像真实邮件客户端一样『回复全部』，
+      抄送观察者(b5/biqzh/qq)也能看到每一封回信；
+    - 正文携带原始邮件引文（> 引用），便于人工核对线程上下文。
+    """
+    mid, subj, obody, raw, occ, oto, ofrm = orig
+    from_addrs = _parse_addrs(ofrm)
+    to_addr = from_addrs[0] if from_addrs else AGENT
+    others = []
+    for a in _parse_addrs(oto) + _parse_addrs(occ) + from_addrs:
+        if a == replier.lower():
+            continue
+        if a not in others:
+            others.append(a)
+    cc_list = [a for a in others if a != to_addr]
+    final_subj = subject if subject else (("Re: " + subj) if not subj.startswith("Re:") else subj)
+    full = body + _quote_body(orig)
+    return _smtp_send(replier, pw, to_addr, final_subj, full,
+                     reply_to=mid, name=name, cc=cc_list)
 
 
 def _smtp_send(email, pw, to, subject, body, reply_to=None, name=None, cc=None):
@@ -167,9 +233,21 @@ def _smtp_send(email, pw, to, subject, body, reply_to=None, name=None, cc=None):
         msg["In-Reply-To"] = reply_to
         msg["References"] = reply_to
     rcpts = [to] + (list(cc) if cc else [])
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30) as s:
-        s.login(email, pw)
-        s.sendmail(email, rcpts, msg.as_string())
+    try:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30) as s:
+            s.login(email, pw)
+            s.sendmail(email, rcpts, msg.as_string())
+    except smtplib.SMTPRecipientsRefused as e:
+        # 个别收件人（如外部观察者）被拒时，降级只发给可送达的内部收件人，
+        # 保证回信仍能到达 b4（agent）以驱动线程归属。
+        bad = set((getattr(e, "recipients", None) or {}).keys())
+        safe = [r for r in rcpts if r not in bad]
+        if not safe:
+            raise
+        print(f"[WARN] 部分收件人被拒（{sorted(bad)}），降级仅发给 {safe}", flush=True)
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30) as s:
+            s.login(email, pw)
+            s.sendmail(email, safe, msg.as_string())
     return str(msg["Message-ID"])
 
 
@@ -252,18 +330,17 @@ def main():
     log(f"② 服务器 009 已向 b2/b6 发出询价 B ✅（task_no={task_no}）")
     # 抄送透传断言：B 的 Cc 须含初始询价 A 的全部抄送观察者
     for who, bm in (("b2", b2m), ("b6", b6m)):
-        assert _cc_has(bm[4], *EXPECT_CC), f"{who} 收到的 B 未携带全部抄送观察者：Cc={bm[4]!r}"
+        assert _cc_has(bm[4], bm[5], *EXPECT_CC), f"{who} 收到的 B 未携带全部抄送观察者：Cc={bm[4]!r} To={bm[5]!r}"
     log("② B 已携带抄送观察者(CC) ✅")
     price_by = {B2: "1280", B6: "980"}
     for sup, found in ((B2, b2m), (B6, b6m)):
-        mid, subj, _, _, _ = found
+        mid, subj, *_ = found
         price = price_by.get(sup, "1000")
         quote = (f"尊敬采购方：\n针对贵司询价，我方报价如下：\n"
                  f"品牌：Seagate\n型号：ST-ONT-001\n数量：2\n单价：{price}元\n"
                  f"成色：全新\n货期：5天\n- {SUP_NAME.get(sup, '供应商')}")
-        _smtp_send(sup, (P2 if sup == B2 else P6), AGENT, f"Re: {subj}", quote,
-                   reply_to=mid, name=SUP_NAME.get(sup, "供应商"))
-        log(f"   ③ {sup}（{SUP_NAME.get(sup)}）已回报价 {price}元")
+        _reply_all_send(sup, (P2 if sup == B2 else P6), found, quote, name=SUP_NAME.get(sup, "供应商"))
+        log(f"   ③ {sup}（{SUP_NAME.get(sup)}）已回报价 {price}元（全员回复 + 携带原文）")
     log("③ 报价已回，等待服务器 009 归集并给 b5 发审批 D…")
 
     # ④ 服务器 009 发 D → b5；b5 确认
@@ -271,14 +348,13 @@ def main():
     dfound = wait_for_inbox(B5, P5, from_addr=AGENT, contains="【询价汇总】",
                             after_ts=a_sent_ts, label="b5 的 D")
     assert dfound, f"b5 未在时限内收到服务器 009 发出的审批 D（task_no={task_no}）"
-    dmid, dsubj, _, _, dcc = dfound
+    dmid, dsubj, _, _, dcc, dcc_to, _ = dfound
     assert "【询价汇总】" in dsubj, f"b5 收到的并非审批 D：{dsubj}"
     # 抄送透传断言：D 的 Cc 须含全部抄送观察者
-    assert _cc_has(dcc, *EXPECT_CC), f"D 未携带全部抄送观察者：Cc={dcc!r}"
+    assert _cc_has(dcc, dcc_to, *EXPECT_CC), f"D 未携带全部抄送观察者：Cc={dcc!r} To={dcc_to!r}"
     log("④ 服务器 009 已向 b5 发出审批 D ✅（已携带抄送观察者）；b5 回复「确认采购」…")
-    _smtp_send(B5, P5, AGENT, f"Re: {dsubj}", "确认采购，按比价最低价执行。\n- 李审批",
-               reply_to=dmid, name=NAME[B5])
-    log("⑤ b5 已回复「确认采购」，等待服务器 009 向最低价供应商发订货 E…")
+    _reply_all_send(B5, P5, dfound, "确认采购，按比价最低价执行。\n- 李审批", name=NAME[B5])
+    log("⑤ b5 已回复「确认采购」（全员回复 + 携带原文），等待服务器 009 向最低价供应商发订货 E…")
 
     # ⑥ 服务器 009 发 E → 最低价供应商(b6)；b6 回单号
     #   ⚠️ 关键：必须用 E 专属主题「【订货确认】」精确匹配，不能只用 task_no
@@ -288,32 +364,30 @@ def main():
     efound = wait_for_inbox(B6, P6, from_addr=AGENT, contains="【订货确认】",
                             after_ts=a_sent_ts, label="b6 的 E（订货确认）")
     assert efound, f"b6 未在时限内收到服务器 009 发出的订货 E（task_no={task_no}）"
-    emid, esubj, _, _, ecc = efound
+    emid, esubj, _, _, ecc, eto, _ = efound
     assert "【订货确认】" in esubj, f"b6 收到的并非订货 E：{esubj}"
-    # 抄送透传断言：E 的 Cc 须含全部抄送观察者
-    assert _cc_has(ecc, *EXPECT_CC), f"E 未携带全部抄送观察者：Cc={ecc!r}"
+    # 抄送透传断言：E 的 Cc/To 须含全部抄送观察者（回复全部时观察者可能在 To）
+    assert _cc_has(ecc, eto, *EXPECT_CC), f"E 未携带全部抄送观察者：Cc={ecc!r} To={eto!r}"
     log("⑥ 服务器 009 已向最低价供应商(b6)发出订货 E ✅（已携带抄送观察者）；b6 回快递单号…")
-    _smtp_send(B6, P6, AGENT, f"Re: {esubj}", "订货已发出，快递单号：SF8882001ONT\n预计3天到达。\n- 神州数码",
-               reply_to=emid, name=NAME[B6])
-    log("⑦ b6 已回快递单号（线程挂在 E 上），等待工程师 b1 发「更换完成」触发结算 G…")
+    _reply_all_send(B6, P6, efound, "订货已发出，快递单号：SF8882001ONT\n预计3天到达。\n- 神州数码", name=NAME[B6])
+    log("⑦ b6 已回快递单号（全员回复 + 携带原文，线程挂在 E 上），等待工程师 b1 发「更换完成」触发结算 G…")
 
     # ⑧ b1 → b4 发「更换完成」：
     #   必须带 In-Reply-To=E 的 message-id（emid），否则 009 的 _thread_match(inrep, _mids_of)
     #   因无线程归属而忽略该邮件 → engineer_close 永不置位 → G 永不触发。
     time.sleep(3)
-    _smtp_send(B1, P1, AGENT, f"Re: {esubj} 更换完成",
-               "设备已更换完成，备件运行正常，请安排结算。\n- 张运维",
-               reply_to=emid, name=NAME[B1])
-    log("⑧ 已发「更换完成」(b1→b4，回复 E 线程 emid)，等待服务器 009 发结算 G…")
+    _reply_all_send(B1, P1, efound, "设备已更换完成，备件运行正常，请安排结算。\n- 张运维",
+                   name=NAME[B1], subject=f"Re: {esubj} 更换完成")
+    log("⑧ 已发「更换完成」(b1→b4 全员回复 + 携带原文，回复 E 线程)，等待服务器 009 发结算 G…")
 
     # ⑨ 服务器 009 发 G → b6（结算）。
     #   G 主题含「【采购结束】」，精确匹配；E 主题为「【订货确认】」，不会误命中。
     gfound = wait_for_inbox(B6, P6, from_addr=AGENT, contains="【采购结束】",
                             after_ts=a_sent_ts, label="b6 的 G")
     assert gfound, f"b6 未在时限内收到服务器 009 发出的结算 G（task_no={task_no}）"
-    gmid, gsubj, _, _, gcc = gfound
-    # 抄送透传断言：G 的 Cc 须含全部抄送观察者
-    assert _cc_has(gcc, *EXPECT_CC), f"G 未携带全部抄送观察者：Cc={gcc!r}"
+    gmid, gsubj, _, _, gcc, gto, _ = gfound
+    # 抄送透传断言：G 的 Cc/To 须含全部抄送观察者
+    assert _cc_has(gcc, gto, *EXPECT_CC), f"G 未携带全部抄送观察者：Cc={gcc!r} To={gto!r}"
     log("⑨ 服务器 009 已发出结算 G ✅（已携带抄送观察者）—— 全链路 B→D→E→F→G 在『服务器 agent + 本地角色』架构下跑通")
 
     # 只读观察 b4 收件箱
