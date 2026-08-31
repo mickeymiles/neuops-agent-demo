@@ -161,6 +161,13 @@ def _cc_has(cc_raw, to_raw, *addrs):
     return all(a.lower().strip() in blob for a in addrs)
 
 
+def _to_not_has(to_raw, *addrs):
+    """严格断言：给定邮箱不得出现在主送(To)中（适用于 E/G，主送必须仅为供应商）。"""
+    to_blob = (to_raw or "").lower()
+    bad = [a for a in addrs if a.lower().strip() in to_blob]
+    return not bad, bad
+
+
 def _parse_addrs(header):
     """从 From/To/Cc 头解析出小写邮箱地址列表（忽略显示名）。"""
     import email.utils as eu
@@ -368,6 +375,9 @@ def main():
     assert "【订货确认】" in esubj, f"b6 收到的并非订货 E：{esubj}"
     # 抄送透传断言：E 的 Cc/To 须含全部抄送观察者（回复全部时观察者可能在 To）
     assert _cc_has(ecc, eto, *EXPECT_CC), f"E 未携带全部抄送观察者：Cc={ecc!r} To={eto!r}"
+    # 严格断言：E 主送必须为最低价供应商(b6)，观察者/审批人不得出现在主送（已在产品侧移除 reply-all To 合并）
+    ok, bad = _to_not_has(eto, *EXPECT_CC)
+    assert ok, f"E 主送混入观察者/审批人，违反『主送=供应商、其余抄送』：To={eto!r} 命中={bad!r}"
     log("⑥ 服务器 009 已向最低价供应商(b6)发出订货 E ✅（已携带抄送观察者）；b6 回快递单号…")
     _reply_all_send(B6, P6, efound, "订货已发出，快递单号：SF8882001ONT\n预计3天到达。\n- 神州数码", name=NAME[B6])
     log("⑦ b6 已回快递单号（全员回复 + 携带原文，线程挂在 E 上），等待工程师 b1 发「更换完成」触发结算 G…")
@@ -388,6 +398,9 @@ def main():
     gmid, gsubj, _, _, gcc, gto, _ = gfound
     # 抄送透传断言：G 的 Cc/To 须含全部抄送观察者
     assert _cc_has(gcc, gto, *EXPECT_CC), f"G 未携带全部抄送观察者：Cc={gcc!r} To={gto!r}"
+    # 严格断言：G 主送必须为供应商(b6)，观察者/审批人不得出现在主送
+    ok, bad = _to_not_has(gto, *EXPECT_CC)
+    assert ok, f"G 主送混入观察者/审批人，违反『主送=供应商、其余抄送』：To={gto!r} 命中={bad!r}"
     log("⑨ 服务器 009 已发出结算 G ✅（已携带抄送观察者）—— 全链路 B→D→E→F→G 在『服务器 agent + 本地角色』架构下跑通")
 
     # 只读观察 b4 收件箱
