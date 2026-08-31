@@ -151,7 +151,9 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         by_sup = dict((task.get("spare_info") or {}).get("b_msg_by_supplier") or {})
         for email in to:
             subj, _body = mail_tpl.render("B", ctx, task)
-            r = mg.send_mail(to=[email], subject=subj, body_text=_body)
+            # B 也携带初始询价 A 的抄送观察者（运维工程师要求的全程可见人）
+            r = mg.send_mail(to=[email], subject=subj, body_text=_body,
+                             cc=ctx.get("inquiry_cc") or None)
             _mid = (r or {}).get("message_id") or (r or {}).get("msg_id") if isinstance(r, dict) else ""
             if _mid:
                 b_mids.append(_mid)
@@ -171,7 +173,7 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         reply_to = (q.get("msg_id") or "").strip()
         refs = (q.get("refs") or "").strip() or ((meta.get("b_msg_by_supplier") or {}).get(sel) or "")
         ok, detail, r = _send_tpl(mg, "E", ctx, task, to=[sel],
-                                  cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or []),
+                                  cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or []) + (ctx.get("inquiry_cc") or []),
                                   reply_to=reply_to or None, refs=refs or None,
                                   original_body=q.get("raw"),
                                   reply_all_from=q.get("reply_all"))
@@ -186,7 +188,7 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         meta = dict(task.get("spare_info") or {})
         # D 内部流：回复工程师询价(A)线程，携带原始采购申请原文；To工程师 + Cc审批人
         ok, detail, r = _send_tpl(mg, "D", ctx, task, to=[ctx.get("from_email")],
-                                  cc=ctx.get("approver_emails") or [],
+                                  cc=(ctx.get("approver_emails") or []) + (ctx.get("inquiry_cc") or []),
                                   reply_to=(meta.get("inquiry_mid") or "").strip() or None,
                                   refs=((meta.get("inquiry_refs") or "") + " " +
                                         (meta.get("inquiry_mid") or "")).strip() or None,
@@ -214,7 +216,7 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
             refs = (q.get("refs") or "").strip()
             orig = (q.get("raw") or "") + "\n" + (meta.get("ship_raw") or "")
             ok, detail, r = _send_tpl(mg, "G", ctx, task, to=[sup] if sup else [ctx.get("from_email")],
-                                      cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or []),
+                                      cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or []) + (ctx.get("inquiry_cc") or []),
                                       reply_to=reply_to or None, refs=refs or None,
                                       original_body=orig, reply_all_from=q.get("reply_all"))
             meta["g_msg_id"] = ((r or {}).get("message_id") or (r or {}).get("msg_id")
@@ -230,7 +232,7 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         if mg:
             # F 中止：回复工程师询价(A)线程，携带原始采购申请原文；To工程师 + Cc审批人
             _send_tpl(mg, "F", ctx, task, to=[ctx.get("from_email")],
-                      cc=ctx.get("approver_emails") or [],
+                      cc=(ctx.get("approver_emails") or []) + (ctx.get("inquiry_cc") or []),
                       reply_to=(meta.get("inquiry_mid") or "").strip() or None,
                       refs=((meta.get("inquiry_refs") or "") + " " +
                             (meta.get("inquiry_mid") or "")).strip() or None,

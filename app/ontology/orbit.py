@@ -229,6 +229,8 @@ def ctx_from_task(task):
         "spec": meta.get("spec"), "condition": meta.get("condition"), "count": meta.get("count"),
         "address": meta.get("address"), "urgent": meta.get("urgent"),
         "from_email": task.get("from_email"), "approver_emails": approvers,
+        # 初始询价 A 的抄送人（运维工程师在发 A 时抄送的观察者），须透传到后续所有邮件
+        "inquiry_cc": list((meta.get("inquiry_reply_from") or {}).get("cc_email_list") or []),
         "internal_status": internal, "external_status": task.get("external_status"),
         "target_supplier_list": [s.get("email") for s in target_list],
         "valid_quotes": valid, "valid_quote_count": len(valid), "raw_quote_count": len(quotes),
