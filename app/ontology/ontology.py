@@ -8,7 +8,7 @@
 
 LLM 只做「读 ABox+规则 → 分析 → 决定下一动作」，校验器约束可执行性，不替代决策。
 """
-from . import store, schema
+from . import schema
 
 # ────────────────────────────────────────────
 # TBox：领域概念（供 LLM 语境 / 文档 / 校验引用）
@@ -174,7 +174,6 @@ def build_abox(task: dict) -> dict:
     supplied_set = bool(meta.get("target_supplier"))
     order_sent = bool(meta.get("e_msg_id"))
     approval_sent = bool(meta.get("d_msg_id"))
-    tracking = bool(meta.get("tracking_no"))
     engineer_done = bool(meta.get("engineer_close"))
     valid_quotes = [q for q in quotes if q.get("email") and q.get("unit_price")]
     facts = {

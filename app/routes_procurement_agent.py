@@ -36,6 +36,7 @@ from app.mcp_tools import (
     tool_table_update,
     tool_procurement_query_spare_part,
     tool_procurement_query_contract,
+    _proc_mail_cfg,
 )
 
 router = APIRouter(prefix="/api/procurement-agent", tags=["procurement-agent"])
@@ -2512,7 +2513,7 @@ def _tick_prefetch_unseen(cfg: dict):
         # 如果 UNSEEN 返回 0 封（163 IMAP UNSEEN 搜索不稳定时），清缓存让后续 step 回退全量拉取
         if n == 0:
             _TICK_UNSEEN_CACHE = None
-            print(f"[mail-inquiry tick] UNSEEN 0 → fallback 全量拉取")
+            print("[mail-inquiry tick] UNSEEN 0 → fallback 全量拉取")
     except Exception as e:
         print(f"[mail-inquiry tick] UNSEEN pre-fetch failed: {e}")
         _TICK_UNSEEN_CACHE = None
@@ -2580,8 +2581,8 @@ def _fetch_sent_mail_refs(target_msg_id: str) -> str:
     if not mid:
         return ""
     try:
-        import imaplib, email as _em, os as _os
-        from email.header import decode_header as _dh
+        import imaplib
+        import email as _em
 
         cfg = _proc_mail_cfg()
         user = str(cfg.get("mail_username") or "").strip()

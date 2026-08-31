@@ -4,9 +4,8 @@ Stage A（只读对照）：读事实→选动作→规则校验→只记录对�
 Stage B/C：dry_run=False 时执行动作（发送/落库），此处预留。
 """
 import json
-import os
 
-from . import knowledge, actions as act, store
+from . import knowledge
 
 
 def _bool(v):

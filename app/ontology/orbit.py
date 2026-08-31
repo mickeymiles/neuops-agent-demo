@@ -9,7 +9,6 @@ import time
 import json
 
 from . import store, execution
-from .decision import build_fact_context
 
 _TERMINAL = ("CLOSED_ABORT", "CLOSED_MANUAL", "R_SETTLE")
 _APPROVE_KW = ("确认", "采购", "同意", "采纳", "就选")
@@ -259,7 +258,7 @@ def claim_inquiries(mg, mode="off", roll=0.0):
         _scan_hours = 48
     try:
         facts = fetch_new_inquiry_facts(mg, hours=_scan_hours, store=store)
-    except Exception as e:
+    except Exception:
         return claimed
     for it in facts:
         fields = it["fields"]

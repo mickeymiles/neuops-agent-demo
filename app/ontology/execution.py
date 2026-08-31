@@ -9,7 +9,7 @@ Governor 默认 'off'（不接管、不执行任何变更，零影响现轨）�
 import os
 import time
 
-from . import store, schema, mail_tpl
+from . import store, mail_tpl
 
 # 治理：本轨默认 off（不接管、不执行变更，零影响现轨，本体轨暂停改走传统状态机）。
 # 需要时可用 ONT_MODE / ONT_EXEC / ONT_LLM 开启。

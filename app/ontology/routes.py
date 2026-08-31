@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 import asyncio
 import threading
 
-from . import store, actions as act, engine, schema
+from . import store, actions as act, engine
 from .decision import build_fact_context, propose_action
 
 router = APIRouter(prefix="/api/ontology-emp009", tags=["ontology-emp009"])
@@ -186,7 +186,6 @@ async def run_managed(request: Request):
     from .ingest import fetch_new_inquiry_facts
     from . import mail_gateway as mg, execution, store
     from .engine import decide_action
-    from .decision import build_fact_context
     try:
         facts = fetch_new_inquiry_facts(mg, hours=int(body.get("hours", 2)), store=store)
     except Exception as e:

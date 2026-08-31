@@ -79,4 +79,6 @@ jobs:
              DEPLOY_PROC_FEISHU_BITABLE_APP_TOKEN='${{ secrets.DEPLOY_PROC_FEISHU_BITABLE_APP_TOKEN }}' \
              DEPLOY_PROC_FEISHU_BITABLE_TASK_TABLE_ID='${{ secrets.DEPLOY_PROC_FEISHU_BITABLE_TASK_TABLE_ID }}' \
              DEPLOY_PROC_FEISHU_BITABLE_LEDGER_TABLE_ID='${{ secrets.DEPLOY_PROC_FEISHU_BITABLE_LEDGER_TABLE_ID }}' \
+             DEPLOY_ONT_MAIL_USERNAME='${{ secrets.DEPLOY_ONT_MAIL_USERNAME }}' \
+             DEPLOY_ONT_MAIL_PASSWORD='${{ secrets.DEPLOY_ONT_MAIL_PASSWORD }}' \
              cd ${{ secrets.DEPLOY_PATH }} && bash scripts/remote_deploy.sh"

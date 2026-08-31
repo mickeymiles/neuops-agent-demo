@@ -24,7 +24,8 @@ def load_templates():
         if want in tpls:
             continue
         try:
-            import json, os
+            import json
+            import os
             p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              "..", "skills", "skill-proc-mail-inquiry.json")
             with open(os.path.normpath(p), encoding="utf-8") as f:
