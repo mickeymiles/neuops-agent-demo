@@ -1285,6 +1285,7 @@ body {
 input, textarea, select { background: #0E1626; border-color: #27334B; color: var(--c-text-body); }
 input:focus, textarea:focus, select:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15); }
 .tag, .badge { border: 1px solid #27334B; }
+.badge.warn { color: #FBBF24; border-color: #5A4A1F; background: rgba(251, 191, 36, .08); }
 table th { background: #0E1626; color: var(--c-text-secondary); border-color: #1E2A44; }
 table td { border-color: #1E2A44; }
 .tb-btn, .tool-chip, .chip { border: 1px solid #27334B; background: #0E1626; color: var(--c-text-secondary); }
@@ -1563,3 +1564,11 @@ mark { background: rgba(56, 189, 248, 0.2); color: var(--c-text-h1); }
 .config-field input:focus, .config-field textarea:focus { border-color: var(--c-primary); }
 .config-field textarea { height: auto; min-height: 80px; padding: 8px 10px; resize: vertical; line-height: 1.5; }
 .config-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* 数字员工「交互方式」Tab 的启用开关（与监控页风格一致） */
+.switch { position: relative; width: 40px; height: 22px; flex: none; cursor: pointer; display: inline-block; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .slider { position: absolute; inset: 0; background: #334155; border-radius: 22px; transition: background .25s ease; }
+.switch .slider::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #94a3b8; border-radius: 50%; transition: transform .25s ease, background .25s ease; }
+.switch input:checked + .slider { background: linear-gradient(135deg, var(--accent, #22D3EE), var(--accent2, #6366F1)); box-shadow: 0 0 10px rgba(34,211,238,.35); }
+.switch input:checked + .slider::before { transform: translateX(18px); background: #fff; }

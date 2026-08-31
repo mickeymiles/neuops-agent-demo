@@ -392,6 +392,109 @@ async function saveEmpSettings(empId) {
   } catch (e) { uiAlert({ title: '保存失败', message: e.message, type: 'error' }); }
 }
 
+// ── 数字员工「交互方式」配置（邮箱 / 飞书 / 微信）──
+async function renderEmpChannelsTab() {
+  const emp = window.__curEmp;
+  if (!emp) return;
+  const wrap = document.getElementById('emp-tab-channels');
+  wrap.innerHTML = `<div class="emp-detail-body"><div style="max-width:760px;margin:0 auto;padding:20px;">
+    <div class="config-card" style="border:1px solid var(--c-border-light);border-radius:12px;padding:16px;background:var(--c-card-bg);margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <div>
+          <h3 style="margin:0 0 4px;font-size:15px;">数字员工启用</h3>
+          <div style="font-size:12px;color:var(--c-text-secondary);">在「数字员工配置」中停用后，该员工的常驻调度将立即停止执行（无需重启服务）。</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="chEmpEnabled" ${emp.enabled ? 'checked' : ''} onchange="saveEmpEnabled('${emp.id}', this)"><span class="slider"></span></label>
+      </div>
+    </div>
+    <div id="chList" style="display:flex;flex-direction:column;gap:16px;">加载中…</div>
+  </div></div>`;
+  try {
+    const d = await fetch('/api/employees/' + emp.id + '/channels').then(x => x.json());
+    if (!d.success) { wrap.querySelector('#chList').textContent = '加载失败'; return; }
+    wrap.querySelector('#chList').innerHTML = (d.channels || []).map(ch => channelCard(emp.id, ch)).join('');
+  } catch (e) {
+    wrap.querySelector('#chList').textContent = '加载失败：' + e.message;
+  }
+}
+
+function channelCard(empId, ch) {
+  const c = ch.config || {};
+  if (ch.channel === 'email') {
+    return `<div class="config-card" style="border:1px solid var(--c-border-light);border-radius:12px;padding:16px;background:var(--c-card-bg);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:15px;">✉️ 邮箱（当前生效渠道）</h3>
+        <label class="switch"><input type="checkbox" id="chEmailEnabled" ${ch.enabled ? 'checked' : ''}><span class="slider"></span></label>
+      </div>
+      <div class="config-field"><label>发件邮箱地址</label><input id="chEmailAddress" type="text" placeholder="biquanzhi4@163.com" value="${escapeHtml(c.address || '')}"></div>
+      <div class="config-field"><label>邮箱授权码（163 IMAP/SMTP，留空则不修改）</label><input id="chEmailPass" type="password" placeholder="••••••（留空则不修改）"></div>
+      <div class="config-row2">
+        <div class="config-field"><label>SMTP Host</label><input id="chSmtpHost" value="${escapeHtml(c.smtp_host || 'smtp.163.com')}"></div>
+        <div class="config-field"><label>SMTP Port</label><input id="chSmtpPort" value="${escapeHtml(String(c.smtp_port || '465'))}"></div>
+      </div>
+      <div class="config-row2">
+        <div class="config-field"><label>IMAP Host</label><input id="chImapHost" value="${escapeHtml(c.imap_host || 'imap.163.com')}"></div>
+        <div class="config-field"><label>IMAP Port</label><input id="chImapPort" value="${escapeHtml(String(c.imap_port || '993'))}"></div>
+      </div>
+      <div class="config-field"><label>显示名称</label><input id="chDisplayName" value="${escapeHtml(c.display_name || '')}"></div>
+      <div class="form-actions"><button class="btn-primary-filled" onclick="saveEmpChannels('${empId}', 'email')">保存邮箱配置</button></div>
+    </div>`;
+  }
+  // feishu / wechat：规划中
+  const label = ch.channel === 'feishu' ? '💬 飞书' : '💬 微信';
+  return `<div class="config-card" style="border:1px dashed var(--c-border-light);border-radius:12px;padding:16px;background:var(--c-card-bg);opacity:.92;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <h3 style="margin:0;font-size:15px;">${label}</h3>
+      <span class="badge warn">规划中</span>
+    </div>
+    <div class="config-field"><label>App ID</label><input id="ch${ch.channel}AppId" type="text" placeholder="（规划中）"></div>
+    <div class="config-field"><label>App Secret</label><input id="ch${ch.channel}Secret" type="password" placeholder="（规划中）"></div>
+    <div class="form-actions"><button class="btn-outline" onclick="saveEmpChannels('${empId}', '${ch.channel}')">保存（暂未接入运行时）</button></div>
+  </div>`;
+}
+
+async function saveEmpChannels(empId, channel) {
+  let enabled = true, config = {};
+  if (channel === 'email') {
+    enabled = document.getElementById('chEmailEnabled').checked;
+    config = {
+      address: document.getElementById('chEmailAddress').value.trim(),
+      password: document.getElementById('chEmailPass').value,
+      smtp_host: document.getElementById('chSmtpHost').value.trim(),
+      smtp_port: document.getElementById('chSmtpPort').value.trim() || '465',
+      imap_host: document.getElementById('chImapHost').value.trim(),
+      imap_port: document.getElementById('chImapPort').value.trim() || '993',
+      display_name: document.getElementById('chDisplayName').value.trim(),
+    };
+  } else {
+    config = {
+      app_id: document.getElementById('ch' + channel + 'AppId').value.trim(),
+      app_secret: document.getElementById('ch' + channel + 'Secret').value,
+    };
+  }
+  try {
+    const r = await fetch(`/api/employees/${empId}/channels/${channel}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, config })
+    }).then(x => x.json());
+    if (!r.success) { uiAlert({ title: '保存失败', message: r.error || '未知错误', type: 'error' }); return; }
+    uiAlert({ title: '已保存', message: channel + ' 配置已更新', type: 'success' });
+    renderEmpChannelsTab();
+  } catch (e) { uiAlert({ title: '保存失败', message: e.message, type: 'error' }); }
+}
+
+async function saveEmpEnabled(empId, cb) {
+  try {
+    const r = await fetch(`/api/employees/${empId}/enabled`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: cb.checked })
+    }).then(x => x.json());
+    if (!r.success) { uiAlert({ title: '操作失败', message: '未能切换启用状态', type: 'error' }); cb.checked = !cb.checked; return; }
+    window.__curEmp.enabled = cb.checked;
+    uiAlert({ title: cb.checked ? '已启用' : '已停用', message: '数字员工 ' + empId + (cb.checked ? ' 已启用，常驻调度将开始执行' : ' 已停用，常驻调度将停止执行'), type: 'success' });
+  } catch (e) { uiAlert({ title: '操作失败', message: e.message, type: 'error' }); cb.checked = !cb.checked; }
+}
+
 // 按业务分组聚合：空分组统一归「未分组」，未分组区块排最后
 function groupByBizGroup(items, getGroup) {
   const map = new Map();
@@ -1339,10 +1442,11 @@ function renderEmpDetailTop(emp) {
       <div class="emp-detail-tabs">
         <button class="emp-detail-tab ${curTab === 'skill' ? 'active' : ''}" onclick="window.__empTab='skill';renderEmpDetailTop(window.__curEmp);renderEmpSkillTab()">技能</button>
         <button class="emp-detail-tab ${curTab === 'mcp' ? 'active' : ''}" onclick="window.__empTab='mcp';renderEmpDetailTop(window.__curEmp);renderEmpMcpTab()">MCP 服务</button>
+        <button class="emp-detail-tab ${curTab === 'channels' ? 'active' : ''}" onclick="window.__empTab='channels';renderEmpDetailTop(window.__curEmp);renderEmpChannelsTab()">交互方式</button>
         <button class="emp-detail-tab ${curTab === 'settings' ? 'active' : ''}" onclick="window.__empTab='settings';renderEmpDetailTop(window.__curEmp);renderEmpSettingsTab()">设置</button>
       </div>
     </div>`;
-  ['emp-tab-skill', 'emp-tab-mcp', 'emp-tab-settings', 'emp-tab-conv'].forEach(id => {
+  ['emp-tab-skill', 'emp-tab-mcp', 'emp-tab-channels', 'emp-tab-settings', 'emp-tab-conv'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
   });

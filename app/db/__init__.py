@@ -81,6 +81,9 @@ from .employees import (
     db_upsert_skill,
     db_delete_skill,
     db_set_employee_enabled,
+    db_get_employee_channel,
+    db_set_employee_channel,
+    db_list_employee_channels,
 )
 
 from .tasks import (

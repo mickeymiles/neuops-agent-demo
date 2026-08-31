@@ -138,6 +138,23 @@ def _proc_mail_cfg():
         "feishu_bitable_task_table_id": _proc_cfg.PROC_FEISHU_BITABLE_TASK_TABLE_ID,
         "feishu_bitable_ledger_table_id": _proc_cfg.PROC_FEISHU_BITABLE_LEDGER_TABLE_ID,
     }
+    # 1) 数字员工交互方式（employee_channels）优先：emp-008 的邮箱由「数字员工配置界面」管理
+    try:
+        from app.db.employees import db_get_employee_channel
+        ch = db_get_employee_channel("emp-008", "email")
+        if ch and ch.get("config"):
+            c = ch["config"]
+            addr, pwd = (c.get("address") or "").strip(), (c.get("password") or "").strip()
+            if addr and pwd:
+                cfg["mail_username"] = addr
+                cfg["mail_password"] = pwd
+                cfg["imap_host"] = c.get("imap_host") or cfg["imap_host"]
+                cfg["imap_port"] = c.get("imap_port") or cfg["imap_port"]
+                cfg["smtp_host"] = c.get("smtp_host") or cfg["smtp_host"]
+                cfg["smtp_port"] = c.get("smtp_port") or cfg["smtp_port"]
+    except Exception:
+        pass
+    # 2) 历史库配置 proc_credentials（spare_mail_config）兜底
     try:
         from app.db import spare_mail as _spm
         db_cfg = _spm.spare_mail_get_config("proc_credentials") or {}

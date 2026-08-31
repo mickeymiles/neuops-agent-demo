@@ -2,11 +2,15 @@
 """员工 / 技能域"""
 
 import json
+from datetime import datetime
 
 from .base import (
     _db_lock,
     _get_conn,
 )
+
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def db_list_employees() -> list:
     with _db_lock:
@@ -234,7 +238,7 @@ def db_delete_skill(skill_id: str):
 
 
 def db_set_employee_enabled(emp_id: str, enabled: bool):
-    """开关数字员工启用状态（仅监控页展示，不影响主应用路由）"""
+    """开关数字员工启用状态（真实生效：运行时 governor 会读取该字段决定员工是否执行）。"""
     with _db_lock:
         conn = _get_conn()
         try:
@@ -244,5 +248,76 @@ def db_set_employee_enabled(emp_id: str, enabled: bool):
             )
             conn.commit()
             return cur.rowcount > 0
+        finally:
+            conn.close()
+
+
+# ── 数字员工「交互方式」配置（邮箱 / 飞书 / 微信 …）──
+# 这是智能体作为「一等可管理实体」的核心：每个员工的交互渠道（含凭据）都存库、
+# 页面可配，运行时按 (employee_id, channel) 读取，不再依赖 .env / 脚本。
+
+def db_get_employee_channel(emp_id: str, channel: str):
+    """读取某员工的单个交互渠道配置。返回 {enabled, config} 或 None。"""
+    emp_id, channel = (emp_id or "").strip(), (channel or "").strip()
+    if not emp_id or not channel:
+        return None
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            r = conn.execute(
+                "SELECT enabled, config_json FROM employee_channels WHERE employee_id=? AND channel=?",
+                (emp_id, channel)).fetchone()
+            if not r:
+                return None
+            cfg = {}
+            try:
+                cfg = json.loads(r["config_json"] or "{}")
+            except Exception:
+                cfg = {}
+            return {"enabled": bool(r["enabled"]), "config": cfg}
+        finally:
+            conn.close()
+
+
+def db_set_employee_channel(emp_id: str, channel: str, enabled: bool, config: dict) -> bool:
+    """upsert 某员工的单个交互渠道配置。成功返回 True。"""
+    emp_id, channel = (emp_id or "").strip(), (channel or "").strip()
+    if not emp_id or not channel:
+        return False
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO employee_channels (employee_id, channel, enabled, config_json, updated_at) "
+                "VALUES (?,?,?,?,?) ON CONFLICT(employee_id, channel) DO UPDATE SET "
+                "enabled=excluded.enabled, config_json=excluded.config_json, updated_at=excluded.updated_at",
+                (emp_id, channel, 1 if enabled else 0,
+                 json.dumps(config if config is not None else {}, ensure_ascii=False), _now()))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+
+def db_list_employee_channels(emp_id: str) -> list:
+    """列出某员工的全部交互渠道配置。"""
+    emp_id = (emp_id or "").strip()
+    if not emp_id:
+        return []
+    with _db_lock:
+        conn = _get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT channel, enabled, config_json FROM employee_channels WHERE employee_id=?",
+                (emp_id,)).fetchall()
+            out = []
+            for r in rows:
+                cfg = {}
+                try:
+                    cfg = json.loads(r["config_json"] or "{}")
+                except Exception:
+                    cfg = {}
+                out.append({"channel": r["channel"], "enabled": bool(r["enabled"]), "config": cfg})
+            return out
         finally:
             conn.close()

@@ -222,10 +222,12 @@ async def run_full(request: Request):
     body = await request.json()
     use_llm = bool(body.get("use_llm", False))
     from . import orbit, mail_gateway as mg, execution
-    if execution.governor()["mode"] not in ("ontology", "split"):
-        g = execution.governor()
-        return {"success": True, "note": "governor 未放行",
-                "claim": [], "replies": [], "drive": [], "governor": g}
+    if not execution.needs_exec():
+        # 未放行两类原因：① governor 未开（ONT_MODE/ONT_EXEC/ONT_LLM）；
+        # ② 数字员工 emp-009 在「数字员工配置」中被停用。两者都会让常驻调度零副作用。
+        return {"success": True, "note": "governor 未放行或数字员工已停用",
+                "claim": [], "replies": [], "drive": [], "governor": execution.governor(),
+                "employee_managed": execution._employee_managed()}
     def _locked_run():
         # 锁在线程内部获取：既串行化，又不会因等锁而阻塞 async 事件循环
         with _RUN_LOCK:

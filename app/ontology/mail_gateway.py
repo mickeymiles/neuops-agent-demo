@@ -17,8 +17,34 @@ import email as _email_pkg
 from email.header import decode_header as _decode_header
 
 
-def _ont_mail_cfg() -> dict:
-    """本体轨邮件配置（ONT_MAIL_*）。未显式配置时回退现轨账号，保持单轨行为。"""
+def _ont_mail_cfg(emp_id: str = "emp-009") -> dict:
+    """本体轨邮件配置（按数字员工实体读取）。
+
+    优先级：employee_channels(员工, 'email') 库配置 > ONT_MAIL_* 环境变量兜底。
+    这样 emp-009 的邮箱（b4）完全由「数字员工配置界面」管理，无需改 .env / 脚本 / 重启；
+    未配置时回退环境变量，保持单轨行为。
+    """
+    # 1) 库配置优先：数字员工交互方式（employee_channels）
+    try:
+        from app.db.employees import db_get_employee_channel
+        ch = db_get_employee_channel(emp_id, "email")
+        if ch and ch.get("config"):
+            c = ch["config"]
+            addr = (c.get("address") or "").strip()
+            pwd = (c.get("password") or "").strip()
+            if addr and pwd:
+                return {
+                    "mail_username": addr,
+                    "mail_password": pwd,
+                    "imap_host": c.get("imap_host") or "imap.163.com",
+                    "imap_port": int(c.get("imap_port") or 993),
+                    "smtp_host": c.get("smtp_host") or "smtp.163.com",
+                    "smtp_port": int(c.get("smtp_port") or 465),
+                    "display_name": c.get("display_name") or "采购智能体",
+                }
+    except Exception:
+        pass
+    # 2) 环境变量兜底（首次部署 / 库未配置时）
     from app.config import (ONT_MAIL_USERNAME, ONT_MAIL_PASSWORD,
                             ONT_MAIL_IMAP_HOST, ONT_MAIL_IMAP_PORT,
                             ONT_MAIL_SMTP_HOST, ONT_MAIL_SMTP_PORT,

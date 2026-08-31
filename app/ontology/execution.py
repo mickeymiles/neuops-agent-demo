@@ -16,6 +16,10 @@ from . import store, mail_tpl
 _GOV = {"mode": os.getenv("ONT_MODE", "off"), "roll": float(os.getenv("ONT_ROLL", "0")),
         "exec": os.getenv("ONT_EXEC", "0") == "1", "llm": os.getenv("ONT_LLM", "0") == "1"}
 
+# 本体轨数字员工实体（与 registration.py 保持一致）
+_EMP_ID = "emp-009"
+_SKILL_ID = "skill-ont-proc-inquiry"
+
 
 def set_governor(mode: str = "off", roll: float = 0.0, exec_enabled=False, llm: bool = None):
     """mode: off|legacy|ontology|split。roll∈[0,1]=分给本体轨比例。exec_enabled=允许真实发信/落库。
@@ -33,8 +37,30 @@ def governor():
     return dict(_GOV)
 
 
+def _employee_managed() -> bool:
+    """数字员工 emp-009 及其关联技能在 DB 中是否启用。
+
+    这是「开关在数字员工身上」的真实生效点：页面/监控页把 employees.enabled 置否，
+    运行时即停止执行（无需改 .env / 脚本 / 重启）。
+
+    向后兼容：员工实体尚未注册（测试库/旧库）时按历史默认放行。
+    """
+    try:
+        from app.db.employees import db_get_employee
+        emp = db_get_employee(_EMP_ID)
+    except Exception:
+        return True
+    if emp is None:
+        return True
+    if not emp.get("enabled", True):
+        return False
+    if not (emp.get("skill_states") or {}).get(_SKILL_ID, True):
+        return False
+    return True
+
+
 def _is_managed() -> bool:
-    return _GOV["mode"] in ("ontology", "split") and _GOV["exec"]
+    return _GOV["mode"] in ("ontology", "split") and _GOV["exec"] and _employee_managed()
 
 
 def needs_exec(force: bool = False) -> bool:

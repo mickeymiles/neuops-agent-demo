@@ -75,10 +75,23 @@ async def lifespan(app: FastAPI):
 
 
 async def _proc_scheduler_loop():
-    """采购询比价自动调度：每 1 分钟触发 IMAP 轮询（报价+发货+备件邮件询价）+ 进度告警"""
+    """采购询比价自动调度：每 1 分钟触发 IMAP 轮询（报价+发货+备件邮件询价）+ 进度告警。
+
+    数字员工 emp-008 的启用开关真实生效：在「数字员工配置」中停用后，自动调度跳过本轮
+    （不调用 tick）。手动「触发 Tick」按钮仍走 /scheduler/tick 直连，不受此开关影响。
+    """
     import httpx
     await asyncio.sleep(30)  # 启动后等 30 秒再开始
     while True:
+        # 数字员工启用开关（真实生效）：停用则本轮自动调度空转，不执行任何邮件动作
+        try:
+            from app.db.employees import db_get_employee
+            _e = db_get_employee("emp-008")
+            if _e is not None and not _e.get("enabled", True):
+                await asyncio.sleep(60)
+                continue
+        except Exception:
+            pass
         try:
             async with httpx.AsyncClient() as client:
                 await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=quote", timeout=30)

@@ -11,10 +11,14 @@ from .db import (
     db_delete_employee,
     db_get_deleted_mock_convs,
     db_get_employee,
+    db_get_employee_channel,
     db_link_employee_skills,
     db_list_employees,
+    db_list_employee_channels,
     db_list_mcp_tools,
     db_list_skills,
+    db_set_employee_channel,
+    db_set_employee_enabled,
     db_set_employee_skill_enabled,
     db_unlink_employee_skill,
     db_upsert_employee,
@@ -259,4 +263,123 @@ async def patch_employee(emp_id: str, data: dict):
     emp["updated"] = datetime.now().strftime("%Y-%m-%d")
     db_upsert_employee(emp)
     return JSONResponse({"ok": True, "employee": db_get_employee(emp_id)})
+
+
+# ── 数字员工「交互方式」配置（邮箱 / 飞书 / 微信 …）──
+# 这是智能体作为「一等可管理实体」的核心：每个员工的交互渠道（含凭据）都存库、
+# 页面可配，运行时按 (employee_id, channel) 读取，无需改 .env / 脚本 / 重启。
+
+_CHANNELS = ("email", "feishu", "wechat")
+
+
+def _mask_password(cfg: dict) -> dict:
+    out = dict(cfg or {})
+    if out.get("password"):
+        p = str(out["password"])
+        out["password"] = p[:2] + "****" if len(p) > 4 else "****"
+    return out
+
+
+@router.get("/api/employees/{emp_id}/channels")
+async def get_employee_channels(emp_id: str):
+    """读取某员工的全部交互方式配置（密码掩码）。未配置的渠道返回占位结构。"""
+    emp_id = (emp_id or "").strip()
+    stored = {c["channel"]: c for c in db_list_employee_channels(emp_id)}
+
+    # email：优先库配置；无库配置时合成「当前生效值」（来自 ONT_MAIL_* / proc_credentials 兜底），
+    # 让页面能直观看到当前生效邮箱，但密码不回显明文（库有则占位，兜底则留空由用户填）。
+    email_cfg = {}
+    email_enabled = True
+    if "email" in stored:
+        email_cfg = _mask_password(stored["email"]["config"])
+        email_enabled = stored["email"]["enabled"]
+    else:
+        try:
+            if emp_id == "emp-009":
+                from app.ontology.mail_gateway import _ont_mail_cfg
+                c = _ont_mail_cfg(emp_id)
+            elif emp_id == "emp-008":
+                from app.mcp_tools import _proc_mail_cfg
+                c = _proc_mail_cfg()
+            else:
+                c = {}
+            email_cfg = {
+                "address": c.get("mail_username", ""),
+                "smtp_host": c.get("smtp_host", "smtp.163.com"),
+                "smtp_port": c.get("smtp_port", 465),
+                "imap_host": c.get("imap_host", "imap.163.com"),
+                "imap_port": c.get("imap_port", 993),
+                "display_name": c.get("display_name", ""),
+            }
+        except Exception:
+            email_cfg = {}
+
+    def _ch(ch: str) -> dict:
+        if ch in stored:
+            return {"channel": ch, "enabled": stored[ch]["enabled"],
+                    "config": _mask_password(stored[ch]["config"]),
+                    "managed": True, "status": "active"}
+        return {"channel": ch, "enabled": False, "config": {}, "managed": False,
+                "status": "planned" if ch != "email" else "active"}
+
+    channels = [
+        {"channel": "email", "enabled": email_enabled, "config": email_cfg,
+         "managed": "email" in stored, "status": "active"},
+        _ch("feishu"),
+        _ch("wechat"),
+    ]
+    return JSONResponse({"success": True, "employee_id": emp_id, "channels": channels})
+
+
+@router.put("/api/employees/{emp_id}/channels/{channel}")
+async def put_employee_channel(emp_id: str, channel: str, data: dict):
+    """upsert 某员工的单个交互方式配置。"""
+    emp_id = (emp_id or "").strip()
+    channel = (channel or "").strip().lower()
+    if channel not in _CHANNELS:
+        return JSONResponse({"success": False, "error": "unsupported_channel", "channel": channel}, status_code=400)
+    enabled = bool(data.get("enabled", True))
+    cfg = data.get("config") or {}
+    if channel == "email":
+        cfg = {
+            "address": (cfg.get("address") or "").strip(),
+            "password": (cfg.get("password") or "").strip(),
+            "smtp_host": (cfg.get("smtp_host") or "smtp.163.com").strip(),
+            "smtp_port": int(cfg.get("smtp_port") or 465),
+            "imap_host": (cfg.get("imap_host") or "imap.163.com").strip(),
+            "imap_port": int(cfg.get("imap_port") or 993),
+            "display_name": (cfg.get("display_name") or "").strip(),
+        }
+        # 密码为空 → 保留现有有效密码（库或运行时兜底），避免误清空导致发信失败
+        if not cfg["password"]:
+            cur = db_get_employee_channel(emp_id, "email")
+            if cur and cur["config"].get("password"):
+                cfg["password"] = cur["config"]["password"]
+            else:
+                try:
+                    if emp_id == "emp-009":
+                        from app.ontology.mail_gateway import _ont_mail_cfg
+                        cfg["password"] = _ont_mail_cfg(emp_id).get("mail_password", "")
+                    elif emp_id == "emp-008":
+                        from app.mcp_tools import _proc_mail_cfg
+                        cfg["password"] = _proc_mail_cfg().get("mail_password", "")
+                except Exception:
+                    pass
+        if enabled and (not cfg["address"] or not cfg["password"]):
+            return JSONResponse({"success": False, "error": "email 启用需 address 与 password"}, status_code=400)
+    else:  # feishu / wechat：暂未接入运行时，仅持久化配置
+        cfg = {k: (cfg.get(k) or "").strip() for k in ("app_id", "app_secret", "webhook")}
+    db_set_employee_channel(emp_id, channel, enabled, cfg)
+    return JSONResponse({"success": True, "employee_id": emp_id, "channel": channel,
+                         "enabled": enabled, "managed": True})
+
+
+@router.put("/api/employees/{emp_id}/enabled")
+async def put_employee_enabled(emp_id: str, data: dict):
+    """开关数字员工（真实生效：运行时 governor 会读取该字段决定是否执行）。"""
+    emp_id = (emp_id or "").strip()
+    enabled = bool(data.get("enabled", True))
+    rowcount = db_set_employee_enabled(emp_id, enabled)
+    return JSONResponse({"success": True, "employee_id": emp_id, "enabled": enabled,
+                         "rowcount": rowcount})
 

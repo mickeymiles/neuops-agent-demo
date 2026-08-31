@@ -203,6 +203,17 @@ def init_config_db():
             """)
             _ensure_column(conn, "employees", "enabled", "INTEGER DEFAULT 1")
             _ensure_column(conn, "employees", "workbench_json", "TEXT DEFAULT ''")
+            # 数字员工「交互方式」配置（邮箱 / 飞书 / 微信）：凭据落库、页面可配、运行时读取
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS employee_channels (
+                    employee_id TEXT NOT NULL,
+                    channel TEXT NOT NULL,
+                    enabled INTEGER DEFAULT 1,
+                    config_json TEXT DEFAULT '{}',
+                    updated_at TEXT DEFAULT '',
+                    PRIMARY KEY (employee_id, channel)
+                )
+            """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS skills (
                     id TEXT PRIMARY KEY,
@@ -451,6 +462,19 @@ def init_spare_mail_db():
                     config_key TEXT PRIMARY KEY,
                     config_value TEXT DEFAULT '{}',
                     updated_at TEXT DEFAULT ''
+                )
+            """)
+            # 数字员工「交互方式」配置：邮箱 / 飞书 / 微信 等，按 (员工, 渠道) 维度存储。
+            # 凭据（如邮箱授权码）落库，页面读取时掩码；不进 .env、不进 git。
+            # 这是数字员工作为「一等可管理实体」的核心：启停与交互方式都在实体上配置。
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS employee_channels (
+                    employee_id TEXT NOT NULL,
+                    channel TEXT NOT NULL,
+                    enabled INTEGER DEFAULT 1,
+                    config_json TEXT DEFAULT '{}',
+                    updated_at TEXT DEFAULT '',
+                    PRIMARY KEY (employee_id, channel)
                 )
             """)
             conn.commit()
