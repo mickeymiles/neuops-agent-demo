@@ -107,6 +107,14 @@ def _assert_cc(sent, label, *expect):
         assert not missing, f"{label} 邮件未携带抄送观察者 {missing}：cc={s['cc']} subj={s['subject']}"
 
 
+def _assert_to_only(sent, label, *only):
+    """断言邮件主送(to)恰好为 only 列表，观察者/审批人等不得混入主送。"""
+    only = [o.lower() for o in only]
+    for s in sent:
+        to = [t.lower() for t in s["to"]]
+        assert to == only, f"{label} 主送应为 {only}，实际 {to}（观察者不应进主送）：subj={s['subject']} cc={s['cc']}"
+
+
 def test_cc_propagated_b_to_g(mg, gov):
     """A 带抄送 → B/D/E/G 全部携带这些抄送观察者。"""
     # 阶段 A：工程师发起询价，抄送 OBS
@@ -117,10 +125,10 @@ def test_cc_propagated_b_to_g(mg, gov):
                         cc=OBS)]
     _run(mg)  # → 发 B 询价函
 
-    # 阶段 B：两供应商报价
+    # 阶段 B：两供应商报价（其回复 C 的 cc 含观察者，模拟生产里 B 抄送观察者后供应商回复携带这些收件人）
     mg.mailbox += [
-        _mail("<Q2@t>", S1, "单价 1000元 货期 3天 全新 数量 2", references="<A@t>"),
-        _mail("<Q6@t>", S2, "单价 1200元 货期 5天 原装 数量 2", references="<A@t>"),
+        _mail("<Q2@t>", S1, "单价 1000元 货期 3天 全新 数量 2", references="<A@t>", cc=OBS),
+        _mail("<Q6@t>", S2, "单价 1200元 货期 5天 原装 数量 2", references="<A@t>", cc=OBS),
     ]
     _run(mg)  # → 发 D 审批汇总
 
@@ -140,17 +148,21 @@ def test_cc_propagated_b_to_g(mg, gov):
     assert len(tasks) == 1, tasks
     assert tasks[0]["status"] == "CLOSED", tasks[0]
 
-    # 收集各阶段发出的邮件
+    # 收集各阶段发出的邮件（用主题精确区分 E=订货确认 / G=采购结束，避免主送被合并时误配）
     b_s1 = next((s for s in mg.sent if s["to"] == [S1] and "询价" in s["subject"]), None)
     b_s2 = next((s for s in mg.sent if s["to"] == [S2] and "询价" in s["subject"]), None)
     d = next((s for s in mg.sent if ENG in s["to"] and AP in s["cc"]), None)
-    e = next((s for s in mg.sent if s["to"] == [S1] and ENG in s["cc"] and AP in s["cc"]), None)
-    g = mg.sent[-1]
-    assert b_s1 and b_s2 and d and e, "B/D/E 未发出"
-    assert g["to"] == [S1] and ENG in g["cc"] and AP in g["cc"], g
+    e = next((s for s in mg.sent if "订货确认" in s["subject"]), None)
+    g = next((s for s in mg.sent if "采购结束" in s["subject"]), None)
+    assert b_s1 and b_s2 and d and e and g, "B/D/E/G 未发出"
 
     # 核心断言：B（两封）、D、E、G 都携带 A 的全部抄送观察者
     _assert_cc([b_s1, b_s2], "B", *OBS)
     _assert_cc([d], "D", *OBS)
     _assert_cc([e], "E", *OBS)
     _assert_cc([g], "G", *OBS)
+
+    # 回归：E（订货确认）与 G（采购结束）主送必须为供应商本人，观察者/审批人不得混入主送，
+    # 否则观察者会出现在主送里（reply-all To 合并的历史缺陷）。
+    _assert_to_only([e], "E", S1)
+    _assert_to_only([g], "G", S1)

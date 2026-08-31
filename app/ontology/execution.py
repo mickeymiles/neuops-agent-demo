@@ -169,14 +169,15 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         sel = str(ctx.get("target_supplier") or "").strip()
         meta = dict(task.get("spare_info") or {})
         q = _sel_quote(meta, sel)
-        # E 订货：回复选中供应商报价(C)线程，携带其报价原文；外部流 Reply-All 全员回复
+        # E 订货：回复选中供应商报价(C)线程，携带其报价原文。
+        # 主送=选中供应商，其余（发起人/审批人/观察者）一律抄送——不启用 Reply-All 的 To 合并，
+        # 否则会把观察者也塞进主送。线程连续性由 reply_to/refs 保证。
         reply_to = (q.get("msg_id") or "").strip()
         refs = (q.get("refs") or "").strip() or ((meta.get("b_msg_by_supplier") or {}).get(sel) or "")
         ok, detail, r = _send_tpl(mg, "E", ctx, task, to=[sel],
                                   cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or []) + (ctx.get("inquiry_cc") or []),
                                   reply_to=reply_to or None, refs=refs or None,
-                                  original_body=q.get("raw"),
-                                  reply_all_from=q.get("reply_all"))
+                                  original_body=q.get("raw"))
         meta["e_msg_id"] = ((r or {}).get("message_id") or (r or {}).get("msg_id")
                             if isinstance(r, dict) else "") or meta.get("e_msg_id", "")
         store.upsert_task({**task, "external_status": "ORDER_CONFIRM", "internal_status": "R_APPROVAL", "spare_info": meta})
@@ -211,14 +212,16 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         if mg:
             sup = ctx.get("target_supplier") or meta.get("target_supplier") or ""
             q = _sel_quote(meta, sup)
-            # G 结算：回复选中供应商报价(C)线程，携带报价原文；外部流 Reply-All 全员回复
+            # G 结算：回复选中供应商报价(C)线程，携带报价原文。
+            # 主送=供应商，其余（发起人/审批人/观察者）一律抄送——不启用 Reply-All 的 To 合并。
+            # 线程连续性由 reply_to/refs 保证。
             reply_to = (q.get("msg_id") or "").strip()
             refs = (q.get("refs") or "").strip()
             orig = (q.get("raw") or "") + "\n" + (meta.get("ship_raw") or "")
             ok, detail, r = _send_tpl(mg, "G", ctx, task, to=[sup] if sup else [ctx.get("from_email")],
                                       cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or []) + (ctx.get("inquiry_cc") or []),
                                       reply_to=reply_to or None, refs=refs or None,
-                                      original_body=orig, reply_all_from=q.get("reply_all"))
+                                      original_body=orig)
             meta["g_msg_id"] = ((r or {}).get("message_id") or (r or {}).get("msg_id")
                                 if isinstance(r, dict) else "") or meta.get("g_msg_id", "")
         store.upsert_task({**task, "external_status": "R_SETTLE", "internal_status": "R_CLOSED",
