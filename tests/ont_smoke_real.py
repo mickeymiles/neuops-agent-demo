@@ -5,6 +5,15 @@
   MI1_PASS=xxx MI2_PASS=xxx MI5_PASS=xxx MI6_PASS=xxx \
   PYTHONPATH=. .venv/bin/python tests/ont_smoke_real.py
 
+受限网络（163 邮箱需走 HTTP 代理的 CONNECT）下，可把邮件收发指向本地隧道转发器：
+  # 另开一个进程跑 tools/proxy_mail_tunnel.py（监听 127.0.0.1:1993/1465 → imap/smtp.163.com）
+  SMOKE_IMAP_HOST=127.0.0.1 SMOKE_IMAP_PORT=1993 \
+  SMOKE_SMTP_HOST=127.0.0.1 SMOKE_SMTP_PORT=1465 \
+  ONT_MAIL_IMAP_HOST=127.0.0.1 ONT_MAIL_IMAP_PORT=1993 \
+  ONT_MAIL_SMTP_HOST=127.0.0.1 ONT_MAIL_SMTP_PORT=1465 \
+  MI1_PASS=xxx MI2_PASS=xxx MI5_PASS=xxx MI6_PASS=xxx \
+  PYTHONPATH=. .venv/bin/python tests/ont_smoke_real.py
+
 流程（上线测试·真实身份）：
   张运维(b1) →(A询价)→ 采购智能体(b4) →(B询价)→ 中软国际(b2)/神州数码(b6)
   中软国际/神州数码 →(报价)→ 采购智能体 →(D审批汇总)→ 李审批(b5)
@@ -24,9 +33,11 @@ from email.header import decode_header
 from email.mime.text import MIMEText
 from email.utils import formataddr, make_msgid
 
-IMAP_HOST, IMAP_PORT = "imap.163.com", 993
-SMTP_HOST, SMTP_PORT = "smtp.163.com", 465
-AGENT = "biquanzhi4@163.com"
+IMAP_HOST = os.getenv("SMOKE_IMAP_HOST", "imap.163.com")
+IMAP_PORT = int(os.getenv("SMOKE_IMAP_PORT", "993"))
+SMTP_HOST = os.getenv("SMOKE_SMTP_HOST", "smtp.163.com")
+SMTP_PORT = int(os.getenv("SMOKE_SMTP_PORT", "465"))
+AGENT = os.getenv("SMOKE_AGENT", "biquanzhi4@163.com")
 
 B1 = "biquanzhi1@163.com"; P1 = os.environ.get("MI1_PASS", "")
 B2 = "biquanzhi2@163.com"; P2 = os.environ.get("MI2_PASS", "")
