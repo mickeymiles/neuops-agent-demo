@@ -376,10 +376,21 @@ async def put_employee_channel(emp_id: str, channel: str, data: dict):
 
 @router.put("/api/employees/{emp_id}/enabled")
 async def put_employee_enabled(emp_id: str, data: dict):
-    """开关数字员工（真实生效：运行时 governor 会读取该字段决定是否执行）。"""
+    """开关数字员工（真实生效）。
+
+    - 运行时 governor / needs_exec 读取该字段决定是否执行；
+    - 对 emp-009（本体轨采购智能体）：页面开关即时拉起 / 停止其监听轮询线程
+      （runtime.sync_scheduler 按 should_run() 决定 task 生命周期）。
+    """
     emp_id = (emp_id or "").strip()
     enabled = bool(data.get("enabled", True))
     rowcount = db_set_employee_enabled(emp_id, enabled)
+    if emp_id == "emp-009":
+        try:
+            from app.ontology.runtime import sync_scheduler
+            await sync_scheduler()
+        except Exception as _e:
+            print(f"[scheduler] emp-009 toggle sync failed: {_e}")
     return JSONResponse({"success": True, "employee_id": emp_id, "enabled": enabled,
                          "rowcount": rowcount})
 

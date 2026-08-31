@@ -56,21 +56,30 @@ async def lifespan(app: FastAPI):
         await mail_inquiry_register_employee()
     except Exception as _e:
         print(f"[register] emp-008 enable failed: {_e}")
-    # 本体轨 emp-009：默认不启动（revert 后保持零副作用）。
-    # 设 ONT_SCHEDULER=1 才自走调度；与现轨并行时两套各用自己的邮箱（b3 / b4），互不影响。
-    proc_ont_task = None
-    if os.getenv("ONT_SCHEDULER", "0") == "1":
-        try:
-            from app.ontology.registration import register_emp009
-            register_emp009()
-            print("[register] emp-009 本体轨已启用（ONT_SCHEDULER=1）")
-        except Exception as _e:
-            print(f"[register] emp-009 enable failed: {_e}")
-        proc_ont_task = asyncio.create_task(_ont_scheduler_loop())
+    # 本体轨 emp-009：先幂等注册员工/技能（确保页面可配置与开关），再按开关同步调度线程。
+    # 线程生命周期由「数字员工配置」页面开关驱动（runtime.sync_scheduler）：
+    #   emp-009 启用 → 即时拉起监听轮询线程；emp-009 停用 → 即时停止。
+    # 本轨 env 前提（ONT_MODE=ontology + ONT_EXEC=1）由 governor 在模块加载时读取，
+    # 页面开关在其上决定线程起停；ONT_SCHEDULER 显式=0 时彻底禁用自动调度。
+    try:
+        from app.ontology.registration import register_emp009
+        register_emp009()
+        print("[register] emp-009 本体轨已注册（员工/技能就绪）")
+    except Exception as _e:
+        print(f"[register] emp-009 register failed: {_e}")
+    try:
+        from app.ontology.runtime import sync_scheduler
+        await sync_scheduler()
+        print("[scheduler] emp-009 调度线程已按开关同步")
+    except Exception as _e:
+        print(f"[scheduler] emp-009 sync failed: {_e}")
     yield
     proc_task.cancel()
-    if proc_ont_task:
-        proc_ont_task.cancel()
+    try:
+        from app.ontology.runtime import stop_now
+        stop_now()
+    except Exception:
+        pass
     pm.stop()
 
 
@@ -99,24 +108,6 @@ async def _proc_scheduler_loop():
                 await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=progress", timeout=30)
                 # 备件邮件询价数字员工：自动解析工程师询价/供应商报价/审批人确认（1 分钟轮询，适配紧急截止）
                 await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=mail-inquiry", timeout=30)
-        except Exception:
-            pass
-        await asyncio.sleep(60)  # 1 分钟
-
-
-async def _ont_scheduler_loop():
-    """本体轨 emp-009：全流程自走（SEEN认领+入向回复+LLM决策执行）。
-    governor 放行才真正发信/落库；默认 off 时零副作用。"""
-    import httpx
-    await asyncio.sleep(40)
-    while True:
-        try:
-            async with httpx.AsyncClient() as client:
-                # use_llm 由 ONT_SCHEDULER_USE_LLM 控制：
-                # 建议先用规则模式（0）跑通全流程，确认链路无问题后再切 1 启用 LLM 决策回路。
-                _use_llm = os.getenv("ONT_SCHEDULER_USE_LLM", "0") == "1"
-                await client.post("http://127.0.0.1:9007/api/ontology-emp009/run-full",
-                                  json={"use_llm": _use_llm}, timeout=60)
         except Exception:
             pass
         await asyncio.sleep(60)  # 1 分钟
