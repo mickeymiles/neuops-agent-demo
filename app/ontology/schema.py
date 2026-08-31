@@ -60,6 +60,10 @@ _DDL = [
         role TEXT DEFAULT ''
     )""",
     # 邮件：emailMessageId 幂等唯一键
+    # claim_status 两阶段消费标记（防丢单）：
+    #   pending = 已登记但业务处理（建任务）未完成 → 下轮必须重试
+    #   done    = 业务处理已完成 → 永久跳过
+    #   failed  = 处理异常，保留现场，下轮仍重试
     """CREATE TABLE IF NOT EXISTS o_email (
         email_message_id TEXT PRIMARY KEY,
         task_id TEXT DEFAULT '',
@@ -72,7 +76,17 @@ _DDL = [
         to_json TEXT DEFAULT '[]',
         cc_json TEXT DEFAULT '[]',
         in_reply_to TEXT DEFAULT '',
-        `references` TEXT DEFAULT ''
+        `references` TEXT DEFAULT '',
+        claim_status TEXT DEFAULT '',
+        claim_error TEXT DEFAULT ''
+    )""",
+    # 扫描水位：记录上次成功扫描完成的时刻。
+    # 用途是「防漏」而非「防重」——防重由 email_message_id 唯一键负责。
+    # 服务停机超过固定窗口（原写死 48h）时，靠水位把扫描下界前移，避免停机期间邮件永久漏单。
+    """CREATE TABLE IF NOT EXISTS o_scan_state (
+        scan_key TEXT PRIMARY KEY,
+        last_ts INTEGER DEFAULT 0,
+        update_time TEXT DEFAULT ''
     )""",
     # 报价：独立生命周期
     """CREATE TABLE IF NOT EXISTS o_supplier_quote (
@@ -125,6 +139,14 @@ def init():
                 conn.execute("ALTER TABLE o_task ADD COLUMN internal_status TEXT DEFAULT 'R_INIT'")
             if "external_status" not in cols:
                 conn.execute("ALTER TABLE o_task ADD COLUMN external_status TEXT DEFAULT 'R_SEND'")
+            # 幂等迁移：老库补两阶段认领列。
+            # 存量行 claim_status 为空——视同 'done'（历史邮件早已建过任务），避免升级后重扫重建。
+            ecols = [r[1] for r in conn.execute("PRAGMA table_info(o_email)").fetchall()]
+            if "claim_status" not in ecols:
+                conn.execute("ALTER TABLE o_email ADD COLUMN claim_status TEXT DEFAULT ''")
+                conn.execute("UPDATE o_email SET claim_status='done' WHERE IFNULL(claim_status,'')=''")
+            if "claim_error" not in ecols:
+                conn.execute("ALTER TABLE o_email ADD COLUMN claim_error TEXT DEFAULT ''")
             conn.commit()
         finally:
             conn.close()

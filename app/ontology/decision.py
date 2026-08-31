@@ -83,6 +83,10 @@ def propose_action(ctx: dict):
     raw_n = ctx.get("raw_quote_count") or 0
     deadline_passed = ctx.get("deadline_passed")
 
+    # 审批驳回：显式中止，不再无限重发审批 D
+    if ctx.get("approval_rejected"):
+        return ("abortTask", "CLOSED_ABORT", internal, "审批驳回，任务中止")
+
     # S1 立项·尚未分发：有目标供应商 → 分发询价 B
     if external in ("R_SEND", "R_INIT") and (ctx.get("target_supplier_list") or []):
         return ("distributeInquiry", "INVITE_QUOTE", "R_INIT", "向目标供应商分发询价 B")

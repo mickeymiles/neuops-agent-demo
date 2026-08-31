@@ -56,7 +56,17 @@ async def lifespan(app: FastAPI):
         await mail_inquiry_register_employee()
     except Exception as _e:
         print(f"[register] emp-008 enable failed: {_e}")
+    # 本体轨 emp-009：默认不启动（revert 后保持零副作用）。
+    # 设 ONT_SCHEDULER=1 才自走调度；与现轨并行时两套各用自己的邮箱（b3 / b4），互不影响。
     proc_ont_task = None
+    if os.getenv("ONT_SCHEDULER", "0") == "1":
+        try:
+            from app.ontology.registration import register_emp009
+            register_emp009()
+            print("[register] emp-009 本体轨已启用（ONT_SCHEDULER=1）")
+        except Exception as _e:
+            print(f"[register] emp-009 enable failed: {_e}")
+        proc_ont_task = asyncio.create_task(_ont_scheduler_loop())
     yield
     proc_task.cancel()
     if proc_ont_task:
@@ -89,8 +99,11 @@ async def _ont_scheduler_loop():
     while True:
         try:
             async with httpx.AsyncClient() as client:
+                # use_llm 由 ONT_SCHEDULER_USE_LLM 控制：
+                # 建议先用规则模式（0）跑通全流程，确认链路无问题后再切 1 启用 LLM 决策回路。
+                _use_llm = os.getenv("ONT_SCHEDULER_USE_LLM", "0") == "1"
                 await client.post("http://127.0.0.1:9007/api/ontology-emp009/run-full",
-                                  json={"use_llm": False}, timeout=60)
+                                  json={"use_llm": _use_llm}, timeout=60)
         except Exception:
             pass
         await asyncio.sleep(60)  # 1 分钟

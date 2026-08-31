@@ -75,15 +75,41 @@ def quote_orig(body: str, max_chars: int = 3000) -> str:
     return f"\n\n{'=' * 40}\n【引用】以下为 {ts} 的被回复邮件原文\n{'=' * 40}\n{content}\n{'=' * 40}\n"
 
 
-def build_fields(ctx: dict, task: dict) -> dict:
-    """把任务事实（ctx/task）映射为模板占位符取值。"""
+def _supplier_name_map():
+    """从 ONT_SUPPLIERS（"名称:邮箱,名称:邮箱"）构建 {email: 名称} 映射，供邮件正文显示供应商实名。"""
+    try:
+        from app.config import ONT_SUPPLIERS
+        m = {}
+        for item in (ONT_SUPPLIERS or "").split(","):
+            item = (item or "").strip()
+            if not item:
+                continue
+            if ":" in item:
+                name, _, email_ = item.partition(":")
+            elif "@" in item:
+                name, email_ = item, item
+            else:
+                continue
+            if email_.strip():
+                m[email_.strip().lower()] = name.strip()
+        return m
+    except Exception:
+        return {}
+
+
+def build_fields(ctx: dict, task: dict, supplier_names: dict = None) -> dict:
+    """把任务事实（ctx/task）映射为模板占位符取值。
+    supplier_names：可选 {email: 实名} 映射（如 中软国际/神州数码），缺省回退 ONT_SUPPLIERS 解析。"""
+    sname = supplier_names if isinstance(supplier_names, dict) else _supplier_name_map()
     meta = task.get("spare_info") or {}
     quotes = [q for q in (meta.get("quotes") or []) if q.get("unit_price")]
     target = str(ctx.get("target_supplier") or meta.get("target_supplier") or "")
     lowest = min(quotes, key=lambda q: float(q.get("unit_price") or 1e18)) if quotes else None
     target_quote = next((q for q in quotes if str(q.get("email") or "") == target), None)
+    def _sn(email):
+        return sname.get(str(email or "").strip().lower(), email or "")
     suppliers_str = "\n".join(
-        f"{i + 1}. {q.get('email', '')}  单价 {q.get('unit_price', '')}元"
+        f"{i + 1}. {_sn(q.get('email', ''))}（{q.get('email', '')}）  单价 {q.get('unit_price', '')}元"
         for i, q in enumerate(quotes)) or "（暂无）"
     condition = ctx.get("condition") or meta.get("condition") or ""
     cond_disp = {"全新": "全新原装", "原厂翻新": "原厂翻新（带保修）",
@@ -105,11 +131,11 @@ def build_fields(ctx: dict, task: dict) -> dict:
         "latest_ship_time": meta.get("latest_ship_time") or ctx.get("latest_ship_time") or "",
         "deadline": deadline,
         "task_no": task.get("task_id") or "",
-        "supplier": target,
+        "supplier": _sn(target),
         "suppliers": suppliers_str,
         "suppliers_count": len(quotes),
         "lowest_quote": f"¥{lowest.get('unit_price')}" if lowest else "",
-        "lowest_supplier": (lowest or {}).get("email", "") if lowest else "",
+        "lowest_supplier": _sn((lowest or {}).get("email", "")) if lowest else "",
         "approver_emails": "、".join(approvers),
         "quote": (target_quote or {}).get("unit_price", "") or (lowest or {}).get("unit_price", "") or "",
         "receiver_name": "运维部", "receiver_phone": "（请回复本会话提供）",
@@ -119,10 +145,10 @@ def build_fields(ctx: dict, task: dict) -> dict:
     return base
 
 
-def render(key: str, ctx: dict, task: dict):
-    """渲染某模板，返回 (subject, body)。"""
+def render(key: str, ctx: dict, task: dict, supplier_names: dict = None):
+    """渲染某模板，返回 (subject, body)。supplier_names 见 build_fields。"""
     tpl = (load_templates() or {}).get(key) or {}
-    fields = build_fields(ctx, task)
+    fields = build_fields(ctx, task, supplier_names=supplier_names)
     subj = _safe_format(tpl.get("subject") or "", fields)
     body = _safe_format(tpl.get("body") or "", fields)
     return subj, body

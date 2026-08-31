@@ -151,6 +151,30 @@ PROC_MAIL_IMAP_PORT = 993
 PROC_MAIL_SMTP_HOST = "smtp.163.com"
 PROC_MAIL_SMTP_PORT = 465
 
+# ── 本体轨（ont-emp009）独立邮箱 ────────────────────────────────
+# 双轨并行：现轨 emp-008 走 PROC_MAIL_*，本体轨走 ONT_MAIL_*，两套收发互不干扰。
+# 未显式配置时回退到现轨账号（保持单轨行为不变）；
+# 但双轨并行必须显式配置 ONT_MAIL_USERNAME/PASSWORD，否则两套会抢同一个收件箱
+# （现轨用 UNSEEN 增量扫描，本体轨会 mark_seen 认领，共用邮箱必然互相漏单）。
+ONT_MAIL_USERNAME = os.getenv("ONT_MAIL_USERNAME", "") or PROC_MAIL_USERNAME
+ONT_MAIL_PASSWORD = os.getenv("ONT_MAIL_PASSWORD", "") or PROC_MAIL_PASSWORD
+ONT_MAIL_IMAP_HOST = os.getenv("ONT_MAIL_IMAP_HOST", PROC_MAIL_IMAP_HOST)
+ONT_MAIL_IMAP_PORT = int(os.getenv("ONT_MAIL_IMAP_PORT", str(PROC_MAIL_IMAP_PORT)))
+ONT_MAIL_SMTP_HOST = os.getenv("ONT_MAIL_SMTP_HOST", PROC_MAIL_SMTP_HOST)
+ONT_MAIL_SMTP_PORT = int(os.getenv("ONT_MAIL_SMTP_PORT", str(PROC_MAIL_SMTP_PORT)))
+# 本体轨发件显示名（智能体本体身份，b4）。与现轨区分，便于在供应商/审批人邮箱里一眼分辨来源
+ONT_MAIL_DISPLAY_NAME = os.getenv("ONT_MAIL_DISPLAY_NAME", "采购智能体")
+# 本体轨专用参与者：供应商（逗号分隔 姓名:邮箱，如 "华为:b2@163.com,XX:b6@163.com"）
+# 与审批人（逗号分隔邮箱）。留空则回退现轨 proc_participants。
+ONT_SUPPLIERS = os.getenv("ONT_SUPPLIERS", "")
+ONT_APPROVERS = os.getenv("ONT_APPROVERS", "")
+# 询价发起人白名单（逗号分隔邮箱或 @域名）。留空 = 不限制（向后兼容）。
+# 不限制时，任何含「询价/采购/备件/购买」且非回复的邮件都会被认领建任务——
+# 「采购」是极常见词，广告/垃圾邮件极易误触发，生产环境务必配置。
+ONT_REQUESTERS = os.getenv("ONT_REQUESTERS", "")
+# 认领扫描窗口下界（小时）。实际下界 = min(now-该值, 水位-缓冲)，水位用于停机后补扫防漏。
+ONT_SCAN_HOURS = int(os.getenv("ONT_SCAN_HOURS", "48"))
+
 # 飞书应用凭据（emp-008 发送飞书通知）
 PROC_FEISHU_APP_ID = os.getenv("PROC_FEISHU_APP_ID", "")
 PROC_FEISHU_APP_SECRET = os.getenv("PROC_FEISHU_APP_SECRET", "")

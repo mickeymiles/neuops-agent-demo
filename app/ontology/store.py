@@ -105,6 +105,159 @@ def upsert_email(m: dict):
             conn.close()
 
 
+def try_claim_email(m: dict):
+    """两阶段认领登记（防丢单）。
+
+    与 `upsert_email` 的区别：upsert_email 是「见过即消费」——一旦入库就永久跳过。
+    若入库成功后建任务失败（进程崩溃/异常），这封询价将永久丢失且无任何告警。
+    本函数把「登记」与「消费」拆开：
+
+      返回 True  → 需要处理（新邮件，或上次 pending/failed 的重试）
+      返回 False → claim_status='done'，业务已闭环，永久跳过
+
+    处理成功后必须由调用方回调 `mark_email_claimed(mid, task_id)` 才置 done。
+    """
+    with _lock:
+        conn = schema.get_conn()
+        try:
+            mid = (m.get("email_message_id") or m.get("message_id") or "").strip()
+            if not mid:
+                return False
+            row = conn.execute(
+                "SELECT claim_status FROM o_email WHERE email_message_id=?", (mid,)).fetchone()
+            if row is not None:
+                # 已登记：仅 done 跳过；pending/failed 交还调用方重试
+                return (row["claim_status"] or "") != "done"
+            conn.execute(
+                "INSERT INTO o_email (email_message_id, task_id, session_id, title, body, send_time,"
+                " template_type, from_email, to_json, cc_json, in_reply_to, `references`, claim_status)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending')",
+                (mid, m.get("task_id", ""), m.get("session_id", ""),
+                 m.get("title", "") or m.get("subject", ""),
+                 m.get("body", "") or m.get("mail_body_text", ""),
+                 m.get("send_time", "") or _now(), m.get("template_type", ""),
+                 m.get("from_email", ""),
+                 json.dumps(m.get("to_email_list") or [], ensure_ascii=False),
+                 json.dumps(m.get("cc_email_list") or [], ensure_ascii=False),
+                 m.get("in_reply_to", ""), m.get("references", "")),
+            )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+
+def mark_email_claimed(mid: str, task_id: str = ""):
+    """认领闭环：业务处理（建任务）成功后才置 done。"""
+    mid = (mid or "").strip()
+    if not mid:
+        return False
+    with _lock:
+        conn = schema.get_conn()
+        try:
+            conn.execute("UPDATE o_email SET claim_status='done', claim_error='', task_id=?"
+                         " WHERE email_message_id=?", (task_id or "", mid))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+
+def mark_email_failed(mid: str, err: str = ""):
+    """认领失败：留 failed 现场，下轮重试（不置 done，保证不丢单）。"""
+    mid = (mid or "").strip()
+    if not mid:
+        return False
+    with _lock:
+        conn = schema.get_conn()
+        try:
+            conn.execute("UPDATE o_email SET claim_status='failed', claim_error=?"
+                         " WHERE email_message_id=?", (str(err or "")[:500], mid))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+
+def list_unclaimed_emails(limit=100):
+    """未闭环的认领邮件（pending/failed），供可观测页与告警使用。"""
+    with _lock:
+        conn = schema.get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT email_message_id, title, from_email, send_time, claim_status, claim_error"
+                " FROM o_email WHERE IFNULL(claim_status,'') IN ('pending','failed')"
+                " ORDER BY send_time DESC LIMIT ?", (limit,)).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def pending_claim_mails(limit=100):
+    """把未闭环（pending/failed）的邮件还原成 mail 形状，供认领重试。
+
+    重试不依赖 IMAP 扫描窗口——邮件正文已在登记时落库，
+    因此即使窗口早已滑过，pending 邮件仍能被重新处理，不会丢单。
+    """
+    with _lock:
+        conn = schema.get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM o_email WHERE IFNULL(claim_status,'') IN ('pending','failed')"
+                " ORDER BY send_time ASC LIMIT ?", (limit,)).fetchall()
+        finally:
+            conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        def _j(v, dflt):
+            try:
+                return json.loads(v or dflt)
+            except Exception:
+                return json.loads(dflt)
+        out.append({
+            "message_id": d.get("email_message_id") or "",
+            "subject": d.get("title") or "",
+            "mail_body_text": d.get("body") or "",
+            "from_email": d.get("from_email") or "",
+            "in_reply_to": d.get("in_reply_to") or "",
+            "references": d.get("references") or "",
+            "to_email_list": _j(d.get("to_json"), "[]"),
+            "cc_email_list": _j(d.get("cc_json"), "[]"),
+            "receive_timestamp": 0,
+            "_retry": True,
+        })
+    return out
+
+
+def get_scan_ts(key: str = "inquiry") -> int:
+    """读扫描水位（上次成功扫完的时刻，unix 秒）。无记录返回 0。"""
+    conn = schema.get_conn()
+    try:
+        row = conn.execute("SELECT last_ts FROM o_scan_state WHERE scan_key=?", (key,)).fetchone()
+        return int(row["last_ts"] or 0) if row else 0
+    except Exception:
+        return 0
+    finally:
+        conn.close()
+
+
+def set_scan_ts(ts: int, key: str = "inquiry"):
+    """写扫描水位。只在一轮扫描完整跑完后调用。"""
+    with _lock:
+        conn = schema.get_conn()
+        try:
+            conn.execute(
+                "INSERT INTO o_scan_state (scan_key, last_ts, update_time) VALUES (?,?,?)"
+                " ON CONFLICT(scan_key) DO UPDATE SET last_ts=excluded.last_ts,"
+                " update_time=excluded.update_time",
+                (key, int(ts or 0), _now()))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+
 def audit(biz_type, biz_id, action, operator=None, snapshot=None, remark=""):
     with _lock:
         conn = schema.get_conn()

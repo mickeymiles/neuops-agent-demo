@@ -197,7 +197,7 @@
     "A": {
       "name": "A-工程师发起询价",
       "subject": "【备件询价】{project_no} {project_name} — {brand} {pn} x {count}",
-      "body": "您好，我是运维部工程师，现发起备件询价申请，请协助转达至采购邮箱。\n\n项目：{project_no} / {project_name}\n备件类型：{part_type}\n品牌：{brand}\nPN：{pn}\n规格：{spec}\n成色要求：{condition}\n数量：{count}\n紧急程度：{urgent}\n最晚发货时间：{latest_ship_time}\n\n本任务编号：{task_no}\n收到回复后将自动汇总并推送审批。"
+      "body": "您好，我是运维部工程师，现发起备件询价申请，请协助转达至采购邮箱。\n\n项目编号：{project_no}\n项目名称：{project_name}\n备件类型：{part_type}\n品牌：{brand}\nPN：{pn}\n规格：{spec}\n成色：{condition}\n数量：{count}\n收货地址：{address}\n紧急程度：{urgent}\n最晚发货时间：{latest_ship_time}\n\n本任务编号：{task_no}\n收到回复后将自动汇总并推送审批。\n\n（提示：字段顺序与写法请勿调整，智能体按「字段名：值」逐行解析；成色只能填 全新 / 原厂翻新 / 拆机二手）"
     },
     "B": {
       "name": "B-对外询价-不带收货地址",

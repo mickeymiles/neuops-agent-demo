@@ -72,10 +72,14 @@ def _suppliers_from_config(cfg_leak):
 
 
 def _self_email():
-    """系统自身发件邮箱（用于 Reply-All 排除）。"""
+    """本体轨自身发件邮箱（用于 Reply-All 排除）。
+
+    必须取本体轨自己的邮箱（ONT_MAIL_*，即 b4）；若仍取现轨的 b3，
+    Reply-All 时不会把 b4 自己排除，智能体会给自己发信造成自激循环。
+    """
     try:
-        from app.mcp_tools import _proc_mail_cfg
-        return (_proc_mail_cfg() or {}).get("mail_username") or ""
+        from app.ontology.mail_gateway import _ont_mail_cfg
+        return (_ont_mail_cfg() or {}).get("mail_username") or ""
     except Exception:
         return ""
 
@@ -233,6 +237,73 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         store.audit("Task", task["task_id"], "processApprovalDecision", operator="emp-009",
                     snapshot={"target_supplier": meta["target_supplier"]})
         return True, "approval decision recorded"
+
+    if action_id == "requestMissingFields" and mg:
+        # 立项阶段缺必填字段 → 给工程师回信指出缺失项（仅一次）
+        meta = dict(task.get("spare_info") or {})
+        if meta.get("missing_requested"):
+            store.audit("Task", task["task_id"], "requestMissingFields", operator="emp-009",
+                        remark="已请求过补齐，跳过重发")
+            return True, "missing-fields already requested"
+        try:
+            from . import knowledge
+            ok, failed = knowledge.check_target("createTask", ctx)
+            miss = [f.get("missing") for f in (failed or []) if f.get("missing")] or ["部分必填字段"]
+        except Exception:
+            miss = ["部分必填字段"]
+        subj = "Re: 询价信息不完整，请补充后重发"
+        body = ("您好，收到您的采购询价，但以下必填信息缺失，请补全后重发：\n- "
+                + "\n- ".join(miss)
+                + f"\n\n任务编号：{task.get('task_id')}\n- NeuOps 备件询价(emp-009)")
+        mg.send_mail(to=[ctx.get("from_email")], subject=subj, body_text=body,
+                     reply_to_mail_id=meta.get("inquiry_mid") or None,
+                     reply_refs_chain=meta.get("inquiry_mid") or None)
+        meta["missing_requested"] = True
+        store.upsert_task({**task, "internal_status": "R_FR02_MISSING_FIELDS", "spare_info": meta})
+        store.audit("Task", task["task_id"], "requestMissingFields", operator="emp-009",
+                    snapshot={"missing": miss})
+        return True, "missing fields requested"
+
+    if action_id == "requestTrackingNo" and mg:
+        # 供应商回"已发货"但无单号 → 主动索取（仅一次）
+        meta = dict(task.get("spare_info") or {})
+        if meta.get("tracking_requested_at"):
+            return True, "tracking no already requested"
+        sup = ctx.get("target_supplier") or meta.get("target_supplier") or ""
+        if not sup:
+            return False, "no target supplier for tracking request"
+        subj = "Re: 请回复发货快递单号"
+        body = ("您好，已收到贵司发货通知，请提供快递单号以便跟踪物流。\n"
+                f"任务编号：{task.get('task_id')}\n- NeuOps 备件询价(emp-009)")
+        mg.send_mail(to=[sup], subject=subj, body_text=body,
+                     reply_to_mail_id=meta.get("e_msg_id") or None,
+                     reply_refs_chain=meta.get("e_msg_id") or None)
+        meta["tracking_requested_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        store.upsert_task({**task, "spare_info": meta})
+        store.audit("Task", task["task_id"], "requestTrackingNo", operator="emp-009",
+                    snapshot={"supplier": sup})
+        return True, "tracking no requested"
+
+    if action_id == "receiveSupplierQuote":
+        # 报价收集由 process_replies 内联完成；此处仅落审计，避免 noop 误报
+        store.audit("Task", task["task_id"], "receiveSupplierQuote", operator="emp-009",
+                    remark="quote already recorded in process_replies")
+        return True, "quote received (recorded in process_replies)"
+
+    if action_id == "finalizeQuoteCollection":
+        store.audit("Task", task["task_id"], "finalizeQuoteCollection", operator="emp-009")
+        return True, "collection finalized (no-op state)"
+
+    if action_id == "manualCloseTask":
+        # 后台操作员手动关闭/取消（不在邮件链路）：写审计 + 置终态
+        meta = dict(task.get("spare_info") or {})
+        meta["manual_close"] = True
+        meta["manual_close_reason"] = ctx.get("manual_close_reason", "")
+        meta["manual_close_operator"] = ctx.get("operator", "web")
+        store.upsert_task({**task, "external_status": "CLOSED_MANUAL", "status": "CLOSED", "spare_info": meta})
+        store.audit("Task", task["task_id"], "manualCloseTask", operator=ctx.get("operator", "web"),
+                    snapshot={"reason": meta["manual_close_reason"]})
+        return True, "task manually closed"
 
     store.audit("Task", task.get("task_id"), f"noop:{action_id}", operator="emp-009",
                 remark="action has no executor yet")

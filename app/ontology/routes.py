@@ -4,6 +4,7 @@
 """
 from fastapi import APIRouter, Request
 import asyncio
+import threading
 
 from . import store, actions as act, engine, schema
 from .decision import build_fact_context, propose_action
@@ -11,7 +12,11 @@ from .decision import build_fact_context, propose_action
 router = APIRouter(prefix="/api/ontology-emp009", tags=["ontology-emp009"])
 
 # 进程级串行锁：run-full（可能含 LLM 决定）在 async 事件循环中经 to_thread 执行，串行化防并发重复发信。
-_RUN_LOCK = asyncio.Lock()
+# 【修复】原用 asyncio.Lock：它在模块导入时绑定到当时的事件循环，
+# 而请求处理发生在 uvicorn 的运行期循环，导致
+# "Task got Future attached to a different loop" → 500。
+# 改用 threading.Lock（不绑定 loop），且在工作线程内部获取，不阻塞事件循环。
+_RUN_LOCK = threading.Lock()
 
 
 @router.get("/health")
@@ -29,6 +34,27 @@ def list_actions():
 @router.get("/rules")
 def list_rules():
     return {"total": len(knowledge_rules()), "rules": knowledge_rules()}
+
+
+@router.get("/spec")
+def spec():
+    """导出本体定义（TBox）为 JSON，供 9006 经营管理平台「本体可观测」页只读展示。
+
+    CONCEPTS / RELATIONS / ACTIONS / INVARIANTS 在 ontology.py，RULES 在 knowledge.py，
+    ACTION_REGISTRY 在 actions.py —— 都是 Python 字面量、不落库，故只能由本端点导出。
+    9006 侧会缓存本响应，并在 9007 未启动时回落到本地快照。
+    """
+    from . import knowledge, ontology
+    return {
+        "success": True,
+        "service": "emp-009",
+        "concepts": ontology.CONCEPTS,
+        "relations": ontology.RELATIONS,
+        "actions": ontology.ACTIONS,
+        "invariants": ontology.INVARIANTS,
+        "rules": knowledge.RULES,
+        "action_registry": act.ACTION_REGISTRY,
+    }
 
 
 def knowledge_rules():
@@ -79,6 +105,53 @@ def audit(biz_type: str = "", biz_id: str = "", limit: int = 100):
 @router.get("/tasks")
 def list_tasks():
     return {"success": True, "tasks": store.list_tasks()}
+
+
+@router.get("/claim-state")
+def claim_state():
+    """认领健康度：扫描水位 + 未闭环邮件。
+
+    `unclaimed` 非空说明有询价邮件已登记但任务未建成（pending/failed）——
+    这些下一轮会自动重试；若数量长期不降，说明存在稳定失败，需人工介入。
+    `watermark` 是上次成功扫描完成的时刻，用于停机后把扫描下界前移、防漏单。
+    """
+    import time as _t
+
+    from .ingest import SCAN_KEY, scan_window
+    ts = store.get_scan_ts(SCAN_KEY)
+    try:
+        from app.config import ONT_SCAN_HOURS as _h
+    except Exception:
+        _h = 48
+    unclaimed = store.list_unclaimed_emails()
+    return {
+        "success": True,
+        "watermark_ts": ts,
+        "watermark": (_t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(ts)) if ts else ""),
+        "scan_hours": _h,
+        "next_scan_since": _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(scan_window(_h))),
+        "unclaimed_count": len(unclaimed),
+        "unclaimed": unclaimed,
+    }
+
+
+@router.post("/tasks/{task_id}/close")
+async def close_task(task_id: str, request: Request):
+    """操作员手动关闭/取消本体轨任务（不进邮件链路）。供经营管理平台「台账/任务列表」调用。"""
+    from . import execution
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    task = store.get_task(task_id)
+    if not task:
+        return {"success": False, "error": "task not found"}
+    ctx = {"operator": body.get("operator", "web"),
+           "manual_close_reason": body.get("reason", "")}
+    # force=True：显式人工动作不受 governor 灰度开关限制
+    ok, detail = execution.execute_action("manualCloseTask", task, ctx, force=True)
+    return {"success": ok, "task_id": task_id, "detail": detail}
 
 
 # ── 阶段 B 治理 / 受控执行 ──────────────────────────────────────────
@@ -154,12 +227,15 @@ async def run_full(request: Request):
         g = execution.governor()
         return {"success": True, "note": "governor 未放行",
                 "claim": [], "replies": [], "drive": [], "governor": g}
-    async with _RUN_LOCK:
-        try:
-            r = await asyncio.to_thread(orbit.run_full, mg, use_llm=use_llm)
-            return {"success": True, **r}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+    def _locked_run():
+        # 锁在线程内部获取：既串行化，又不会因等锁而阻塞 async 事件循环
+        with _RUN_LOCK:
+            return orbit.run_full(mg, use_llm=use_llm)
+    try:
+        r = await asyncio.to_thread(_locked_run)
+        return {"success": True, **r}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def shake(s: str) -> str:

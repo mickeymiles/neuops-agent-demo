@@ -668,6 +668,21 @@ class TaskInstance(BaseModel):
     cancel_reason: str = ""
     creator: str = "pm"
     create_time: str = ""
+    # ── 备件属性：页面入口由 9006 传入，邮件入口由 _extract_inquiry_fields 解析填充。
+    # 缺这些字段时模板 B 的变量取不到值，只能回退 LLM 组邮件（标题会失控）。
+    project_no: str = ""
+    part_type: str = ""
+    brand: str = ""
+    pn: str = ""
+    spec: str = ""
+    condition: str = ""
+    address: str = ""
+    urgent: str = ""
+    latest_ship_time: str = ""
+    # ── 双流 / 三入口 ──
+    source: str = ""
+    internal_status: str = ""
+    external_status: str = ""
 
     @pydantic.field_validator("inquiry_supplier_list", "replied_supplier_quotes",
                              "no_reply_supplier", mode="before")
@@ -1250,6 +1265,95 @@ def _build_confirm_ctx(task: TaskInstance, deal_price: float, supplier_name: str
     }
 
 
+def _load_inquiry_template_b() -> dict:
+    """取模板 B（对外询价）。优先运行时配置 proc_templates，回退 skill JSON。"""
+    try:
+        spm = _ensure_mail_inquiry_imports._spm
+        tpls = spm.spare_mail_get_config("proc_templates") or {}
+        if isinstance(tpls, dict) and (tpls.get("B") or {}).get("subject"):
+            return tpls["B"]
+    except Exception:
+        pass
+    try:
+        from app.skill_loader import load_skill
+        sk = load_skill("skill-proc-mail-inquiry") or {}
+        return ((sk.get("templates") or {}).get("B") or {})
+    except Exception:
+        return {}
+
+
+def _build_inquiry_tpl_ctx(task, ctx: dict) -> dict:
+    """把 flow-02 的上下文映射成模板 B 的变量名。
+
+    模板 B 用的是 {brand} / {pn} / {count} / {task_no} / {urgent} / {supplier}，
+    而 _build_inquiry_ctx 产出的是 part_brand / purchase_qty / task_id，
+    两者命名不一致，历史上导致模板根本用不起来（只能靠 LLM 自由发挥）。
+    """
+    def g(k, default=""):
+        return str(getattr(task, k, "") or default)
+
+    def fmt_count(v):
+        """数量去掉无意义的 .0（purchase_qty 是 float，2.0 应显示成 2）"""
+        try:
+            f = float(v)
+            return str(int(f)) if f == int(f) else str(f)
+        except Exception:
+            return str(v or "")
+
+    return {
+        # part_type 兜底 spare_part_model：9006 的 create_task 未把 part_type 落库，
+        # 缺失会导致模板 B 变量不全而整个回退到 LLM。
+        "part_type": ctx.get("part_type") or g("part_type") or g("spare_part_model"),
+        "brand": ctx.get("part_brand") or g("brand"),
+        "pn": ctx.get("part_pn") or g("pn"),
+        "spec": ctx.get("part_spec") or g("spec"),
+        "condition": ctx.get("part_condition") or g("condition"),
+        "count": fmt_count(ctx.get("purchase_qty") or g("purchase_qty")),
+        "urgent": g("urgent") or g("emergency_level"),
+        "latest_ship_time": g("latest_ship_time"),
+        "deadline": ctx.get("reply_deadline") or "",
+        "project_no": g("project_no") or ctx.get("contract_no", ""),
+        "project_name": ctx.get("project_name") or g("project_name"),
+        "task_no": ctx.get("task_id") or g("task_id"),
+        "supplier": "",  # 逐供应商渲染时填入
+    }
+
+
+def _tpl_ready(tpl: dict, ctx: dict) -> bool:
+    """模板所需变量是否齐全（{supplier} 例外，它按供应商逐个填充）。"""
+    import re as _re
+    text = (tpl.get("subject") or "") + "\n" + (tpl.get("body") or "")
+    need = {v for v in _re.findall(r"\{(\w+)\}", text)}
+    need.discard("supplier")
+    return all(str(ctx.get(k) or "").strip() for k in need)
+
+
+def _send_inquiry_by_template(inq_list, tpl: dict, base_ctx: dict, cc) -> dict:
+    """按模板 B 逐供应商渲染并发送（模板含 {supplier}，无法用同一封群发）。
+
+    返回结构与 tool_batch_send_mail 一致，保证下游 _sent_msg_id 回写逻辑不变。
+    """
+    sent, failed = [], []
+    for s in inq_list:
+        c2 = dict(base_ctx)
+        c2["supplier"] = str(getattr(s, "name", "") or getattr(s, "email", "") or "")
+        subj = _safe_format(tpl.get("subject") or "", c2)
+        body = _safe_format(tpl.get("body") or "", c2)
+        try:
+            r = tool_send_mail(to=[s.email], subject=subj, body_text=body, cc=cc or None) or {}
+        except Exception as e:
+            r = {"success": False, "error": f"{type(e).__name__}: {e}"}
+        item = {"email": s.email, "message_id": str(r.get("message_id") or ""), "subject": subj}
+        if r.get("success") and r.get("message_id"):
+            sent.append(item)
+        else:
+            item["error"] = r.get("error") or "未返回邮件 ID"
+            failed.append(item)
+    return {"tool": "send_mail_by_template", "success": not failed,
+            "total_count": len(inq_list), "success_count": len(sent),
+            "fail_email_list": failed, "sent": sent}
+
+
 def _flow_proc_02_send_inquiry_mail(task: TaskInstance) -> dict:
     """LLM 组装&发送询价邮件 + 飞书通知项目经理任务已发起
     邮件组装由 skill-proc-mail-compose（LLM）完成，失败时自动降级到硬编码模板
@@ -1257,9 +1361,20 @@ def _flow_proc_02_send_inquiry_mail(task: TaskInstance) -> dict:
     In-Reply-To/References 匹配供应商回复，避免 1 个供应商邮箱对应多个任务时串任务。
     """
     ctx = _build_inquiry_ctx(task)
-    mail_content = invoke_skill_mail_compose("inquiry", ctx)
-    subject = mail_content["subject"]
-    body = mail_content["body_text"]
+    # 模板优先：模板 B 所需变量齐全时直接按模板渲染，LLM 只在变量不足时兜底。
+    # 背景：LLM 自由发挥曾产出「SMOKE-xxx（）-电池模块型号备件询价邮件」这类
+    # 不受模板约束的标题（模板变量为空被渲染成空括号）。
+    tpl_ctx = _build_inquiry_tpl_ctx(task, ctx)
+    tpl_b = _load_inquiry_template_b()
+    use_template = bool(tpl_b and _tpl_ready(tpl_b, tpl_ctx))
+    if use_template:
+        mail_content = {"subject": _safe_format(tpl_b.get("subject") or "", tpl_ctx),
+                        "body_text": _safe_format(tpl_b.get("body") or "", tpl_ctx),
+                        "composed_by": "template"}
+    else:
+        mail_content = invoke_skill_mail_compose("inquiry", ctx)
+    subject = mail_content.get("subject") or ""
+    body = mail_content.get("body_text") or ""
 
     # —— 预标记：资源池(id 存在) vs 临时供应商(id 不存在) ——
     inq_list = list(task.inquiry_supplier_list or [])
@@ -1277,8 +1392,12 @@ def _flow_proc_02_send_inquiry_mail(task: TaskInstance) -> dict:
 
     to_list = [s.email for s in inq_list]
     global_cc = _fetch_global_cc_list()
-    mail_r = tool_batch_send_mail(receiver_email_list=to_list, subject=subject, body_text=body,
-                                  cc=global_cc)
+    if use_template:
+        # 模板含 {supplier}，需按供应商逐封渲染（batch 只能发同一份内容）
+        mail_r = _send_inquiry_by_template(inq_list, tpl_b, tpl_ctx, global_cc)
+    else:
+        mail_r = tool_batch_send_mail(receiver_email_list=to_list, subject=subject, body_text=body,
+                                      cc=global_cc)
     mail_r["global_cc"] = global_cc
     mail_r["composed_by"] = mail_content.get("composed_by", "llm")
 

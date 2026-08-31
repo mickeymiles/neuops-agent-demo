@@ -79,11 +79,14 @@ def test_full_flow(fake):
         assert tid in mg.seen or len(claimed) == 1
         assert store.get_task(tid)["mode"] == "ontology"
 
-        # 2. 驱动 → 发询价B（模板B）
+        # 2. 驱动 → 发询价B（模板B，主题以【询价】开头）
         orbit.drive("ontology", use_llm=False, mg=mg)
-        b_sent = [s for s in mg.sent if "询价" in s["subject"]]
+        b_sent = [s for s in mg.sent if s["subject"].startswith("【询价】")]
         assert b_sent, "应收发询价B"
         assert len(b_sent) == 2
+        # 临期提醒（新特性）：5min 截止属窗口内且仍有供应商未报价 → 主动催报价
+        remind = [s for s in mg.sent if "距报价截止" in s["subject"]]
+        assert remind, "截止前窗口应触发临期催报价提醒"
 
         # 3. 两家供应商报价 → 驱动 → 发审批D（模板D）
         task = store.get_task(tid)

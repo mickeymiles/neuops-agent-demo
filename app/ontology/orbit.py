@@ -6,19 +6,106 @@
 import os
 import re
 import time
+import json
 
 from . import store, execution
 from .decision import build_fact_context
 
 _TERMINAL = ("CLOSED_ABORT", "CLOSED_MANUAL", "R_SETTLE")
 _APPROVE_KW = ("确认", "采购", "同意", "采纳", "就选")
+_REJECT_KW = ("拒绝", "不同意", "不选", "不采纳", "否决", "驳回", "不采购")
 _CLOSE_KW = ("完成", "测试完毕", "更换完成", "采购结束")
 _SHIP_KW = ("单号", "快递单号", "物流单号", "运单")
+_REMIND_WINDOW = 3600  # 临期提醒窗口（秒）：截止前 1 小时主动催报价
+
+
+# ── 截止时间（对齐现役轨 routes_procurement_agent.py:2700-2728 的口径）──
+# 关键：基准取「邮件头 Date（发送方声明时间）」，不是扫描时刻。
+# 用 time.time() 会让截止时间随轮询时机漂移，且任务重跑时结果不一致。
+def _urgent_to_seconds(urgent: str) -> int:
+    """紧急时长换算：5min / 2h / 3天 → 秒。无法识别兜底 24h。"""
+    s = (urgent or "").strip().lower()
+    m = re.search(r"(\d+)\s*(分钟?|min|m|小时?|h|天|d)", s)
+    if not m:
+        return 24 * 3600
+    n = int(m.group(1))
+    unit = m.group(2)
+    if unit in ("分钟", "分", "min", "m"):
+        return n * 60
+    if unit in ("小时", "时", "h"):
+        return n * 3600
+    if unit in ("天", "d"):
+        return n * 24 * 3600
+    return n * 3600
+
+
+def _mail_date_ts(mail: dict) -> int:
+    """从邮件头 Date 取发送方声明时间；缺失时回退 receive_timestamp / now。"""
+    d = (mail or {}).get("date") or (mail or {}).get("date_raw") or ""
+    if d:
+        try:
+            from email.utils import parsedate_to_datetime
+            dt = parsedate_to_datetime(d)
+            if dt.tzinfo is None:
+                import datetime as _dt
+                dt = dt.replace(tzinfo=_dt.timezone.utc)
+            return int(dt.timestamp())
+        except Exception:
+            pass
+    ts = int((mail or {}).get("receive_timestamp") or 0)
+    return ts or int(time.time())
+
+
+def _inquiry_deadline(mail: dict, urgent: str) -> str:
+    """报价截止时间 = 邮件头 Date（发送时间）+ 紧急时长。"""
+    from datetime import datetime
+    base_ts = _mail_date_ts(mail)
+    return datetime.fromtimestamp(base_ts + _urgent_to_seconds(urgent)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _deadline_passed(meta: dict) -> bool:
+    """到点判定（现役轨:3435 同口径：all_replied or now >= deadline）。"""
+    from datetime import datetime
+    dl = (meta or {}).get("quote_deadline") or ""
+    if not dl:
+        return False
+    try:
+        return int(time.time()) >= int(datetime.strptime(dl, "%Y-%m-%d %H:%M:%S").timestamp())
+    except Exception:
+        return False
 
 
 def config():
-    """读现轨参与者配置（只读）：默认供应商 + 审批人。
-    DB `proc_participants`（审批人/供应商）优先，缺失回退 skill JSON；凭据只做 mail 兜底。"""
+    """读本体轨参与者配置：供应商 + 审批人。
+
+    优先级：
+      ① ONT_SUPPLIERS / ONT_APPROVERS 环境变量（本体轨专用，双轨并行时用它隔离）
+      ② 现轨 DB `proc_participants`（只读，不改现轨）
+      ③ skill JSON 兜底
+    这样给本体轨换供应商（例如测试多供应商比价）不会动到生产链路的配置。
+    """
+    suppliers, approvers = [], []
+
+    # ① 本体轨独立配置：ONT_SUPPLIERS="名称:邮箱,名称:邮箱" / ONT_APPROVERS="邮箱,邮箱"
+    try:
+        from app.config import ONT_SUPPLIERS, ONT_APPROVERS
+        for item in (ONT_SUPPLIERS or "").split(","):
+            item = (item or "").strip()
+            if not item:
+                continue
+            if ":" in item:
+                name, _, email_ = item.partition(":")
+                if email_.strip():
+                    suppliers.append({"name": name.strip(), "email": email_.strip()})
+            elif "@" in item:
+                suppliers.append({"name": item, "email": item})
+        approvers = [e.strip() for e in (ONT_APPROVERS or "").split(",") if e.strip()]
+    except Exception:
+        pass
+    if suppliers and approvers:
+        return {"suppliers": suppliers, "approvers": approvers}
+
+    # ② 回退：现轨 proc_participants（只读）
     suppliers, approvers = [], []
     try:
         from app.db.spare_mail import spare_mail_get_config
@@ -60,6 +147,69 @@ def _price(body):
     return m.group(1) if m else ""
 
 
+# 货期/成色 关键词（报价结构化抽取用）
+_DELIVERY_KW = ("货期", "交货期", "交期", "到货", "发货")
+_CONDITION_KW = ("全新原装", "全新", "原厂翻新", "翻新", "拆机二手", "拆机", "二手", "原装")
+
+
+def _parse_quote(body):
+    """从供应商报价正文抽取结构化字段：单价/货期/成色/数量。
+
+    连单价都识别不出 → 返回 None，交由 unparseable 分支催补（不再丢字段）。
+    """
+    s = body or ""
+    m = re.search(r"(?:单价|价格|报价|每台|每件)[：:\s]*([0-9]+(?:\.[0-9]+)?)\s*(?:元|块|RMB|rmb|¥|￥)?", s)
+    if not m:
+        return None
+    unit_price = m.group(1)
+    # 货期：优先「货期：x天」，否则匹配「x天内交货」式
+    delivery = ""
+    for kw in _DELIVERY_KW:
+        dm = re.search(kw + r"[：:\s]*([0-9]+\s*(?:天|工作日|周|月|日|小时))", s)
+        if dm:
+            delivery = dm.group(1).strip()
+            break
+    if not delivery:
+        dm = re.search(r"([0-9]+\s*(?:天|工作日|周|月|日|小时))(?:\s*(?:内|左右)?\s*(?:交货|发货|到货))?", s)
+        delivery = dm.group(1).strip() if dm else ""
+    # 成色：最长匹配优先（"全新原装" 优先于 "全新"）
+    condition = ""
+    for kw in _CONDITION_KW:
+        if kw in s:
+            condition = kw
+            break
+    # 数量
+    qty = ""
+    qm = re.search(r"(?:数量|台数|件数)[：:\s]*([0-9]+(?:\.[0-9]+)?)", s)
+    if qm:
+        qty = qm.group(1)
+    return {"unit_price": unit_price, "delivery": delivery, "condition": condition, "quantity": qty}
+
+
+def _supplier_mentioned_in(body, suppliers):
+    """审批正文中若显式点名某供应商（邮箱或名称），返回其邮箱；否则 None。"""
+    bl = (body or "").lower()
+    for s in (suppliers or []):
+        email = str(s.get("email") or "").strip().lower()
+        name = str(s.get("name") or "").strip().lower()
+        if (email and email in bl) or (name and name in bl):
+            return s.get("email")
+    return None
+
+
+def _thread_match(inrep, known):
+    """判断邮件是否归属某任务的已知线程。known 为 message_id/refs 集合（去 <> 后匹配）。"""
+    if not inrep or not known:
+        return False
+    for x in known:
+        xs = x.strip().strip("<>")
+        if not xs:
+            continue
+        if xs in inrep or x.strip() in inrep:
+            return True
+    return False
+
+
 def ctx_from_task(task):
     meta = task.get("spare_info") or {}
     quotes = meta.get("quotes") or []
@@ -68,8 +218,10 @@ def ctx_from_task(task):
     valid = [q for q in quotes if q.get("email")]
     lowest = min(valid, key=lambda q: float(q.get("unit_price") or 10 ** 12)) if valid else None
     deadline_passed = meta.get("deadline_passed", False)
-    # 下单供应商仅由审批人确认回复显式选定；未审批前不自动选最低价
+    # 智能体固定规则：比价后选最低价（agent_selected_supplier）；
+    # target_supplier 仅在下单前由审批人确认/覆盖后写入，避免绕过审批门。
     target_supplier = meta.get("target_supplier") or ""
+    approval_rejected = bool(meta.get("approval_rejected"))
     lowest_email = lowest["email"] if (valid and lowest) else ""
     internal = "R_CLOSED" if meta.get("engineer_close") else task.get("internal_status")
     ctx = {
@@ -83,7 +235,9 @@ def ctx_from_task(task):
         "valid_quotes": valid, "valid_quote_count": len(valid), "raw_quote_count": len(quotes),
         "valid_supplier_emails": [q.get("email") for q in valid],
         "target_supplier": target_supplier,
+        "approval_rejected": approval_rejected,
         "lowest_supplier": lowest_email,
+        "agent_selected_supplier": meta.get("agent_selected_supplier") or lowest_email,
         "approval_choice": target_supplier,
         "tracking_number_candidate": meta.get("tracking_no", ""),
         "collection_done": bool(deadline_passed or (valid and len(quotes) >= len(target_list) and target_list)),
@@ -100,7 +254,11 @@ def claim_inquiries(mg, mode="off", roll=0.0):
         return claimed
     try:
         from .ingest import fetch_new_inquiry_facts
-        facts = fetch_new_inquiry_facts(mg, hours=48, store=store)
+        from app.config import ONT_SCAN_HOURS as _scan_hours
+    except Exception:
+        _scan_hours = 48
+    try:
+        facts = fetch_new_inquiry_facts(mg, hours=_scan_hours, store=store)
     except Exception as e:
         return claimed
     for it in facts:
@@ -114,27 +272,50 @@ def claim_inquiries(mg, mode="off", roll=0.0):
                 continue
         tid = f"OT-{_shake(fid)}"
         mail = it.get("mail") or {}
-        into = {**fields, "suppliers": config()["suppliers"],
-                "approver_emails": config()["approvers"],
-                "quotes": [], "received_reply_ids": []}
-        # 携带工程师原始采购申请（A）原文与线程元数据：供 D/F 回复同一线程并携带原文
-        into["inquiry_raw"] = (fields.get("mail_body") or fields.get("body")
-                               or mail.get("mail_body_text") or mail.get("body") or "")
-        into["inquiry_mid"] = fid
-        into["inquiry_refs"] = (mail.get("references") or "").strip()
-        into["inquiry_reply_from"] = {
-            "from_email": fields.get("from_email", ""),
-            "to_email_list": mail.get("to_email_list") or [],
-            "cc_email_list": mail.get("cc_email_list") or [],
-        }
-        task = {"task_id": tid, "session_id": tid + "-S", "threat_msg_id": fid,
-                "from_email": fields.get("from_email", ""), "urgency_raw": fields.get("urgent", ""),
-                "internal_status": "R_INIT", "external_status": "R_SEND", "status": "INIT",
-                "mode": "ontology", "spare_info": into}
-        store.upsert_task(task)
-        store.audit("Task", tid, "claim", operator="emp-009", snapshot={"from": fields.get("from_email")})
-        mg.mark_seen_by_message_id(fid)  # SEEN 认领握手：现轨 UNSEEN 不再处理
-        claimed.append(tid)
+        try:
+            into = {**fields, "suppliers": config()["suppliers"],
+                    "approver_emails": config()["approvers"],
+                    "quotes": [], "received_reply_ids": []}
+            # 携带工程师原始采购申请（A）原文与线程元数据：供 D/F 回复同一线程并携带原文
+            into["inquiry_raw"] = (fields.get("mail_body") or fields.get("body")
+                                   or mail.get("mail_body_text") or mail.get("body") or "")
+            into["inquiry_mid"] = fid
+            into["inquiry_refs"] = (mail.get("references") or "").strip()
+            into["inquiry_reply_from"] = {
+                "from_email": fields.get("from_email", ""),
+                "to_email_list": mail.get("to_email_list") or [],
+                "cc_email_list": mail.get("cc_email_list") or [],
+            }
+            # 报价截止时间：建任务路径走 claim_inquiries（不经过 execute_action("createTask")），
+            # 原先 execution._deadline() 根本没机会被调用，导致 quote_deadline 恒为空、
+            # deadline_passed 永假、超时中止成死代码。此处按现役轨口径补齐：
+            #   基准 = 邮件头 Date（发送方声明时间），而非扫描时刻
+            #   时长 = 紧急程度换算（_urgent_to_seconds）
+            into["quote_deadline"] = _inquiry_deadline(mail, fields.get("urgent", ""))
+            into["deadline_passed"] = False
+            task = {"task_id": tid, "session_id": tid + "-S", "threat_msg_id": fid,
+                    "from_email": fields.get("from_email", ""), "urgency_raw": fields.get("urgent", ""),
+                    "internal_status": "R_INIT", "external_status": "R_SEND", "status": "INIT",
+                    "mode": "ontology", "spare_info": into}
+            store.upsert_task(task)
+            store.audit("Task", tid, "claim", operator="emp-009",
+                        snapshot={"from": fields.get("from_email")})
+            # 建任务成功后才置 done：两阶段消费，中途崩溃下轮会重试而不是永久丢单
+            store.mark_email_claimed(fid, tid)
+            try:
+                mg.mark_seen_by_message_id(fid)  # SEEN 认领握手：现轨 UNSEEN 不再处理
+            except Exception:
+                pass  # 主去重是 o_email 账本，SEEN 失败不影响正确性
+            claimed.append(tid)
+        except Exception as e:
+            # 单封认领失败不得中断整批（原先异常会冒泡出函数，后面的邮件全都不处理）
+            try:
+                store.mark_email_failed(fid, f"{type(e).__name__}: {e}")
+                store.audit("Email", fid, "claim_failed", operator="emp-009",
+                            remark=f"{type(e).__name__}: {e}")
+            except Exception:
+                pass
+            continue
     return claimed
 
 
@@ -151,7 +332,7 @@ def process_replies(mg):
         owner = None
         for tid, t in tasks.items():
             known = _mids_of(t)
-            if known and any((">" in x or "" in x) and x.strip()[:60] in inrep or (x.strip() in inrep or x.strip().lstrip("<").rstrip(">") in inrep) for x in known):
+            if known and _thread_match(inrep, known):
                 owner = t
                 break
         if not owner:
@@ -177,14 +358,31 @@ def process_replies(mg):
             meta["engineer_close_refs"] = (m.get("references") or "").strip()
             meta["engineer_close_reply_from"] = mail_meta
             emit = "engineer_close"
-        elif from_e in [a.lower() for a in (meta.get("approver_emails") or [])] and any(k in body for k in _APPROVE_KW):
-            # 审批人确认：按报价单最低价选定供应商（若尚未显式指定）
-            qq = [q for q in (meta.get("quotes") or []) if q.get("email") and q.get("unit_price")]
-            low = min(qq, key=lambda q: float(q.get("unit_price") or 10 ** 12)) if qq else None
-            chosen = meta.get("target_supplier") or (low["email"] if low else "")
-            meta["target_supplier"] = chosen
-            meta["approval_choice"] = chosen
-            emit = "approval"
+        elif from_e in [a.lower() for a in (meta.get("approver_emails") or [])]:
+            if any(k in body for k in _REJECT_KW):
+                # 审批驳回：显式中止，不再无限重发审批 D
+                meta["approval_rejected"] = True
+                meta["target_supplier"] = ""
+                meta["approval_choice"] = ""
+                emit = "approval_reject"
+            elif any(k in body for k in _APPROVE_KW):
+                # 智能体固定规则：比价后选最低价。审批人「确认采购」→ 沿用最低价；
+                # 仅当审批人「显式点名其他供应商」(且确已报价) 才覆盖。
+                qq = [q for q in (meta.get("quotes") or []) if q.get("email") and q.get("unit_price")]
+                low = min(qq, key=lambda q: float(q.get("unit_price") or 10 ** 12)) if qq else None
+                low_email = low["email"] if low else ""
+                named = _supplier_mentioned_in(body, config()["suppliers"])
+                # 覆盖条件：点名存在、确已报价、且与最低价不同
+                if named and named != low_email and any(str(q.get("email")) == named for q in qq):
+                    chosen = named
+                else:
+                    # 确认采购 / 未点名 / 点名即最低价 → 沿用智能体固定规则选的最低价
+                    chosen = low_email
+                meta["agent_selected_supplier"] = low_email  # 记录智能体比价结论
+                meta["target_supplier"] = chosen
+                meta["approval_choice"] = chosen
+                meta["approval_rejected"] = False
+                emit = "approval"
         elif any(k in body for k in _SHIP_KW):
             mn = re.search(r"([A-Za-z]{0,6}[\d]{6,})", body)
             meta["tracking_no"] = mn.group(1) if mn else body[:80]
@@ -192,13 +390,30 @@ def process_replies(mg):
             meta["ship_mid"] = mid
             meta["ship_reply_from"] = mail_meta
             emit = "shipping"
-        elif _price(body):
+        elif _parse_quote(body):
+            q = _parse_quote(body)
+            q.update({"email": from_e, "raw": body, "msg_id": mid,
+                      "refs": (m.get("references") or "").strip(),
+                      "reply_all": mail_meta,
+                      "receive_time": time.strftime("%Y-%m-%d %H:%M:%S")})
             quotes = meta.get("quotes") or []
-            quotes.append({"email": from_e, "unit_price": _price(body), "raw": body,
-                           "msg_id": mid, "refs": (m.get("references") or "").strip(),
-                           "reply_all": mail_meta,
-                           "receive_time": time.strftime("%Y-%m-%d %H:%M:%S")})
+            # 同供应商按邮箱 upsert（手动改价 is_manual 的保留，不被邮件覆盖）
+            has_manual = any(str(xq.get("email") or "").strip().lower() == from_e and xq.get("is_manual")
+                             for xq in quotes)
+            if not has_manual:
+                replaced = False
+                for i, ex in enumerate(quotes):
+                    if str(ex.get("email") or "").strip().lower() == from_e and not ex.get("is_manual"):
+                        quotes[i] = q
+                        replaced = True
+                        break
+                if not replaced:
+                    quotes.append(q)
             meta["quotes"] = quotes
+            # 智能体固定规则：每次报价后重算并保存「比价选最低价」结论
+            low2 = min([x for x in quotes if x.get("email") and x.get("unit_price")],
+                       key=lambda q: float(q.get("unit_price") or 10 ** 12), default=None)
+            meta["agent_selected_supplier"] = low2["email"] if low2 else ""
             # 已给有效报价 → 从"解析失败"清单移除
             un = list(meta.get("unparseable_replies") or [])
             if from_e in un:
@@ -231,21 +446,45 @@ def drive(mode="off", use_llm=False, mg=None):
     for t in store.list_tasks(limit=100):
         if t.get("mode") != "ontology" or t.get("status") in _TERMINAL:
             continue
+        # 到点判定：每轮刷新 deadline_passed。
+        # 此前该字段只有读取方（orbit ctx / ontology.py / decision.py）而无任何写入点，
+        # 恒为初始 False → 依赖它的 abortTask（超时中止）永不触发，等于死代码。
+        try:
+            _meta = json.loads(t.get("spare_info") or "{}")
+            if _meta.get("quote_deadline"):
+                _passed = _deadline_passed(_meta)
+                if _passed != _meta.get("deadline_passed"):
+                    _meta["deadline_passed"] = _passed
+                    store.upsert_task({**t, "spare_info": _meta})
+                    t = {**t, "spare_info": _meta}
+        except Exception:
+            pass
         ctx = ctx_from_task(t)
+        # 临期提醒（无副作用风险：仅一次、有窗口、有未报价供应商才发）
+        try:
+            _maybe_remind_quotes(t, ctx, mg)
+        except Exception:
+            pass
         # 影子/信任模式都先算规则基准（参照系）
         rule_act, rule_reason, _ = _decide(ctx, t, False)
         chosen, reason, via_llm = rule_act, rule_reason, False
         aligned = True
-        if trusted or shadow:
+        llm_act, llm_reason = None, ""
+        # use_llm 形参此前是死参数（从未参与判断），这里让它真正生效。
+        # 影子模式：始终调 LLM 做对照记录（但执行规则动作），所以不受 use_llm 限制；
+        # 信任模式：只有显式开启 use_llm 才请求大模型并采用其决策。
+        if shadow or (trusted and use_llm):
             llm_act, llm_reason, via2 = _decide(ctx, t, True)
             aligned = (llm_act == rule_act)
             store.audit("Task", t["task_id"], f"align:{llm_act}",
                         operator="emp-009",
                         snapshot={"rule": rule_act, "llm": llm_act, "aligned": aligned,
-                                  "llm_reason": llm_reason[:200]},
+                                  "llm_reason": (llm_reason or "")[:200]},
                         remark="本体知识层 LLM 决策 影子对齐")
-        if trusted and via_llm:
-            chosen, reason, via_llm = (llm_act, llm_reason, True)
+            # 【修复】原判 via_llm（恒 False）导致 LLM 决策永远不被采用，
+            # 实际生效的是规则动作，整条链退化成影子记录。改为判 via2（LLM 是否真正给出动作）。
+            if trusted and use_llm and via2 and llm_act:
+                chosen, reason, via_llm = llm_act, llm_reason, True
         ok, detail = execution.execute_action(chosen, t, ctx, mg=mg, force=False)
         reports.append({"task_id": t["task_id"], "action": chosen, "reason": reason[:40],
                         "via_llm": via_llm, "aligned": aligned, "ok": ok, "detail": detail})
@@ -260,6 +499,39 @@ def _decide(ctx, task, use_llm):
 def _shake(s):
     import hashlib
     return hashlib.md5((s or "x").encode()).hexdigest()[:8].upper()
+
+
+def _maybe_remind_quotes(task, ctx, mg):
+    """临期提醒：截止前 _REMIND_WINDOW 内、仍有供应商未报价 → 主动催报价（每任务仅一次）。"""
+    meta = task.get("spare_info") or {}
+    dl = (meta or {}).get("quote_deadline") or ""
+    if not dl or ctx.get("deadline_passed") or ctx.get("collection_done"):
+        return
+    try:
+        from datetime import datetime
+        remain = int(datetime.strptime(dl, "%Y-%m-%d %H:%M:%S").timestamp()) - int(time.time())
+    except Exception:
+        return
+    if remain > _REMIND_WINDOW or meta.get("reminded_at"):
+        return
+    quoted = {str(q.get("email") or "").lower() for q in (meta.get("quotes") or [])}
+    targets = [s for s in (ctx.get("target_supplier_list") or []) if str(s).lower() not in quoted]
+    if not targets or not mg:
+        return
+    subj = "Re: 【询价】距报价截止不足1小时，请尽快回复报价"
+    body = (f"您好，以下备件询价将在 {dl} 截止，请尽快回复单价/货期/成色：\n"
+            f"备件：{ctx.get('part_type')} {ctx.get('brand')} {ctx.get('pn')} x {ctx.get('count')}\n"
+            f"任务编号：{task.get('task_id')}\n- NeuOps 备件询价(emp-009)")
+    by_sup = meta.get("b_msg_by_supplier") or {}
+    for email in targets:
+        bmid = by_sup.get(str(email).strip()) or None
+        try:
+            mg.send_mail(to=[email], subject=subj, body_text=body,
+                         reply_to_mail_id=bmid, reply_refs_chain=bmid)
+        except Exception:
+            pass
+    meta["reminded_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    store.upsert_task({**task, "spare_info": meta})
 
 
 # ── 全流程：认领 + 回复 + 驱动 ────────────────────────────────────
