@@ -17,7 +17,7 @@
 
 口令（从环境变量读，勿硬编码）：
   MI1_PASS / MI2_PASS / MI5_PASS / MI6_PASS   # b1/b2/b5/b6 发送所需
-  B4_PASS（可选，用于只读观察 b4 收件箱）      # 默认取已知 b4 口令
+  B4_PASS（可选，用于只读观察 b4 收件箱）      # 不再内置默认值，须显式提供
 """
 import imaplib
 import os
@@ -45,7 +45,7 @@ P2 = os.environ.get("MI2_PASS", "")
 P5 = os.environ.get("MI5_PASS", "")
 P6 = os.environ.get("MI6_PASS", "")
 # b4 口令仅用于只读观察其收件箱；缺省用已知值（测试账号）。
-B4P = os.environ.get("B4_PASS", "GMydirfgUNnpp87F")
+B4P = os.environ.get("B4_PASS", "")
 
 NAME = {B1: "张运维", B2: "中软国际", B5: "李审批", B6: "神州数码"}
 SUP_NAME = {B2: "中软国际", B6: "神州数码"}

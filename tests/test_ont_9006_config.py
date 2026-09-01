@@ -143,18 +143,17 @@ def test_orbit_config_prefers_9006_page_config(db, monkeypatch):
         "9006 页面审批人应优先于 ONT_APPROVERS 环境变量"
 
 
-def test_orbit_config_falls_back_when_page_empty(monkeypatch):
-    """页面未配置时不得炸，应完整回退旧链路（与 _legacy_config() 结果一致）。
+def test_orbit_config_has_no_env_fallback(monkeypatch):
+    """页面未配置时**不得**回退环境变量 —— 配置来源必须唯一（9006 页面）。
 
-    注意：app.config 的 ONT_SUPPLIERS/ONT_APPROVERS 在 import 时即固化，
-    运行期 monkeypatch 环境变量不会生效，故这里断言「等于旧链路结果」而非具体值。
+    即便 ONT_SUPPLIERS / ONT_APPROVERS 有值，页面没配就是没有，
+    避免出现"页面改了却不生效"这种二义问题。
     """
     missing = tempfile.mktemp(suffix="_nope.db")
     monkeypatch.setenv("PROC_9006_DB_PATH", missing)
 
     from app.ontology import orbit
     cfg = orbit.config()
-    legacy = orbit._legacy_config()
-    assert cfg == legacy, "页面为空时应完全回退到旧链路"
-    assert legacy["suppliers"], "旧链路应能给出供应商（否则回退无意义）"
-    assert legacy["approvers"], "旧链路应能给出审批人（否则回退无意义）"
+    assert cfg["suppliers"] == [], "页面未配置供应商时不得回退到 ONT_SUPPLIERS"
+    assert cfg["approvers"] == [], "页面未配置审批人时不得回退到 ONT_APPROVERS"
+    assert not hasattr(orbit, "_legacy_config"), "env 兜底函数 _legacy_config 应已移除"

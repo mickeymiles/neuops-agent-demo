@@ -78,34 +78,34 @@ def _deadline_passed(meta: dict) -> bool:
 def config():
     """读本体轨参与者配置：供应商 + 审批人。
 
-    权威来源 = 9006 页面维护的 contract_compare.db（本轨只读）：
+    唯一来源 = 9006 页面维护的 contract_compare.db（本轨只读，**不再有任何硬编码/环境变量兜底**）：
       - 供应商：procurement_supplier（9006「供应商」页）
-      - 审批人：procurement_approver（9006「审批人」页，替代 ONT_APPROVERS 环境变量）
-    页面未配置某一项时，该项才回退旧链路（env → 现轨 DB → skill），并打 WARNING。
+      - 审批人：procurement_approver（9006「审批人」页）
+    页面未配置时返回空并打 ERROR —— 不回退任何旧链路，避免配置来源二义。
     """
     suppliers, approvers = [], []
     try:
         from app.db import proc_9006_config as p9
         suppliers = p9.load_suppliers() or []
         approvers = p9.load_approvers() or []
-    except Exception:
+    except Exception as e:
         suppliers, approvers = [], []
-    if suppliers and approvers:
-        return {"suppliers": suppliers, "approvers": approvers}
-    # 页面尚未配齐 → 缺项回退旧链路，并告警（上线前请在 9006 页面维护，之后不再触发）
+        _log_cfg_error("读取 9006 页面配置失败：%s", e)
+    if not suppliers or not approvers:
+        _log_cfg_error(
+            "9006 页面配置不完整：供应商 %d / 审批人 %d。"
+            "请到 9006「供应商」「审批人」页面维护（代码已不再有环境变量兜底）",
+            len(suppliers), len(approvers))
+    return {"suppliers": suppliers, "approvers": approvers}
+
+
+def _log_cfg_error(fmt, *args):
+    """配置异常统一走 ERROR 日志（不抛异常，避免打断主循环）。"""
     try:
         import logging
-        logging.getLogger(__name__).warning(
-            "[ont-config] 9006 页面配置不完整：供应商 %d / 审批人 %d，"
-            "缺项暂回退旧配置链路，请在 9006「供应商」「审批人」页面维护",
-            len(suppliers), len(approvers))
+        logging.getLogger(__name__).error("[ont-config] " + fmt, *args)
     except Exception:
         pass
-    legacy = _legacy_config()
-    return {
-        "suppliers": suppliers or (legacy.get("suppliers") or []),
-        "approvers": approvers or (legacy.get("approvers") or []),
-    }
 
 
 def _load_global_cc():
@@ -115,56 +115,6 @@ def _load_global_cc():
         return p9.load_global_cc() or []
     except Exception:
         return []
-
-
-def _legacy_config():
-    """旧配置链路（仅供 config() 回退）：env → 现轨 proc_participants → skill JSON。"""
-    suppliers, approvers = [], []
-
-    # ① 本体轨独立配置：ONT_SUPPLIERS="名称:邮箱,名称:邮箱" / ONT_APPROVERS="邮箱,邮箱"
-    try:
-        from app.config import ONT_SUPPLIERS, ONT_APPROVERS
-        for item in (ONT_SUPPLIERS or "").split(","):
-            item = (item or "").strip()
-            if not item:
-                continue
-            if ":" in item:
-                name, _, email_ = item.partition(":")
-                if email_.strip():
-                    suppliers.append({"name": name.strip(), "email": email_.strip()})
-            elif "@" in item:
-                suppliers.append({"name": item, "email": item})
-        approvers = [e.strip() for e in (ONT_APPROVERS or "").split(",") if e.strip()]
-    except Exception:
-        pass
-    if suppliers and approvers:
-        return {"suppliers": suppliers, "approvers": approvers}
-
-    # ② 回退：现轨 proc_participants（只读）
-    suppliers, approvers = [], []
-    try:
-        from app.db.spare_mail import spare_mail_get_config
-        p = spare_mail_get_config("proc_participants") or {}
-        for s in (p.get("default_suppliers") or []):
-            if isinstance(s, dict) and s.get("email"):
-                suppliers.append({"name": s.get("name", ""), "email": s.get("email")})
-        approvers = [e for e in (p.get("approver_emails") or []) if e]
-    except Exception:
-        p = {}
-    # 兜底：skill JSON
-    if not suppliers or not approvers:
-        try:
-            from app.utils import load_skill
-            sk = load_skill("skill-proc-mail-inquiry") or {}
-            comp = (sk.get("compose") or {}).get("participants") or (sk.get("participants") or {})
-            if not suppliers:
-                suppliers = [s for s in (comp.get("default_suppliers") or [])
-                             if isinstance(s, dict) and s.get("email")]
-            if not approvers:
-                approvers = [e for e in (comp.get("approver_emails") or []) if e]
-        except Exception:
-            pass
-    return {"suppliers": suppliers, "approvers": approvers}
 
 
 def _mids_of(task):

@@ -4,7 +4,7 @@
 用于分布式联调前清场，避免历史/陈旧任务的 B/D/E/G 邮件干扰新一次全流程。
 经 tools/proxy_mail_tunnel.py 的 127.0.0.1:1993/1465 隧道抵达 163。
 
-口令来自环境变量（勿硬编码）：MI1_PASS/MI2_PASS/MI5_PASS/MI6_PASS，B4_PASS 默认已知测试值。
+口令一律来自环境变量（禁止硬编码）：MI1_PASS/MI2_PASS/MI5_PASS/MI6_PASS/B4_PASS，均须显式提供。
 """
 import imaplib
 import os
@@ -18,7 +18,7 @@ ACCOUNTS = {
     "b2": ("biquanzhi2@163.com", os.environ.get("MI2_PASS", "")),
     "b5": ("biquanzhi5@163.com", os.environ.get("MI5_PASS", "")),
     "b6": ("biquanzhi6@163.com", os.environ.get("MI6_PASS", "")),
-    "b4": ("biquanzhi4@163.com", os.environ.get("B4_PASS", "GMydirfgUNnpp87F")),
+    "b4": ("biquanzhi4@163.com", os.environ.get("B4_PASS", "")),
 }
 
 

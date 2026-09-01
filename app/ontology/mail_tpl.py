@@ -96,31 +96,11 @@ def quote_orig(body: str, max_chars: int = 3000) -> str:
 def _supplier_name_map():
     """构建 {email: 名称} 映射，供邮件正文显示供应商实名。
 
-    优先 9006「供应商」页维护的主数据（procurement_supplier）；
-    取不到再回退 ONT_SUPPLIERS 环境变量（"名称:邮箱,名称:邮箱"）。"""
+    唯一来源 = 9006「供应商」页维护的主数据（procurement_supplier）。
+    不再回退 ONT_SUPPLIERS 环境变量 —— 避免配置来源二义。"""
     try:
         from app.db import proc_9006_config as p9
-        m = p9.supplier_name_map() or {}
-        if m:
-            return m
-    except Exception:
-        pass
-    try:
-        from app.config import ONT_SUPPLIERS
-        m = {}
-        for item in (ONT_SUPPLIERS or "").split(","):
-            item = (item or "").strip()
-            if not item:
-                continue
-            if ":" in item:
-                name, _, email_ = item.partition(":")
-            elif "@" in item:
-                name, email_ = item, item
-            else:
-                continue
-            if email_.strip():
-                m[email_.strip().lower()] = name.strip()
-        return m
+        return p9.supplier_name_map() or {}
     except Exception:
         return {}
 
