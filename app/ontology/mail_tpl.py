@@ -44,6 +44,23 @@ def load_templates():
             tpls = merged
     except Exception:
         pass
+    # 最高优先级：9006「邮件模板」页面维护的自定义模板
+    # 只覆盖非空字段 —— subject/body 留空的模板仍用 skill 默认，避免发出空邮件
+    try:
+        from app.db import proc_9006_config as p9
+        page_tpls = p9.load_mail_templates() or {}
+        if page_tpls:
+            merged = dict(tpls)
+            for k, v in page_tpls.items():
+                base = dict(merged.get(k) or {})
+                if v.get("subject"):
+                    base["subject"] = v["subject"]
+                if v.get("body"):
+                    base["body"] = v["body"]
+                merged[k] = base
+            tpls = merged
+    except Exception:
+        pass
     return tpls or {}
 
 
@@ -77,7 +94,17 @@ def quote_orig(body: str, max_chars: int = 3000) -> str:
 
 
 def _supplier_name_map():
-    """从 ONT_SUPPLIERS（"名称:邮箱,名称:邮箱"）构建 {email: 名称} 映射，供邮件正文显示供应商实名。"""
+    """构建 {email: 名称} 映射，供邮件正文显示供应商实名。
+
+    优先 9006「供应商」页维护的主数据（procurement_supplier）；
+    取不到再回退 ONT_SUPPLIERS 环境变量（"名称:邮箱,名称:邮箱"）。"""
+    try:
+        from app.db import proc_9006_config as p9
+        m = p9.supplier_name_map() or {}
+        if m:
+            return m
+    except Exception:
+        pass
     try:
         from app.config import ONT_SUPPLIERS
         m = {}

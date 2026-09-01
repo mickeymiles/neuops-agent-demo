@@ -78,12 +78,47 @@ def _deadline_passed(meta: dict) -> bool:
 def config():
     """读本体轨参与者配置：供应商 + 审批人。
 
-    优先级：
-      ① ONT_SUPPLIERS / ONT_APPROVERS 环境变量（本体轨专用，双轨并行时用它隔离）
-      ② 现轨 DB `proc_participants`（只读，不改现轨）
-      ③ skill JSON 兜底
-    这样给本体轨换供应商（例如测试多供应商比价）不会动到生产链路的配置。
+    权威来源 = 9006 页面维护的 contract_compare.db（本轨只读）：
+      - 供应商：procurement_supplier（9006「供应商」页）
+      - 审批人：procurement_approver（9006「审批人」页，替代 ONT_APPROVERS 环境变量）
+    页面未配置某一项时，该项才回退旧链路（env → 现轨 DB → skill），并打 WARNING。
     """
+    suppliers, approvers = [], []
+    try:
+        from app.db import proc_9006_config as p9
+        suppliers = p9.load_suppliers() or []
+        approvers = p9.load_approvers() or []
+    except Exception:
+        suppliers, approvers = [], []
+    if suppliers and approvers:
+        return {"suppliers": suppliers, "approvers": approvers}
+    # 页面尚未配齐 → 缺项回退旧链路，并告警（上线前请在 9006 页面维护，之后不再触发）
+    try:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[ont-config] 9006 页面配置不完整：供应商 %d / 审批人 %d，"
+            "缺项暂回退旧配置链路，请在 9006「供应商」「审批人」页面维护",
+            len(suppliers), len(approvers))
+    except Exception:
+        pass
+    legacy = _legacy_config()
+    return {
+        "suppliers": suppliers or (legacy.get("suppliers") or []),
+        "approvers": approvers or (legacy.get("approvers") or []),
+    }
+
+
+def _load_global_cc():
+    """系统配置抄送：9006「抄送」页维护的全局抄送列表（只读，取不到返回 []）。"""
+    try:
+        from app.db import proc_9006_config as p9
+        return p9.load_global_cc() or []
+    except Exception:
+        return []
+
+
+def _legacy_config():
+    """旧配置链路（仅供 config() 回退）：env → 现轨 proc_participants → skill JSON。"""
     suppliers, approvers = [], []
 
     # ① 本体轨独立配置：ONT_SUPPLIERS="名称:邮箱,名称:邮箱" / ONT_APPROVERS="邮箱,邮箱"
@@ -244,6 +279,8 @@ def ctx_from_task(task):
         "from_email": task.get("from_email"), "approver_emails": approvers,
         # 初始询价 A 的抄送人（运维工程师在发 A 时抄送的观察者），须透传到后续所有邮件
         "inquiry_cc": list((meta.get("inquiry_reply_from") or {}).get("cc_email_list") or []),
+        # 系统配置抄送（9006「抄送」页维护的全局抄送），与 A 抄送叠加，两路都要携带
+        "global_cc": _load_global_cc(),
         "internal_status": internal, "external_status": task.get("external_status"),
         "target_supplier_list": [s.get("email") for s in target_list],
         "valid_quotes": valid, "valid_quote_count": len(valid), "raw_quote_count": len(quotes),
