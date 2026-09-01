@@ -10,6 +10,7 @@ import os
 import time
 
 from . import store, mail_tpl
+from app.config import settlement_enabled
 
 # 治理：本轨默认 off（不接管、不执行变更，零影响现轨，本体轨暂停改走传统状态机）。
 # 需要时可用 ONT_MODE / ONT_EXEC / ONT_LLM 开启。
@@ -209,6 +210,14 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
 
     if action_id == "engineerFinalClose":
         meta = dict(task.get("spare_info") or {})
+        # 结算闭环开关（ONT_SETTLEMENT_ENABLED，默认关闭）：不向供应商发 G 结算邮件，
+        # 仅把任务标记 CLOSED（不再发送任何邮件），预留后续启用。
+        if not settlement_enabled():
+            store.upsert_task({**task, "external_status": "R_CLOSED", "internal_status": "R_CLOSED",
+                               "status": "CLOSED", "spare_info": meta})
+            store.audit("Task", task["task_id"], "engineerFinalClose", operator="emp-009",
+                        snapshot={"skipped": "settlement disabled: G not sent"})
+            return True, "settlement disabled: task closed without G"
         if mg:
             sup = ctx.get("target_supplier") or meta.get("target_supplier") or ""
             q = _sel_quote(meta, sup)

@@ -9,6 +9,7 @@ import time
 import json
 
 from . import store, execution
+from app.config import settlement_enabled
 
 _TERMINAL = ("CLOSED_ABORT", "CLOSED_MANUAL", "R_SETTLE")
 _APPROVE_KW = ("确认", "采购", "同意", "采纳", "就选")
@@ -366,7 +367,11 @@ def process_replies(mg):
                      "to_email_list": m.get("to_email_list") or [],
                      "cc_email_list": m.get("cc_email_list") or []}
         emit = None
-        if from_e == str(cur.get("from_email") or "").lower().strip() and any(k in body_new for k in _CLOSE_KW):
+        if (from_e == str(cur.get("from_email") or "").lower().strip()
+                and any(k in body_new for k in _CLOSE_KW)
+                and settlement_enabled()):
+            # 结算闭环开关（ONT_SETTLEMENT_ENABLED）：关闭时工程师「更换完成」邮件不触发闭环，
+            # 仅保留在收件箱、任务维持已发货待确认状态——预留后续启用。
             meta["engineer_close"] = body_new[:500]
             meta["engineer_close_mid"] = mid
             meta["engineer_close_refs"] = (m.get("references") or "").strip()

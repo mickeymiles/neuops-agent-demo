@@ -147,7 +147,7 @@ def task_no_of(subj):
 
 
 # 运维工程师在初始询价 A 中抄送的观察者；智能体后续所有邮件都应携带这些人
-EXPECT_CC = [B5, "biqzh@neusoft.com", "260110550@qq.com"]
+EXPECT_CC = [B5, "260110550@qq.com"]
 
 
 def _cc_has(cc_raw, to_raw, *addrs):
@@ -209,7 +209,7 @@ def _reply_all_send(replier, pw, orig, body, name=None, subject=None):
     """全员回复：To=原始发件人；Cc=原始 To+Cc 中除自己与发件人外的人；并携带原文引文。
 
     - 这样本地模拟角色发出的回信会像真实邮件客户端一样『回复全部』，
-      抄送观察者(b5/biqzh/qq)也能看到每一封回信；
+      抄送观察者(b5/qq)也能看到每一封回信；
     - 正文携带原始邮件引文（> 引用），便于人工核对线程上下文。
     """
     mid, subj, obody, raw, occ, oto, ofrm = orig

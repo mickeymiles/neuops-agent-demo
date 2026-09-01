@@ -6,6 +6,7 @@ Stage B/C：dry_run=False 时执行动作（发送/落库），此处预留。
 import json
 
 from . import knowledge
+from app.config import settlement_enabled
 
 
 def _bool(v):
@@ -120,9 +121,9 @@ def propose_action(ctx: dict):
             return ("receiveTrackingNumber", "R_WAIT_SHIPPING", internal, "登记快递单号")
         return ("requestTrackingNo", external, internal, "回执无单号，主动索取")
 
-    # S5 已发货：等工程师确认完成 → 发结算 G
+    # S5 已发货：等工程师确认完成 → 发结算 G（受 ONT_SETTLEMENT_ENABLED 开关控制，默认关闭预留）
     if external in ("R_WAIT_SHIPPING", "R_WAIT_ENGINEER_CLOSE"):
-        if internal == "R_CLOSED":
+        if internal == "R_CLOSED" and settlement_enabled():
             return ("engineerFinalClose", "R_SETTLE", "R_CLOSED", "工程师确认完成，发 G 结算")
         return ("receiveTrackingNumber", external, internal, "等待供应商单号/工程师确认")
 

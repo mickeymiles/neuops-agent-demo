@@ -175,6 +175,15 @@ ONT_REQUESTERS = os.getenv("ONT_REQUESTERS", "")
 # 认领扫描窗口下界（小时）。实际下界 = min(now-该值, 水位-缓冲)，水位用于停机后补扫防漏。
 ONT_SCAN_HOURS = int(os.getenv("ONT_SCAN_HOURS", "48"))
 
+# 结算闭环开关：工程师「更换完成」触发 + 向供应商发结算邮件 G。
+# 当前不需要该闭环，默认关闭；置 ONT_SETTLEMENT_ENABLED=1 即可启用（预留，无需改代码）。
+ONT_SETTLEMENT_ENABLED = os.getenv("ONT_SETTLEMENT_ENABLED", "0") == "1"
+
+
+def settlement_enabled() -> bool:
+    """结算闭环是否启用（工程师更换完成触发 + G 结算邮件）。默认关闭，预留后续开启。"""
+    return os.getenv("ONT_SETTLEMENT_ENABLED", "0") == "1"
+
 # 飞书应用凭据（emp-008 发送飞书通知）
 PROC_FEISHU_APP_ID = os.getenv("PROC_FEISHU_APP_ID", "")
 PROC_FEISHU_APP_SECRET = os.getenv("PROC_FEISHU_APP_SECRET", "")

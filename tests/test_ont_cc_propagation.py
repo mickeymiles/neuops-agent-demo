@@ -10,6 +10,8 @@ import tempfile
 os.environ.setdefault("ONT_DB_PATH", tempfile.mktemp(suffix=".db"))
 os.environ["ONT_REQUESTERS"] = "eng@corp.com"
 os.environ["ONT_MAIL_USERNAME"] = "b4@corp.com"
+# 该用例专门验证 G 结算邮件的抄送透传，故显式开启结算闭环（运行时默认关闭，预留后续启用）
+os.environ["ONT_SETTLEMENT_ENABLED"] = "1"
 
 import pytest
 

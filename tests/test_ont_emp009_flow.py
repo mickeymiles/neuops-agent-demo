@@ -7,6 +7,8 @@ import tempfile
 import pytest
 
 os.environ["ONT_DB_PATH"] = tempfile.mktemp(suffix=".db")
+# 该用例覆盖到工程师确认闭环（G 结算），显式开启结算闭环（运行时默认关闭，预留后续启用）
+os.environ["ONT_SETTLEMENT_ENABLED"] = "1"
 import app.ontology as ont
 ont.init()
 import app.ontology.orbit as orbit
