@@ -27,6 +27,12 @@ def build_fact_context(task: dict) -> dict:
             sjson = json.loads(sjson)
         except Exception:
             sjson = []
+    meta = task.get("spare_info") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
     valid_quotes = [q for q in qjson if q.get("parse_failed") is not True]
     target_emails = [s.get("email", "") for s in sjson if s.get("email")]
 
@@ -48,16 +54,18 @@ def build_fact_context(task: dict) -> dict:
         "target_supplier": task.get("target_supplier") or "",
         "approval_choice": (task.get("approval_choice") or task.get("approval_params") or {}).get("supplier", "") if isinstance(task.get("approval_params"), dict) else (task.get("target_supplier") or ""),
         "tracking_number_candidate": task.get("shipped_no") or (task.get("shipped_mail_meta") or ""),
-        # 收集/截止
+        # 收集/截止：以运行时 meta 的 deadline_passed 为准，叠加步骤字符串口径，确保两条路径一致
         "collection_done": _bool(task.get("latest_step", "").find("DECIDING") >= 0
                                  or task.get("external_status") in
                                  ("R_DECIDING", "R_WAIT_APPROVAL", "R_APPROVAL", "R_ORDER",
-                                  "R_WAIT_ORDER", "R_WAIT_SHIPPING", "R_WAIT_ACCEPTANCE", "R_WAIT_SETTLE")),
+                                  "R_WAIT_ORDER", "R_WAIT_SHIPPING", "R_WAIT_ACCEPTANCE", "R_WAIT_SETTLE")
+                                 or meta.get("deadline_passed") or meta.get("collection_done")),
         "deadline_passed": _bool(("超时" in str(task.get("latest_step", "")))
                                  or ("DECIDING" in str(task.get("latest_step", "")))
                                  or task.get("external_status") in
                                  ("R_DECIDING", "R_WAIT_APPROVAL", "R_APPROVAL", "R_ORDER",
-                                  "R_WAIT_ORDER", "R_WAIT_SHIPPING", "R_WAIT_ACCEPTANCE", "R_WAIT_SETTLE")),
+                                  "R_WAIT_ORDER", "R_WAIT_SHIPPING", "R_WAIT_ACCEPTANCE", "R_WAIT_SETTLE")
+                                 or meta.get("deadline_passed")),
     }
     if isinstance(task.get("approval_choice"), str) and task.get("approval_choice"):
         ctx["approval_choice"] = task["approval_choice"]
@@ -95,7 +103,9 @@ def propose_action(ctx: dict):
     if external in ("R_SEND", "R_INIT", "INVITE_QUOTE", "R_WAIT_QUOTES"):
         if deadline_passed and valid_n == 0 and raw_n == 0:
             return ("abortTask", "CLOSED_ABORT", internal, "无任何报价且到期")
-        if not collection_done:
+        # 收集阶段未结束且未到期 → 收报价/催补；
+        # 截止时间到（deadline_passed）一律不再发催补邮件（没有就没有），直接收尾进审批
+        if not collection_done and not deadline_passed:
             # 收到回复但解析失败 → 主动回信催促补全（≠无回复，不应干等）
             if ctx.get("unparseable_supplier_emails"):
                 return ("requestQuoteClarification", external, internal,
