@@ -96,11 +96,17 @@ def _ensure_schema(conn):
     """)
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_proc_mail_seen_mid "
                  "ON procurement_mail_seen(email_message_id)")
-    # 幂等补列（表早于本版本创建时）
+    # 幂等补列（表早于本版本创建时）。
+    # 注意：`references` 是 SQLite 保留字，补列必须加反引号；
+    # 且单列失败不应中断整轮建表，否则后续表建不出来（曾因此吞掉认领异常）。
     _ms_existing = {r[1] for r in conn.execute("PRAGMA table_info(procurement_mail_seen)")}
-    for _c in ("body", "to_json", "cc_json", "in_reply_to", "references"):
-        if _c not in _ms_existing:
-            conn.execute(f"ALTER TABLE procurement_mail_seen ADD COLUMN {_c} TEXT DEFAULT ''")
+    for _name, _ddl in (("body", "body"), ("to_json", "to_json"), ("cc_json", "cc_json"),
+                        ("in_reply_to", "in_reply_to"), ("references", "`references`")):
+        if _name not in _ms_existing:
+            try:
+                conn.execute(f"ALTER TABLE procurement_mail_seen ADD COLUMN {_ddl} TEXT DEFAULT ''")
+            except Exception:
+                pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS procurement_agent_state (
             state_key TEXT PRIMARY KEY,
