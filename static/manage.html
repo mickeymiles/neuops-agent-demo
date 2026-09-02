@@ -30,9 +30,6 @@
       <div class="nav-item" data-page="skills" onclick="navigateTo('skills')">
         <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v2a2 2 0 0 1-4 0V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1zM4 7h4v3H6a1 1 0 0 0-1 1v1h3v4H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zM12 7h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-5v-4h-2a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/></svg></span>技能中心（SKILLS）
       </div>
-      <div class="nav-item" data-page="mailinquiry" onclick="navigateTo('mailinquiry')">
-        <span class="nav-icon"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="m22 6-10 7L2 6"/></svg></span>备件邮件询价
-      </div>
       <div class="nav-section-gap"></div>
       <div class="nav-section-header">数字员工</div>
       <div class="nav-item" data-page="employees" onclick="navigateTo('employees')">
@@ -182,72 +179,6 @@
         <div id="emp-tab-channels" style="flex:1;overflow-y:auto;" class="hidden"></div>
       </div>
     </div>
-
-    <!-- ═══════ PAGE: 备件邮件询价（配置管理）═══════ -->
-    <div id="page-mailinquiry" class="page hidden" style="height:100%;display:flex;flex-direction:column;">
-      <div class="page-header">
-        <h2 style="display:inline-flex;align-items:center;gap:8px;"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="m22 6-10 7L2 6"/></svg>备件邮件询价</h2>
-        <div class="header-right">
-          <button class="btn-primary" onclick="miSaveConfig()">保存配置</button>
-          <button class="card-btn" onclick="miRunTick()">触发 Tick</button>
-        </div>
-      </div>
-      <div class="page-body" style="padding:24px 32px;overflow:auto;">
-        <div class="mi-banner" style="padding:12px 16px;border:1px solid var(--c-border-light);border-radius:12px;background:rgba(56,189,248,0.06);font-size:13px;color:var(--c-text-secondary);margin-bottom:16px;">
-          配置存于数据库（spare_mail_config），<b>优先于 skill JSON 与服务器 .env</b>。邮件/飞书凭据在保存后即时生效，无需重启服务。
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-          <!-- 左列：凭据 + 参与方 -->
-          <div style="display:flex;flex-direction:column;gap:16px;">
-            <div class="config-card" style="border:1px solid var(--c-border-light);border-radius:12px;padding:16px;background:var(--c-card-bg);">
-              <h3 style="margin:0 0 12px;font-size:15px;">邮箱 / 飞书凭据</h3>
-              <div class="config-field">
-                <label>发件邮箱</label>
-                <input id="miMailUser" type="text" placeholder="biquanzhi3@163.com">
-              </div>
-              <div class="config-field">
-                <label>邮箱授权码（163 IMAP/SMTP）</label>
-                <input id="miMailPass" type="password" placeholder="••••••（留空则不修改）">
-              </div>
-              <div class="config-row2">
-                <div class="config-field"><label>IMAP Host</label><input id="miImapHost" placeholder="imap.163.com"></div>
-                <div class="config-field"><label>IMAP Port</label><input id="miImapPort" placeholder="993"></div>
-              </div>
-              <div class="config-row2">
-                <div class="config-field"><label>SMTP Host</label><input id="miSmtpHost" placeholder="smtp.163.com"></div>
-                <div class="config-field"><label>SMTP Port</label><input id="miSmtpPort" placeholder="465"></div>
-              </div>
-              <div class="config-field"><label>飞书 App ID</label><input id="miFeishuAppId" placeholder="cli_xxxxxxxx"></div>
-              <div class="config-field"><label>飞书 App Secret</label><input id="miFeishuSecret" type="password" placeholder="••••••（留空则不修改）"></div>
-              <div class="config-field"><label>飞书审批人 Open ID</label><input id="miFeishuPm" placeholder="ou_xxxxxxxx"></div>
-            </div>
-            <div class="config-card" style="border:1px solid var(--c-border-light);border-radius:12px;padding:16px;background:var(--c-card-bg);">
-              <h3 style="margin:0 0 12px;font-size:15px;">审批人 / 供应商</h3>
-              <div class="config-field">
-                <label>审批人邮箱（逗号分隔）</label>
-                <input id="miApprovers" type="text" placeholder="biqzh@neusoft.com">
-              </div>
-              <div class="config-field">
-                <label>供应商池（每行：名称 邮箱）</label>
-                <textarea id="miSuppliers" rows="4" placeholder="供应商1 13260023678@163.com&#10;供应商2 biquanzhi@163.com"></textarea>
-              </div>
-            </div>
-          </div>
-          <!-- 右列：任务列表 -->
-          <div class="config-card" style="border:1px solid var(--c-border-light);border-radius:12px;padding:16px;background:var(--c-card-bg);align-self:start;">
-            <h3 style="margin:0 0 12px;font-size:15px;">询价任务</h3>
-            <table class="data-table" id="miTaskTable">
-              <thead><tr><th>任务号</th><th>项目</th><th>PN</th><th>状态</th><th>最低价</th><th>更新时间</th></tr></thead>
-              <tbody></tbody>
-            </table>
-            <div id="miTaskEmpty" style="display:none;color:var(--c-text-secondary);font-size:13px;padding:12px 0;">暂无任务</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>
-</div>
 
 <!-- ═══════ MODALS ═══════ -->
 

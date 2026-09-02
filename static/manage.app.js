@@ -1372,7 +1372,6 @@ function navigateTo(page) {
     tools: 'page-tools',
     skills: 'page-skills',
     employees: 'page-employees',
-    mailinquiry: 'page-mailinquiry',
   };
   const target = map[page] || 'page-work';
   document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
@@ -1386,7 +1385,6 @@ function navigateTo(page) {
   if (page === 'tools') renderToolsPage();
   if (page === 'knowledge') kbLoad();
   if (page === 'employees') renderEmployees('');
-  if (page === 'mailinquiry') miLoad();
 }
 
 // 工作成果：9006 业务平台外链卡片墙
@@ -1469,103 +1467,3 @@ document.getElementById('uiDialogMask').addEventListener('click', e => {
 document.addEventListener('DOMContentLoaded', init);
 
 
-// ═══════ 备件邮件询价配置页 ─────────────────────────────
-function miApi(path, opts) {
-  return fetch('/api/procurement-agent' + path, opts).then(x => x.json());
-}
-
-// 载入配置并填充表单
-async function miLoad() {
-  try {
-    const d = await miApi('/mail-inquiry/config?mask=true');
-    if (!d.success) return;
-    const c = d.credentials || {}, p = d.participants || {};
-    const $ = id => document.getElementById(id);
-    $('miMailUser').value = c.mail_username || '';
-    // 密码字段打码回显占位，留空表示不修改
-    $('miMailPass').value = '';
-    $('miImapHost').value = c.imap_host || 'imap.163.com';
-    $('miImapPort').value = c.imap_port || '993';
-    $('miSmtpHost').value = c.smtp_host || 'smtp.163.com';
-    $('miSmtpPort').value = c.smtp_port || '465';
-    $('miFeishuAppId').value = c.feishu_app_id || '';
-    $('miFeishuSecret').value = '';
-    $('miFeishuPm').value = c.feishu_pm_open_id || '';
-    $('miApprovers').value = (p.approver_emails || []).join(', ');
-    $('miSuppliers').value = (p.default_suppliers || [])
-      .map(s => `${s.name || ''}\t${s.email || ''}`).join('\n');
-    await miLoadTasks();
-  } catch (e) { console.error(e); }
-}
-
-async function miLoadTasks() {
-  try {
-    const d = await miApi('/mail-inquiry/tasks?page_size=50');
-    const tb = document.querySelector('#miTaskTable tbody');
-    const empty = document.getElementById('miTaskEmpty');
-    const tasks = (d.tasks || []);
-    if (empty) empty.style.display = tasks.length ? 'none' : 'block';
-    if (!tb) return;
-    tb.innerHTML = tasks.map(t => `
-      <tr>
-        <td>${escapeHtml(t.task_id || '')}</td>
-        <td>${escapeHtml((t.project_no || '') + ' ' + (t.project_name || ''))}</td>
-        <td>${escapeHtml(t.pn || '')}</td>
-        <td>${escapeHtml(t.status || '')}</td>
-        <td>${escapeHtml(t.lowest_quote || '')}</td>
-        <td>${escapeHtml(t.updated_at || '')}</td>
-      </tr>`).join('');
-  } catch (e) { console.error(e); }
-}
-
-// 保存配置：凭据 + 参与方按段覆盖
-async function miSaveConfig() {
-  const $ = id => document.getElementById(id);
-  const credentials = {};
-  const setIf = (k, v) => { const s = String(v || '').trim(); if (s) credentials[k] = s; };
-  setIf('mail_username', $('miMailUser').value);
-  if ($('miMailPass').value) credentials.mail_password = $('miMailPass').value.trim();
-  setIf('imap_host', $('miImapHost').value);
-  setIf('imap_port', $('miImapPort').value);
-  setIf('smtp_host', $('miSmtpHost').value);
-  setIf('smtp_port', $('miSmtpPort').value);
-  setIf('feishu_app_id', $('miFeishuAppId').value);
-  if ($('miFeishuSecret').value) credentials.feishu_app_secret = $('miFeishuSecret').value.trim();
-  setIf('feishu_pm_open_id', $('miFeishuPm').value);
-
-  const approvers = $('miApprovers').value.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
-  const suppliers = $('miSuppliers').value.split('\n')
-    .map(l => l.trim()).filter(Boolean)
-    .map(l => {
-      const parts = l.split(/[\t\s]+/);
-      const name = parts[0] || '';
-      const email = parts[1] || '';
-      return { name, email };
-    }).filter(s => s.email);
-
-  const body = {
-    credentials,
-    participants: { approver_emails: approvers, default_suppliers: suppliers },
-  };
-  try {
-    const r = await miApi('/mail-inquiry/config', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (r.success) {
-      $('miMailPass').value = ''; $('miFeishuSecret').value = '';
-      showToast(r.msg || '配置已保存');
-      miLoad();
-    } else {
-      showToast(r.error || '保存失败');
-    }
-  } catch (e) { showToast('保存异常: ' + e.message); }
-}
-
-async function miRunTick() {
-  try {
-    const r = await miApi('/mail-inquiry/tick', { method: 'POST' });
-    showToast(r.success ? 'tick 已触发' : (r.error || '触发失败'));
-    await miLoadTasks();
-  } catch (e) { showToast('tick 异常: ' + e.message); }
-}
