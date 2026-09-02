@@ -394,9 +394,15 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         return True, "shipping tracking requested"
 
     if action_id == "receiveSupplierQuote":
-        # 报价收集由 process_replies 内联完成；此处仅落审计，避免 noop 误报
+        # 报价收集由 process_replies 内联完成；此处仅落审计，避免 noop 误报。
+        # 幂等：仅在首次进入收集态记录一次，避免每轮(约60s)轮询都追加相同日志刷屏。
+        meta = dict(task.get("spare_info") or {})
+        if meta.get("collecting_logged"):
+            return True, "quote collection active (already logged, skip re-audit)"
+        meta["collecting_logged"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        store.upsert_task({**task, "spare_info": meta})
         store.audit("Task", task["task_id"], "receiveSupplierQuote", operator="emp-009",
-                    remark="quote already recorded in process_replies")
+                    remark="报价收集中（process_replies 已记录报价）")
         return True, "quote received (recorded in process_replies)"
 
     if action_id == "finalizeQuoteCollection":
@@ -404,7 +410,14 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         return True, "collection finalized (no-op state)"
 
     if action_id == "waitForSupplierShipment":
-        # 已下单、供应商尚未发货通知：仅等待，不主动发"请回复发货快递单号"
+        # 已下单、供应商尚未发货通知：仅等待，不主动发"请回复发货快递单号"。
+        # 幂等：仅在首次进入等待态记录一次，避免每轮(约60s)轮询都追加相同日志刷屏
+        # （此前因每轮都 audit，导致页面"等待供应商发货"条目不停刷出）。
+        meta = dict(task.get("spare_info") or {})
+        if meta.get("waiting_shipment_logged"):
+            return True, "waiting for supplier shipment (already logged, skip re-audit)"
+        meta["waiting_shipment_logged"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        store.upsert_task({**task, "spare_info": meta})
         store.audit("Task", task["task_id"], "waitForSupplierShipment", operator="emp-009",
                     remark="已下达订货，等待供应商发货通知")
         return True, "waiting for supplier shipment (no email sent)"
