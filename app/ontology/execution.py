@@ -227,10 +227,18 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         return True, "approval D sent"
 
     if action_id == "receiveTrackingNumber":
+        # 供应商正式发货且单号已解析 → 登记物流，进入 R_WAIT_SHIPPING。
+        # 幂等：tracking_number 已记录则不再重复 upsert/审计（避免每轮轮询刷屏）。
+        meta = dict(task.get("spare_info") or {})
+        cand = ctx.get("tracking_number_candidate", "") or meta.get("tracking_no", "")
+        if meta.get("tracking_recorded_at") and task.get("tracking_number"):
+            return True, "tracking already recorded (skip re-audit)"
+        meta["tracking_recorded_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        # tracking_number 由 store_biz 映射落到业务列 logistics_no（前端读该列/其别名 shipped_no）
         store.upsert_task({**task, "external_status": "R_WAIT_SHIPPING",
-                           "tracking_number": ctx.get("tracking_number_candidate", "")})
+                           "tracking_number": cand, "spare_info": meta})
         store.audit("Task", task["task_id"], "receiveTrackingNumber", operator="emp-009",
-                    snapshot={"tracking_no": ctx.get("tracking_number_candidate", "")})
+                    snapshot={"tracking_no": cand})
         return True, "tracking recorded"
 
     if action_id == "engineerFinalClose":
@@ -318,19 +326,25 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         return True, "clarification requested" + ("" if sent else " (all deduped)")
 
     if action_id == "processApprovalDecision":
+        # 等待/处理审批选择。审批未回时每轮都会命中该动作，
+        # 幂等：仅当"审批选择结果"发生变化时才写审计，否则静默（避免每 60s 刷同一条）。
         meta = dict(task.get("spare_info") or {})
-        meta["target_supplier"] = ctx.get("target_supplier", "") or ctx.get("approval_choice", "")
+        sup = ctx.get("target_supplier", "") or ctx.get("approval_choice", "")
+        if meta.get("approval_logged_choice") == sup and meta.get("approval_logged_at"):
+            return True, "approval decision unchanged (skip re-audit)"
+        meta["target_supplier"] = sup
+        meta["approval_logged_choice"] = sup
+        meta["approval_logged_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
         store.upsert_task({**task, "internal_status": "R_APPROVAL", "spare_info": meta})
         store.audit("Task", task["task_id"], "processApprovalDecision", operator="emp-009",
-                    snapshot={"target_supplier": meta["target_supplier"]})
+                    snapshot={"target_supplier": sup})
         return True, "approval decision recorded"
 
     if action_id == "requestMissingFields" and mg:
         # 立项阶段缺必填字段 → 给工程师回信指出缺失项（仅一次）
         meta = dict(task.get("spare_info") or {})
         if meta.get("missing_requested"):
-            store.audit("Task", task["task_id"], "requestMissingFields", operator="emp-009",
-                        remark="已请求过补齐，跳过重发")
+            # 幂等：不再写"跳过重发"审计（此前每轮都写，等于把刷屏换了个措辞）
             return True, "missing-fields already requested"
         try:
             from . import knowledge
@@ -406,7 +420,17 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         return True, "quote received (recorded in process_replies)"
 
     if action_id == "finalizeQuoteCollection":
-        store.audit("Task", task["task_id"], "finalizeQuoteCollection", operator="emp-009")
+        # 决策层兜底分支（"维持现状"）。纯 no-op，此前每轮(约60s)都写审计 → 页面刷屏。
+        # 幂等：同一 (外部流/内部流) 状态只记一次；状态变化后允许再记一次。
+        meta = dict(task.get("spare_info") or {})
+        sig = "%s/%s" % (task.get("external_status") or "", task.get("internal_status") or "")
+        if meta.get("finalize_logged_sig") == sig:
+            return True, "collection finalized (already logged for this state, skip re-audit)"
+        meta["finalize_logged_sig"] = sig
+        meta["finalize_logged_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        store.upsert_task({**task, "spare_info": meta})
+        store.audit("Task", task["task_id"], "finalizeQuoteCollection", operator="emp-009",
+                    remark="维持现状（%s）" % sig)
         return True, "collection finalized (no-op state)"
 
     if action_id == "waitForSupplierShipment":
@@ -421,6 +445,20 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         store.audit("Task", task["task_id"], "waitForSupplierShipment", operator="emp-009",
                     remark="已下达订货，等待供应商发货通知")
         return True, "waiting for supplier shipment (no email sent)"
+
+    if action_id == "completeProcurement":
+        # 当前版本收口：供应商已发货且单号已记录 → 流程结束（无收货验收/结算步骤）。
+        # 与结算开关解耦：即便将来开启结算，此动作仅在 ONT_SETTLEMENT_ENABLED 关闭时由决策层调用。
+        # 幂等：仅首次收口记录一次，之后每轮轮询静默跳过（置终态后 drive 也不再处理）。
+        meta = dict(task.get("spare_info") or {})
+        if meta.get("proc_completed_at"):
+            return True, "procurement already completed (skip re-audit)"
+        meta["proc_completed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        store.upsert_task({**task, "external_status": "R_PROC_DONE", "internal_status": "R_CLOSED",
+                           "status": "CLOSED", "spare_info": meta})
+        store.audit("Task", task["task_id"], "completeProcurement", operator="emp-009",
+                    remark="供应商已发货且单号已记录，当前版本流程结束（无收货验收/结算）")
+        return True, "procurement completed at tracking (current version)"
 
     if action_id == "manualCloseTask":
         # 后台操作员手动关闭/取消（不在邮件链路）：写审计 + 置终态

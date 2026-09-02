@@ -149,11 +149,18 @@ def _connect():
 
 
 # ── 状态映射：本体双流状态 → 业务表中文 task_status ──────────────────
+#   注意：R_WAIT_SHIPPING / R_PROC_DONE / ORDER_CONFIRM 都是**外部流**取值，
+#   必须对 e 判断（历史实现只判 i，导致"供应商发货中"永远命中不到）。
 _STATUS_RULES = [
-    (lambda i, e: i in ("CLOSED_ABORT",) or e == "CLOSED_ABORT", "任务已取消"),
-    (lambda i, e: i in ("R_SETTLE", "R_CLOSED", "CLOSED_MANUAL") or e in ("DONE",), "流程闭环"),
-    (lambda i, e: i in ("R_WAIT_SHIPPING", "R_WAIT_ENGINEER_CLOSE") or e == "SHIPPED", "供应商发货中"),
-    (lambda i, e: i in ("R_SEND",) or e == "ORDER_CONFIRM", "已选型确认"),
+    # 中止 / 后台手动关闭都归"任务已取消"（此前 CLOSED_MANUAL 被算作闭环，口径不对）
+    (lambda i, e: i in ("CLOSED_ABORT", "CLOSED_MANUAL")
+     or e in ("CLOSED_ABORT", "CLOSED_MANUAL"), "任务已取消"),
+    # 当前版本收口：R_PROC_DONE（单号已记录=流程结束）也算闭环
+    (lambda i, e: i in ("R_SETTLE", "R_CLOSED")
+     or e in ("DONE", "R_PROC_DONE", "R_SETTLE", "R_CLOSED"), "流程闭环"),
+    (lambda i, e: i in ("R_WAIT_SHIPPING", "R_WAIT_ENGINEER_CLOSE")
+     or e in ("R_WAIT_SHIPPING", "R_WAIT_ENGINEER_CLOSE", "SHIPPED", "R_WAIT_ACCEPTANCE"), "供应商发货中"),
+    (lambda i, e: i in ("R_SEND",) or e in ("ORDER_CONFIRM", "R_ORDER", "R_WAIT_ORDER"), "已选型确认"),
 ]
 
 
@@ -269,6 +276,9 @@ def _row_to_task(r):
     t["urgency_raw"] = t.get("urgent") or t.get("emergency_level") or ""
     t["quote_deadline"] = t.get("inquiry_deadline") or t.get("reply_deadline") or ""
     t["tracking_number"] = t.get("logistics_no") or ""
+    # shipped_no 是 logistics_no 的只读别名：9006 前端与 decision.build_fact_context 都读它，
+    # 而业务主表权威列是 logistics_no，这里统一回填，避免"物流单号永远显示 —"。
+    t["shipped_no"] = t.get("logistics_no") or ""
     try:
         t["target_supplier_list"] = json.loads(t.get("suppliers_json") or "[]")
     except Exception:

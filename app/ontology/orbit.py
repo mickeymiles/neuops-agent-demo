@@ -11,7 +11,25 @@ import json
 from . import store, execution
 from app.config import settlement_enabled
 
-_TERMINAL = ("CLOSED_ABORT", "CLOSED_MANUAL", "R_SETTLE")
+# 终态判定
+# ---------
+# 历史实现是 `_TERMINAL = ("CLOSED_ABORT","CLOSED_MANUAL","R_SETTLE")` + `t["status"] in _TERMINAL`，
+# 但这些取值全都是 **external_status** 的枚举，而所有收口动作写入的 `status` 一律是 "CLOSED"
+# → 该判断从未命中，已中止/已闭环的任务仍被每 60s 的 drive() 反复推进（页面日志刷屏的根因之一）。
+# 现在同时按 status 与 external_status 判定，两者任一命中即视为终态。
+_TERMINAL_STATUS = ("CLOSED", "CLOSED_ABORT", "CLOSED_MANUAL")
+_TERMINAL_EXT = ("CLOSED_ABORT", "CLOSED_MANUAL", "R_SETTLE", "R_CLOSED", "R_PROC_DONE")
+# 兼容旧引用（含 R_PROC_DONE：当前版本"供应商回传单号即结束"的终态）
+_TERMINAL = _TERMINAL_EXT
+
+
+def is_terminal(task) -> bool:
+    """任务是否已到终态（不再被 drive/process_replies 推进）。"""
+    t = task or {}
+    return (str(t.get("status") or "") in _TERMINAL_STATUS
+            or str(t.get("external_status") or "") in _TERMINAL_EXT)
+
+
 _APPROVE_KW = ("确认", "采购", "同意", "采纳", "就选")
 _REJECT_KW = ("拒绝", "不同意", "不选", "不采纳", "否决", "驳回", "不采购")
 _CLOSE_KW = ("完成", "测试完毕", "更换完成", "采购结束")
@@ -372,7 +390,7 @@ def process_replies(mg):
     raw = mg.read_inbox(since_timestamp=int(time.time()) - 48 * 3600)
     mails = (raw or {}).get("mails", []) if isinstance(raw, dict) else (raw or [])
     tasks = {t["task_id"]: t for t in store.list_tasks()
-             if (t.get("mode") == "ontology") and (t.get("status") not in _TERMINAL)}
+             if (t.get("mode") == "ontology") and not is_terminal(t)}
     fresh = {}  # 逐任务最新工作副本，避免同任务多条回复互相覆盖
     for m in mails:
         inrep = (m.get("in_reply_to") or "") + " " + (m.get("references") or "")
@@ -540,7 +558,7 @@ def drive(mode="off", use_llm=False, mg=None):
     trusted = bool(g.get("llm"))
     shadow = bool(g.get("llm") is False and os.getenv("ONT_SHADOW", "0") == "1")
     for t in store.list_tasks(limit=100):
-        if t.get("mode") != "ontology" or t.get("status") in _TERMINAL:
+        if t.get("mode") != "ontology" or is_terminal(t):
             continue
         # 到点判定：每轮刷新 deadline_passed。
         # 此前该字段只有读取方（orbit ctx / ontology.py / decision.py）而无任何写入点，

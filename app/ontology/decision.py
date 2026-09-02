@@ -140,10 +140,15 @@ def propose_action(ctx: dict):
         # 否则仅下单：等待供应商发货通知，不主动发"请回复发货快递单号"
         return ("waitForSupplierShipment", external, internal, "等待供应商发货通知")
 
-    # S5 已发货：等工程师确认完成 → 发结算 G（受 ONT_SETTLEMENT_ENABLED 开关控制，默认关闭预留）
+    # S5 已发货：供应商已回传单号 → 当前版本流程即结束（无收货验收/结算步骤）。
+    # 仅当结算开关开启(ONT_SETTLEMENT_ENABLED)时，才进入工程师确认→结算 G 闭环。
     if external in ("R_WAIT_SHIPPING", "R_WAIT_ENGINEER_CLOSE"):
-        if internal == "R_CLOSED" and settlement_enabled():
-            return ("engineerFinalClose", "R_SETTLE", "R_CLOSED", "工程师确认完成，发 G 结算")
-        return ("receiveTrackingNumber", external, internal, "等待供应商单号/工程师确认")
+        if settlement_enabled():
+            if internal == "R_CLOSED":
+                return ("engineerFinalClose", "R_SETTLE", "R_CLOSED", "工程师确认完成，发 G 结算")
+            return ("receiveTrackingNumber", external, internal, "等待工程师确认/单号")
+        # 当前版本（结算未启用）：供应商发货且单号已记录 = 流程结束
+        return ("completeProcurement", "R_PROC_DONE", "R_CLOSED",
+                "供应商已发货且单号已记录，当前版本流程结束")
 
     return ("finalizeQuoteCollection", external, internal, "维持现状")
