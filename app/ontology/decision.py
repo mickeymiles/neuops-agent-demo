@@ -130,11 +130,15 @@ def propose_action(ctx: dict):
             return ("confirmOrderToSupplier", "R_ORDER", "R_APPROVAL", "审批合法，下达订货")
         return ("processApprovalDecision", external, "R_APPROVAL", "等待/处理审批选择")
 
-    # S4 已下达订货：等供应商回快递单号
+    # S4 已下达订货：等待供应商发货通知，不在下单后立即主动催单号
     if external in ("R_ORDER", "R_WAIT_ORDER", "ORDER_CONFIRM"):
         if ctx.get("tracking_number_candidate"):
             return ("receiveTrackingNumber", "R_WAIT_SHIPPING", internal, "登记快递单号")
-        return ("requestTrackingNo", external, internal, "回执无单号，主动索取")
+        # 仅当供应商称已发货但邮件里没解析到单号时，才回信索取一次
+        if ctx.get("ship_no_tracking_candidate"):
+            return ("requestTrackingNo", external, internal, "供应商称已发货但缺单号，索取")
+        # 否则仅下单：等待供应商发货通知，不主动发"请回复发货快递单号"
+        return ("waitForSupplierShipment", external, internal, "等待供应商发货通知")
 
     # S5 已发货：等工程师确认完成 → 发结算 G（受 ONT_SETTLEMENT_ENABLED 开关控制，默认关闭预留）
     if external in ("R_WAIT_SHIPPING", "R_WAIT_ENGINEER_CLOSE"):

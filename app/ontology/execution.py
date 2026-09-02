@@ -403,6 +403,12 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         store.audit("Task", task["task_id"], "finalizeQuoteCollection", operator="emp-009")
         return True, "collection finalized (no-op state)"
 
+    if action_id == "waitForSupplierShipment":
+        # 已下单、供应商尚未发货通知：仅等待，不主动发"请回复发货快递单号"
+        store.audit("Task", task["task_id"], "waitForSupplierShipment", operator="emp-009",
+                    remark="已下达订货，等待供应商发货通知")
+        return True, "waiting for supplier shipment (no email sent)"
+
     if action_id == "manualCloseTask":
         # 后台操作员手动关闭/取消（不在邮件链路）：写审计 + 置终态
         meta = dict(task.get("spare_info") or {})

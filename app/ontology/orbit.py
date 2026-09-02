@@ -284,6 +284,7 @@ def ctx_from_task(task):
         "agent_selected_supplier": meta.get("agent_selected_supplier") or lowest_email,
         "approval_choice": target_supplier,
         "tracking_number_candidate": meta.get("tracking_no", ""),
+        "ship_no_tracking_candidate": meta.get("ship_no_tracking_supplier") or "",
         "collection_done": bool(deadline_passed or (valid and len(quotes) >= len(target_list) and target_list)),
         "deadline_passed": bool(deadline_passed),
         "unparseable_supplier_emails": list(meta.get("unparseable_replies") or []),
@@ -443,14 +444,23 @@ def process_replies(mg):
             # 提前/含糊的"单号"邮件（如"补充单号"），不是正式发货通知。
             is_real_shipment = bool(mn) and (has_action or in_order)
             if is_real_shipment:
-                meta["tracking_no"] = mn.group(1)
-                meta["ship_raw"] = body
-                meta["ship_mid"] = mid
-                meta["ship_reply_from"] = mail_meta
-                # 正式发货后清除此前"补充单号"误标记
-                meta.pop("premature_track_supplier", None)
-                meta.pop("premature_track_requested_at", None)
-                emit = "shipping"
+                if mn:
+                    # 正式发货且拿到单号 → 登记物流，流程继续
+                    meta["tracking_no"] = mn.group(1)
+                    meta["ship_raw"] = body
+                    meta["ship_mid"] = mid
+                    meta["ship_reply_from"] = mail_meta
+                    # 正式发货后清除此前"补充单号"误标记
+                    meta.pop("premature_track_supplier", None)
+                    meta.pop("premature_track_requested_at", None)
+                    emit = "shipping"
+                else:
+                    # 供应商称已发货但邮件里没解析到单号 → 记为"待补单号"，
+                    # 由决策层触发一次 requestTrackingNo 索取，不误记为已收货。
+                    meta["ship_no_tracking_supplier"] = from_e
+                    meta["ship_no_tracking_mid"] = mid
+                    meta["ship_no_tracking_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                    emit = "ship_no_tracking"
             else:
                 # 不记为运单号；回复发货快递单号（仅一次），等正式发货通知再接收。
                 meta["premature_track_supplier"] = from_e
