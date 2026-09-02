@@ -85,16 +85,18 @@ def seed_config_db():
 
 
 def sync_seed_employees():
-    """每次启动调用：将种子员工/技能官方定义幂等同步到库。
+    """将种子员工/技能官方定义同步到库（员工/技能专用的一次性冷启动标记）。
 
-    与 seed_config_db（仅首次导入，meta.config_seeded 标记后不再触碰）不同，
-    本函数始终覆盖种子 id 的官方定义，用于：
-    1) 新增员工/技能落库：emp-006/007、skill-20/21（本次 7 大数字员工实装）；
-    2) 修复官方定义已变更的种子实体：emp-005「必选+有限规则配置修改+人工确认」、
-       skill-13「9006规则配置辅助」等旧库残留定义；
-    3) 仅操作种子 id（MOCK_EMPLOYEES / SKILLS），不触碰用户自建实体；
-       保留既有 enabled 启停状态，不重置用户对种子员工的启停控制。
+    自 2026-09 起改为「一次性冷启动同步」：首次启动（meta.emp_sync_seeded 未置位）时
+    将种子 id 的官方定义补齐/修复到库，并落 emp_sync_seeded 标记；之后重启因标记已存在
+    直接跳过，不再覆盖用户通过管理页面维护的定义。
+
+    标记独立于 seed_config_db 的 config_seeded，避免 seed_config_db 先置标而使其失效；
+    员工/技能冷启动后改由管理页面或一次性脚本维护。
+    仅操作种子 id（MOCK_EMPLOYEES / SKILLS），不触碰用户自建实体。
     """
+    if _emp_sync_seeded_set():
+        return
     with _db_lock:
         conn = _get_conn()
         try:
@@ -166,9 +168,25 @@ def sync_seed_employees():
                 except Exception:
                     # 列结构不兼容（老库缺 group/server_id 等列），忽略
                     pass
+            conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('emp_sync_seeded', '1')")
             conn.commit()
         finally:
             conn.close()
+
+
+def _emp_sync_seeded_set() -> bool:
+    """是否已完成员工/技能官方定义冷启动同步（meta.emp_sync_seeded = '1'）"""
+    try:
+        with _db_lock:
+            conn = _get_conn()
+            try:
+                return bool(conn.execute(
+                    "SELECT value FROM meta WHERE key='emp_sync_seeded'"
+                ).fetchone())
+            finally:
+                conn.close()
+    except Exception:
+        return False
 
 
 def ensure_mcp_server_mapping():
