@@ -903,6 +903,9 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
     # 经营/运维类工具直连 9006/9007（绕过未部署的 9010 网关），保证"智能问数"可用
     if tool_id in GATEWAY_DIRECT:
         return await execute_gateway_tool(tool_id, args)
+    # 项目治理类工具：直连 9006 真实数据（里程碑/指标）或优雅降级（无后端的核算类）
+    if tool_id in PROJECT_TOOLS:
+        return await execute_project_tool(tool_id, args)
     t = db_get_mcp_tool(tool_id)
     if not t:
         return {"error": f"工具 {tool_id} 不存在"}
@@ -912,6 +915,11 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
         # Server 缺失兜底：统一走 HTTP 转发（避免因 Server 未注册导致工具完全不可用）
         fallback_base = "http://127.0.0.1:9010" if server_id == "mcp-gateway" else "http://127.0.0.1:9007"
         server = {"id": server_id, "name": server_id, "base_url": fallback_base, "type": "gateway"}
+    # mcp-gateway(9010) 当前未部署：对仍指向它的工具返回清晰说明，避免前端"调用工具失败"
+    if server_id == "mcp-gateway":
+        return {"available": False, "tool": tool_id,
+                "message": f"工具「{tool_id}」依赖的 MCP 网关(9010)当前未部署，该能力暂不可用。",
+                "note": "经营/财务/合同/运维类工具已直连 9006/9007 可正常使用；项目四算/工时/成本类计算逻辑将后续补充。"}
     base = (server.get("base_url") or "").rstrip("/")
     path = t.get("path") or f"/tools/{tool_id}"
     method = (t.get("method") or "POST").upper()
@@ -1299,6 +1307,92 @@ async def execute_gateway_tool(tool_id: str, args: dict) -> dict:
                 return {"content": r.text[:8000], "http_status": r.status_code}
     except Exception as e:
         return {"error": f"调用 {host_key} 失败: {e}"}
+
+
+# 项目治理类工具（原 server_id=mcp-gateway，9010 未部署）：直连 9006 真实数据或优雅降级
+PROJECT_TOOLS = {
+    "pm_project_read", "pm_task_read", "pm_workhour_read", "pm_cost_calc", "biz_metric_read",
+}
+
+
+async def execute_project_tool(tool_id: str, args: dict) -> dict:
+    """项目治理类工具：直连 9006 真实数据（里程碑/指标），无后端的核算类返回清晰说明而非连接错误。
+
+    这些工具原 server_id=mcp-gateway（→9010，未部署），导致对话中"调用工具失败"。
+    现绕过网关：有真实数据的（里程碑表、ETL 指标）直连 9006；纯计算/核对类（工时→成本、
+    工单任务一致性）当前无后端数据，返回 available=False 的说明，由 LLM 转述给用户，不再报错。
+    """
+    base = GATEWAY_HOSTS["9006"]
+    # 1) 项目里程碑与四算查询：直连 9006 原子本体表（真实数据）
+    if tool_id == "pm_project_read":
+        table = "项目里程碑表"
+        keyword = args.get("project_id") or args.get("keyword") or ""
+        try:
+            limit = int(args.get("limit") or 50)
+        except (TypeError, ValueError):
+            limit = 50
+        params = {"table_name": table, "limit": limit}
+        if keyword:
+            params["keyword"] = keyword
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.get(f"{base}/api/mcp/ontology/query", params=params)
+                data = r.json()
+            rows = data.get("rows", []) or []
+            headers = data.get("headers", []) or []
+            # 尝试拉取四算指标（可能尚未计算，ETL 为空）
+            four = []
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    fr = await client.get(f"{base}/api/etl/metrics", params={"job_key": "project-four-calc"})
+                    fd = fr.json()
+                    four = fd.get("metrics", []) or fd.get("rows", []) or []
+            except Exception:
+                four = []
+            return {
+                "tool": "pm_project_read",
+                "source_table": table,
+                "headers": headers,
+                "rows": rows,
+                "row_count": len(rows),
+                "four_calc_metrics": four,
+                "four_calc_available": bool(four),
+                "note": "已返回项目里程碑真实数据" + ("；项目四算指标暂未计算（ETL 为空）。" if not four else "。"),
+            }
+        except Exception as e:
+            return {"error": f"查询项目里程碑失败: {e}"}
+    # 2) 经营集团指标：直连 9006 ETL 指标
+    if tool_id == "biz_metric_read":
+        metric = args.get("metric_name") or ""
+        params = {}
+        if metric:
+            params["metric_name"] = metric
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.get(f"{base}/api/etl/metrics", params=params)
+                data = r.json()
+            metrics = data.get("metrics", []) or data.get("rows", []) or []
+            return {
+                "tool": "biz_metric_read",
+                "metric_name": metric or "(全部)",
+                "metrics": metrics[:50],
+                "metric_count": len(metrics),
+                "note": "已返回经营/集团预计算指标（若为空表示对应指标尚未计算）。",
+            }
+        except Exception as e:
+            return {"error": f"查询集团指标失败: {e}"}
+    # 3) 计算/核对类：当前无后端数据，返回清晰说明而非连接错误
+    graceful = {
+        "pm_cost_calc": "人力成本折算（按日报工时折算项目人力成本）所需的工时明细后端数据尚未接入，暂无法计算。可先通过 pm_project_read 查询项目里程碑与四算指标。",
+        "pm_workhour_read": "日报工时明细查询所需的工时后端数据尚未接入，暂不可用。",
+        "pm_task_read": "工单/任务/工时一致性校验所需的明细后端数据尚未接入，暂不可用。",
+    }
+    return {
+        "tool": tool_id,
+        "available": False,
+        "message": graceful.get(tool_id, "该项目管理工具的后端数据尚未接入。"),
+        "note": "项目四算/工时/成本类计算逻辑将按计划后续补充；当前智能问数已覆盖经营/财务/合同/运维及项目里程碑数据。",
+    }
 
 
 # ────────────────────────────────────────────
