@@ -31,7 +31,6 @@ from app import (
     routes_manage,
     routes_monitor,
     routes_ops,
-    routes_procurement_agent,
     routes_tasks,
     routes_workspace,
     traditional_pages,
@@ -49,17 +48,6 @@ async def lifespan(app: FastAPI):
     # 业务告警检测引擎（LLM APM + ops 真实指标，后续扩展）
     threading.Thread(target=_alert_engine_loop, daemon=True).start()
     # 【恢复传统状态机】采购询比价自动调度（现轨 emp-008）：每 1 分钟拉 IMAP 邮件 + 进度/超时告警
-    proc_task = asyncio.create_task(_proc_scheduler_loop())
-    # emp-008（现轨）默认不自动启用；仅当 EMP008_ENABLED=1 时才注册并启用。
-    # 当前阶段「只跑 009」，故默认关闭现轨调度（其调度循环在员工缺失/停用时亦空转）。
-    if os.getenv("EMP008_ENABLED", "0") == "1":
-        try:
-            from app.routes_procurement_agent import mail_inquiry_register_employee
-            await mail_inquiry_register_employee()
-        except Exception as _e:
-            print(f"[register] emp-008 enable failed: {_e}")
-    else:
-        print("[register] emp-008 未启用（EMP008_ENABLED != 1），跳过")
     # 本体轨 emp-009：先幂等注册员工/技能（确保页面可配置与开关），再按开关同步调度线程。
     # 线程生命周期由「数字员工配置」页面开关驱动（runtime.sync_scheduler）：
     #   emp-009 启用 → 即时拉起监听轮询线程；emp-009 停用 → 即时停止。
@@ -85,37 +73,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     pm.stop()
-
-
-async def _proc_scheduler_loop():
-    """采购询比价自动调度：每 1 分钟触发 IMAP 轮询（报价+发货+备件邮件询价）+ 进度告警。
-
-    数字员工 emp-008 的启用开关真实生效：在「数字员工配置」中停用后，自动调度跳过本轮
-    （不调用 tick）。手动「触发 Tick」按钮仍走 /scheduler/tick 直连，不受此开关影响。
-    """
-    import httpx
-    await asyncio.sleep(30)  # 启动后等 30 秒再开始
-    while True:
-        # 数字员工启用开关（真实生效）：员工缺失或停用则本轮自动调度空转，不执行任何邮件动作
-        try:
-            from app.db.employees import db_get_employee
-            _e = db_get_employee("emp-008")
-            if _e is None or not _e.get("enabled", True):
-                await asyncio.sleep(60)
-                continue
-        except Exception:
-            await asyncio.sleep(60)
-            continue
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=quote", timeout=30)
-                await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=delivery", timeout=30)
-                await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=progress", timeout=30)
-                # 备件邮件询价数字员工：自动解析工程师询价/供应商报价/审批人确认（1 分钟轮询，适配紧急截止）
-                await client.post("http://127.0.0.1:9007/api/procurement-agent/scheduler/tick?kind=mail-inquiry", timeout=30)
-        except Exception:
-            pass
-        await asyncio.sleep(60)  # 1 分钟
 
 
 app = FastAPI(title="NeuOps Agent Demo", lifespan=lifespan)
@@ -152,7 +109,6 @@ app.include_router(routes_ops.router)
 app.include_router(routes_ops.page_router)
 app.include_router(routes_manage.page_router)
 app.include_router(bidding.router)
-app.include_router(routes_procurement_agent.router)
 app.include_router(routes_local_tools.router)  # 本地 11 个 MCP Tool HTTP 端点
 # 本体轨 emp-009（NO-012）：独立路由，与现轨并存
 from app.ontology import routes as routes_ontology

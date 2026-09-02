@@ -761,7 +761,7 @@ def tool_table_upsert(table_key: str, record_id: str, data: dict) -> dict:
 
 def tool_procurement_parse_quote(body: str, expected_qty: int = None, spare_part_model: str = "") -> dict:
     """MCP 包装：6 层加固供应商报价解析"""
-    from .routes_procurement_agent import robust_parse_supplier_quote
+    from .mail_parse import robust_parse_supplier_quote
     return {"tool": "procurement_parse_quote", "success": True,
             "result": robust_parse_supplier_quote(body, expected_qty=expected_qty,
                                                   spare_part_model=spare_part_model)}
@@ -769,7 +769,7 @@ def tool_procurement_parse_quote(body: str, expected_qty: int = None, spare_part
 
 def tool_procurement_parse_logistics(body: str) -> dict:
     """MCP 包装：3 层物流单号解析"""
-    from .routes_procurement_agent import robust_parse_logistics_info
+    from .mail_parse import robust_parse_logistics_info
     return {"tool": "procurement_parse_logistics", "success": True,
             "result": robust_parse_logistics_info(body)}
 
