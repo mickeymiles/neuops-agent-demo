@@ -84,12 +84,27 @@ if [ -f "$UNIT_SRC" ]; then
   sudo systemctl enable neuops-9007
 fi
 
-# 4. 重启服务
+# 4. 清理占用端口的游离进程（关键修复）
+# 场景：曾有人手动 `python main.py` 起过进程，它不在 systemd 管辖内却长期霸占 $PORT。
+# 此时 systemctl restart 启动的新实例会因「端口已被占用」绑定失败而崩溃
+# （Restart=always 进入无限重启循环），旧进程继续用旧代码服务 ——
+# 表现为「CI 全绿、健康检查通过，但线上仍是旧逻辑」。因此在重启前必须显式杀掉端口上的任何进程。
+echo "── 清理占用 $PORT 的游离进程"
+if command -v fuser >/dev/null 2>&1; then
+  sudo fuser -k "${PORT}/tcp" 2>/dev/null || true
+fi
+# 兜底：按 main.py 进程名清理（systemctl 只管得到自身单元，管不到手动起的孤儿进程）
+sudo pkill -f "main.py" 2>/dev/null || true
+sleep 2
+
+# 5. 重启服务
 sudo systemctl restart "$SERVICE"
 sleep 3
 
-# 5. 健康检查
+# 6. 健康检查
 echo "═══ 健康检查 http://127.0.0.1:$PORT/api/ops/overview ═══"
+echo "── 部署后端口 $PORT 监听进程（用于核对是否真的换成了新实例）："
+sudo ss -ltnp 2>/dev/null | grep ":$PORT " || sudo netstat -ltnp 2>/dev/null | grep ":$PORT " || echo "(无 ss/netstat，跳过)"
 for i in $(seq 1 20); do
   if curl -fsS -m 3 "http://127.0.0.1:$PORT/api/ops/overview" >/dev/null 2>&1; then
     echo "✅ 服务健康 (${i}x3s)"
