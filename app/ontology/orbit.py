@@ -140,13 +140,13 @@ _CONDITION_KW = ("全新原装", "全新", "原厂翻新", "翻新", "拆机二�
 def _parse_quote(body):
     """从供应商报价正文抽取结构化字段：单价/货期/成色/数量。
 
-    连单价都识别不出 → 返回 None，交由 unparseable 分支催补（不再丢字段）。
+    容错合并：即便只补充了「货期」「成色」等部分字段（未重述单价），
+    也返回这些字段（带 _partial 标记）供按邮箱合并进既有报价，不再整体判为解析失败丢单。
+    仅当四种字段一个都没识别到，才返回 None（走 unparseable 催补）。
     """
     s = body or ""
-    m = re.search(r"(?:单价|价格|报价|每台|每件)[：:\s]*([0-9]+(?:\.[0-9]+)?)\s*(?:元|块|RMB|rmb|¥|￥)?", s)
-    if not m:
-        return None
-    unit_price = m.group(1)
+    price = re.search(r"(?:单价|价格|报价|每台|每件)[：:\s]*([0-9]+(?:\.[0-9]+)?)\s*(?:元|块|RMB|rmb|¥|￥)?", s)
+    unit_price = price.group(1) if price else ""
     # 货期：优先「货期：x天」，否则匹配「x天内交货」式
     delivery = ""
     for kw in _DELIVERY_KW:
@@ -168,7 +168,49 @@ def _parse_quote(body):
     qm = re.search(r"(?:数量|台数|件数)[：:\s]*([0-9]+(?:\.[0-9]+)?)", s)
     if qm:
         qty = qm.group(1)
-    return {"unit_price": unit_price, "delivery": delivery, "condition": condition, "quantity": qty}
+    found = {k: v for k, v in (("unit_price", unit_price), ("delivery", delivery),
+                               ("condition", condition), ("quantity", qty)) if v}
+    if not found:
+        return None
+    found["_partial"] = (not unit_price)  # 缺单价=部分报价，仅合并不纳入比价
+    return found
+
+
+def _parse_quote_robust(body, from_e=""):
+    """两级报价解析：正则优先 → 大模型兜底。
+
+    - 第一级正则（快/免费/覆盖标准格式）；正则异常也捕获，避免「正则不稳定出异常」直接崩整轮归集。
+    - 触发大模型的时机：正则**没拿到单价**（核心字段缺失 / 整段识别不出 / 正则抛异常）。
+      单价是比价与下单的硬依赖，正则漏抓单价正是「非标准报价」最常见的翻车点，必须靠 LLM 救场。
+      正则已稳定拿到单价的邮件则零成本走正则，不浪费大模型。
+    - 仅当 from_e 属目标供应商且 ONT_LLM_PARSE=1 才调大模型，避免对非报价邮件浪费调用。
+    - 大模型任何异常/无 key/抽不出 → 回退到正则结果（可能为空，交由上层催补），绝不抛错。
+    """
+    try:
+        r = _parse_quote(body)
+    except Exception:
+        r = None
+    if r and r.get("unit_price"):
+        return r  # 标准邮件：正则已拿到单价，直接返回，不调大模型
+    if os.getenv("ONT_LLM_PARSE", "1") != "1":
+        return r  # 未开大模型兜底：直接返回正则结果（可能为空/部分）
+    try:
+        from . import llm as _llm
+    except Exception:
+        return r
+    suppliers = []
+    try:
+        suppliers = [str(s.get("email") or "").lower() for s in config()["suppliers"]]
+    except Exception:
+        pass
+    if from_e and suppliers and from_e not in suppliers:
+        return r  # 非目标供应商：不调大模型
+    try:
+        llm_r = _llm.llm_parse_quote(body)
+    except Exception:
+        llm_r = None
+    # 大模型抽到字段（优先），否则退回正则结果（可能为空 → 上层催补）
+    return llm_r if (llm_r and llm_r.get("unit_price")) else (llm_r or r)
 
 
 def _supplier_mentioned_in(body, suppliers):
@@ -212,7 +254,7 @@ def ctx_from_task(task):
     quotes = meta.get("quotes") or []
     approvers = meta.get("approver_emails") or []
     target_list = meta.get("suppliers") or config()["suppliers"]
-    valid = [q for q in quotes if q.get("email")]
+    valid = [q for q in quotes if q.get("email") and q.get("unit_price")]
     lowest = min(valid, key=lambda q: float(q.get("unit_price") or 10 ** 12)) if valid else None
     deadline_passed = meta.get("deadline_passed", False)
     # 智能体固定规则：比价后选最低价（agent_selected_supplier）；
@@ -396,12 +438,21 @@ def process_replies(mg):
             meta["ship_mid"] = mid
             meta["ship_reply_from"] = mail_meta
             emit = "shipping"
-        elif _parse_quote(body_new):
-            q = _parse_quote(body_new)
-            q.update({"email": from_e, "raw": body, "msg_id": mid,
-                      "refs": (m.get("references") or "").strip(),
-                      "reply_all": mail_meta,
-                      "receive_time": time.strftime("%Y-%m-%d %H:%M:%S")})
+        elif (raw_q := _parse_quote_robust(body_new, from_e=from_e)):
+            has_price = bool(raw_q.get("unit_price"))
+            via_llm = bool(raw_q.get("_via_llm"))
+            q = {"email": from_e, "raw": body, "msg_id": mid,
+                 "refs": (m.get("references") or "").strip(),
+                 "reply_all": mail_meta,
+                 "receive_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                 "partial": (not has_price),
+                 "parsed_by_llm": via_llm}
+            # 按字段合并：本次识别到的非空字段才写入，不抹掉既有值（如先报价后补货期）
+            for k, v in raw_q.items():
+                if k in ("_via_llm", "_partial"):
+                    continue
+                if v or k not in q:
+                    q[k] = v
             quotes = meta.get("quotes") or []
             # 同供应商按邮箱 upsert（手动改价 is_manual 的保留，不被邮件覆盖）
             has_manual = any(str(xq.get("email") or "").strip().lower() == from_e and xq.get("is_manual")
@@ -410,20 +461,30 @@ def process_replies(mg):
                 replaced = False
                 for i, ex in enumerate(quotes):
                     if str(ex.get("email") or "").strip().lower() == from_e and not ex.get("is_manual"):
-                        quotes[i] = q
+                        # 合并而非覆盖：本次未识别到的字段不抹掉既有值（如先报价后补货期）
+                        merged = dict(ex)
+                        for k, v in q.items():
+                            if k in ("email",):
+                                continue
+                            if v or k not in merged:
+                                merged[k] = v
+                        quotes[i] = merged
                         replaced = True
                         break
                 if not replaced:
                     quotes.append(q)
             meta["quotes"] = quotes
-            # 智能体固定规则：每次报价后重算并保存「比价选最低价」结论
+            # 智能体固定规则：每次报价后重算并保存「比价选最低价」结论（仅认有单价的）
             low2 = min([x for x in quotes if x.get("email") and x.get("unit_price")],
                        key=lambda q: float(q.get("unit_price") or 10 ** 12), default=None)
             meta["agent_selected_supplier"] = low2["email"] if low2 else ""
-            # 已给有效报价 → 从"解析失败"清单移除
+            # 报价是否已含单价：含 → 移出"解析失败"清单；仍缺单价（仅补了货期/成色）→ 留着继续催单价
             un = list(meta.get("unparseable_replies") or [])
-            if from_e in un:
+            if has_price and from_e in un:
                 un.remove(from_e)
+                meta["unparseable_replies"] = un
+            elif not has_price and from_e not in un:
+                un.append(from_e)
                 meta["unparseable_replies"] = un
             emit = "quote"
         elif meta.get("b_msg_ids"):  # 收到线程回复但未识别为报价/运单/审批/完成 → 报价解析失败

@@ -282,18 +282,40 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         un = ctx.get("unparseable_supplier_emails") or []
         meta = dict(task.get("spare_info") or {})
         by_sup = meta.get("b_msg_by_supplier") or {}
+        # 已催补记录：{email: [缺失字段key]}；同供应商、且缺失项未变化才跳过重发，避免每轮刷屏。
+        asked = {str(k).lower(): v for k, v in (meta.get("clarification_requested") or {}).items()}
+        quotes = meta.get("quotes") or []
+        by_email = {str(q.get("email") or "").strip().lower(): q for q in quotes}
+        _QFIELDS = (("unit_price", "单价"), ("delivery", "货期"),
+                    ("condition", "成色"), ("quantity", "数量"))
+        sent = []
         for email in un:
+            ke = str(email).strip().lower()
+            q = by_email.get(ke, {})
+            miss = [key for key, _ in _QFIELDS if not str(q.get(key) or "").strip()]
+            if not miss:
+                # 四项其实都齐了（多为先报价后补货期被重新识别），不再重复催
+                asked.pop(ke, None)
+                continue
+            # 缺失项与上次完全一致 → 已催过，跳过（防重复发信）
+            if ke in asked and set(asked[ke]) == set(miss):
+                continue
+            labels = [label for key, label in _QFIELDS if key in miss]
             bmid = (by_sup.get(str(email).strip()) or "")
-            subj = "Re: 【询价】报价需补充完整后重发"
-            body = ("您好，收到您的回复但未能识别出完整报价，请按以下字段重新回复：\n"
-                    f"备件：{ctx.get('part_type')} {ctx.get('brand')} {ctx.get('pn')} x {ctx.get('count')}\n"
-                    "请务必注明：单价、货期、成色。谢谢配合！\n"
-                    f"- NeuOps 备件询价(emp-009)\n任务编号：{task.get('task_id')}")
+            subj = "Re: 【询价】报价信息不完整，请补充后重发"
+            body = ("您好，收到您的回复，但以下报价字段仍缺失，请补全后重发：\n- "
+                    + "\n- ".join(labels)
+                    + f"\n\n备件：{ctx.get('part_type')} {ctx.get('brand')} {ctx.get('pn')} x {ctx.get('count')}\n"
+                    f"任务编号：{task.get('task_id')}\n- NeuOps 备件询价(emp-009)")
             mg.send_mail(to=[email], subject=subj, body_text=body,
                          reply_to_mail_id=bmid or None, reply_refs_chain=bmid or None)
+            asked[ke] = miss
+            sent.append(email)
+        meta["clarification_requested"] = asked
+        store.upsert_task({**task, "spare_info": meta})
         store.audit("Task", task["task_id"], "requestQuoteClarification", operator="emp-009",
-                    snapshot={"suppliers": un})
-        return True, "clarification requested"
+                    snapshot={"suppliers": un, "sent": sent, "asked": asked})
+        return True, "clarification requested" + ("" if sent else " (all deduped)")
 
     if action_id == "processApprovalDecision":
         meta = dict(task.get("spare_info") or {})

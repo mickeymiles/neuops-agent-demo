@@ -7,6 +7,7 @@ LLM 只做选择与编排（读本体语义做决策）；计算/持久化/邮�
 """
 import json
 import os
+import re
 
 from . import ontology as onto
 from .decision import propose_action
@@ -74,6 +75,66 @@ def _ask_llm_action(allowed: list, sys_prompt: str, user_msg: str, rejections: l
     except Exception:
         pass
     return None
+
+
+def llm_parse_quote(body: str):
+    """大模型兜底解析供应商报价正文 → 结构化字段。
+
+    作为「正则优先 → 大模型兜底」解析机制的第二级。仅当正则无法识别任何字段、
+    或正则异常时调用。返回 {unit_price, currency, delivery, condition, quantity, _partial, _via_llm}
+    或 None。任何异常（无 key / 网络 / JSON 解析失败）一律返回 None，交由上层回退规则或催补，
+    绝不抛错中断整轮归集。
+    """
+    try:
+        from app.agent_chat import _load_deepseek_key, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+    except Exception:
+        return None
+    key = _load_deepseek_key()
+    if not key:
+        return None
+    import httpx
+    sys_prompt = (
+        "你是备件采购报价的字段抽取器。请从供应商的报价邮件正文中抽取字段，"
+        "并以纯 JSON 返回（不要任何多余文字、不要 ``` 代码块）：\n"
+        "{\n"
+        '  "unit_price": "单价数值字符串，如 1200；无法识别为空字符串",\n'
+        '  "currency": "币种，如 元/RMB/USD；缺省空字符串",\n'
+        '  "delivery": "货期，如 5天/3个工作日；无法识别为空字符串",\n'
+        '  "condition": "成色，如 全新原装/翻新/二手；无法识别为空字符串",\n'
+        '  "quantity": "数量数值字符串；无法识别为空字符串"\n'
+        "}\n"
+        "要求：字段值一律用字符串；文中确实未提供的字段给空字符串；"
+        "金额可能带单位/逗号（如 ¥1,200.00 元），请只保留数字部分。")
+    user_msg = "报价邮件正文：\n" + (body or "")
+    try:
+        r = httpx.post(
+            f"{DEEPSEEK_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": DEEPSEEK_MODEL,
+                  "messages": [{"role": "system", "content": sys_prompt},
+                               {"role": "user", "content": user_msg}],
+                  "temperature": 0},
+            timeout=40)
+        content = r.json()["choices"][0]["message"]["content"]
+        s, e = content.find("{"), content.rfind("}")
+        if s < 0 or e <= s:
+            return None
+        obj = json.loads(content[s:e + 1])
+        out = {}
+        for k in ("unit_price", "currency", "delivery", "condition", "quantity"):
+            v = str(obj.get(k) or "").strip()
+            # 清洗金额里可能的千分位逗号/单位残留
+            if k == "unit_price" and v:
+                v = re.sub(r"[^0-9.]", "", v)
+            if v:
+                out[k] = v
+        if not out:
+            return None
+        out["_partial"] = ("unit_price" not in out)
+        out["_via_llm"] = True
+        return out
+    except Exception:
+        return None
 
 
 def llm_decide_action(ctx: dict, task: dict = None, max_tries: int = 3):
