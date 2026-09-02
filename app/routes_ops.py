@@ -17,6 +17,21 @@ from .probe import ProbeManager
 
 router = APIRouter(prefix="/api/ops", tags=["ops"])
 
+# 部署指纹：每次上线部署时手工 +1，用于线上核对「当前进程跑的是不是最新代码」。
+# 背景：曾出现 CI 全绿、健康检查通过，但 9007 端口被旧孤儿进程霸占，线上仍是旧逻辑。
+# 本接口让一次 curl 就能判定线上到底加载了哪份代码。
+DEPLOY_BUILD = "2026-09-03.2-tz-fix-orphan-kill"
+
+
+@router.get("/deploy-info")
+def deploy_info():
+    """返回当前进程加载的代码部署指纹，便于核对线上是否真的换成了新代码。"""
+    return {
+        "ok": True,
+        "build": DEPLOY_BUILD,
+        "deploy_path": str(Path(__file__).resolve().parent.parent),
+    }
+
 # /ops 一体化运维监控平台页面路由（无 /api 前缀，供浏览器直接访问）
 page_router = APIRouter(tags=["ops-page"])
 
