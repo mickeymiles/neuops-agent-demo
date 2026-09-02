@@ -90,10 +90,19 @@ fi
 # （Restart=always 进入无限重启循环），旧进程继续用旧代码服务 ——
 # 表现为「CI 全绿、健康检查通过，但线上仍是旧逻辑」。因此在重启前必须显式杀掉端口上的任何进程。
 echo "── 清理占用 $PORT 的游离进程"
+# 方法1：fuser 按端口直接杀（最稳妥）
 if command -v fuser >/dev/null 2>&1; then
   sudo fuser -k "${PORT}/tcp" 2>/dev/null || true
 fi
-# 兜底：按 main.py 进程名清理（systemctl 只管得到自身单元，管不到手动起的孤儿进程）
+# 方法2：lsof 按端口查 PID 再杀（fuser 不可用时兜底）
+if command -v lsof >/dev/null 2>&1; then
+  lpids=$(sudo lsof -ti tcp:"${PORT}" 2>/dev/null || true)
+  [ -n "$lpids" ] && sudo kill -9 $lpids 2>/dev/null || true
+fi
+# 方法3：ss 解析监听 PID 再杀（最通用，无需 fuser/lsof）
+spids=$(sudo ss -ltnp 2>/dev/null | grep ":$PORT " | grep -oP 'pid=\K[0-9]+' | sort -u || true)
+[ -n "$spids" ] && sudo kill -9 $spids 2>/dev/null || true
+# 方法4：按进程名兜底（systemctl 只管得到自身单元，管不到手动起的孤儿进程）
 sudo pkill -f "main.py" 2>/dev/null || true
 sleep 2
 
