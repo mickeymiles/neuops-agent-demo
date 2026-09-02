@@ -25,18 +25,31 @@ def should_run() -> bool:
 
 
 async def _ont_loop():
-    """本体轨 emp-009 全流程自走调度：每 60s POST /run-full（SEEN 认领 + 入向回复 + LLM 决策执行）。"""
+    """本体轨 emp-009 全流程自走调度：每 60s POST /run-full（SEEN 认领 + 入向回复 + LLM 决策执行）。
+
+    可观测性：每轮打印一行 tick 摘要（claim/replies/drive 条数），异常也打印而非静默吞掉。
+    否则循环是否在跑、是否报错在日志里完全看不到，只能靠猜。
+    """
     import httpx
     await asyncio.sleep(40)  # 启动后等 40 秒再开始
     while True:
         try:
             use_llm = os.getenv("ONT_SCHEDULER_USE_LLM", "0") == "1"
             async with httpx.AsyncClient() as client:
-                await client.post(
+                r = await client.post(
                     f"http://127.0.0.1:{PORT}/api/ontology-emp009/run-full",
                     json={"use_llm": use_llm}, timeout=60)
-        except Exception:
-            pass
+                try:
+                    body = r.json()
+                except Exception:
+                    body = {}
+                print("[ont-loop] tick http=%s claim=%d replies=%d drive=%d" % (
+                    r.status_code,
+                    len(body.get("claim") or []),
+                    len(body.get("replies") or []),
+                    len(body.get("drive") or [])), flush=True)
+        except Exception as e:
+            print("[ont-loop] tick failed: %s: %s" % (type(e).__name__, e), flush=True)
         await asyncio.sleep(60)
 
 
@@ -46,6 +59,7 @@ async def sync_scheduler():
     if should_run():
         if _ont_task is None or _ont_task.done():
             _ont_task = asyncio.create_task(_ont_loop())
+            print("[ont-runtime] emp-009 监听线程已拉起", flush=True)
     else:
         if _ont_task is not None and not _ont_task.done():
             _ont_task.cancel()
@@ -54,6 +68,8 @@ async def sync_scheduler():
             except (asyncio.CancelledError, Exception):
                 pass
             _ont_task = None
+            print("[ont-runtime] emp-009 监听线程已停止（数字员工停用或 ONT_SCHEDULER 总闸关闭）",
+                  flush=True)
 
 
 def stop_now():
