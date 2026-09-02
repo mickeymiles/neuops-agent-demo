@@ -26,9 +26,12 @@ ACTION_REGISTRY = {
         "kind": "process",
     },
     "finalizeQuoteCollection": {
-        "desc": "全有效报价 或 到截止 → 结束收集，进入 QUOTE_COLLECT_DONE",
+        "desc": "决策兜底：无可推进动作时维持现状（不改状态，同一状态只记一次审计）",
         "kind": "state",
-        "next_external": "QUOTE_COLLECT_DONE",
+    },
+    "requestQuoteClarification": {
+        "desc": "供应商回复解析失败 → 回信催促按格式补全后重发，状态不变",
+        "kind": "send",
     },
     "submitApproval": {
         "desc": "生成汇总审批 D、发送内部流 → APPROVAL_WAIT（抄送审批人+系统抄送）",
@@ -44,17 +47,32 @@ ACTION_REGISTRY = {
         "kind": "send",
         "next_external": "ORDER_CONFIRM",
     },
+    "waitForSupplierShipment": {
+        "desc": "已下达订货、供应商尚未发货通知 → 纯等待，不发信（只在进入等待态时记一次审计）",
+        "kind": "state",
+    },
     "receiveTrackingNumber": {
-        "desc": "解析供应商快递单号写入 trackingNumber → WAIT_ENGINEER_CLOSE（黑盒）",
+        "desc": "解析供应商快递单号写入 trackingNumber（落业务列 logistics_no）→ R_WAIT_SHIPPING",
         "kind": "process",
-        "next_external": "WAIT_ENGINEER_CLOSE",
+        "next_external": "R_WAIT_SHIPPING",
     },
     "requestTrackingNo": {
         "desc": "供应商回发货无单号 → 主动邮件索取，保持 ORDER_CONFIRM",
         "kind": "send",
     },
+    "requestShippingTracking": {
+        "desc": "收到非发货类的'单号'邮件 → 回信索取正式发货快递单号（仅一次），状态不变",
+        "kind": "send",
+    },
+    "completeProcurement": {
+        "desc": "【当前版本终态】供应商已发货且单号已记录 → 流程结束，不做收货验收/结算。"
+                "仅在 ONT_SETTLEMENT_ENABLED 关闭时由决策层选中",
+        "kind": "state",
+        "next_internal": "R_CLOSED",
+        "next_external": "R_PROC_DONE",
+    },
     "engineerFinalClose": {
-        "desc": "工程师反馈测试完成 → 发 G 结算邮件，任务 CLOSED（全流程终态）",
+        "desc": "【需开启结算开关】工程师反馈测试完成 → 发 G 结算邮件，任务 CLOSED（全流程终态）",
         "kind": "send",
         "next_internal": "R_CLOSED",
         "next_external": "R_SETTLE",
