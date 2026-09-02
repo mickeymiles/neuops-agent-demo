@@ -5,14 +5,16 @@
 探针控制（手动采集、远程探针上报）
 """
 import socket
+import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
 from . import db, ops_ontology
+from .ontology import orbit
 from .probe import ProbeManager
 
 router = APIRouter(prefix="/api/ops", tags=["ops"])
@@ -26,10 +28,24 @@ DEPLOY_BUILD = "2026-09-03.2-tz-fix-orphan-kill"
 @router.get("/deploy-info")
 def deploy_info():
     """返回当前进程加载的代码部署指纹，便于核对线上是否真的换成了新代码。"""
+    dl = "2026-09-03 00:31:07"
+    try:
+        passed = orbit._deadline_passed({"quote_deadline": dl})
+    except Exception as e:  # noqa: BLE001
+        passed = f"ERR:{type(e).__name__}:{e}"
+    try:
+        dl_epoch = int(datetime.strptime(dl, "%Y-%m-%d %H:%M:%S")
+                       .replace(tzinfo=orbit.BIZ_TZ).timestamp())
+    except Exception:
+        dl_epoch = None
     return {
         "ok": True,
         "build": DEPLOY_BUILD,
         "deploy_path": str(Path(__file__).resolve().parent.parent),
+        "py_time": time.time(),
+        "py_time_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "dl_passed_for_F5B": passed,
+        "dl_epoch_utc": (datetime.fromtimestamp(dl_epoch, timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if dl_epoch else None),
     }
 
 # /ops 一体化运维监控平台页面路由（无 /api 前缀，供浏览器直接访问）
