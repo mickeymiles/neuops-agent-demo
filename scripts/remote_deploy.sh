@@ -39,8 +39,12 @@ _put_env() {
   printf '%s=%s\n' "$k" "$v" >> "$ENV_FILE.tmp"
 }
 
-# 本体轨数据库路径必须指向服务器部署目录（覆盖本地 macOS 默认 /Users/...）
-_put_env "ONT_DB_PATH" "$DEPLOY_DIR/neuops_ontology.db"
+# 本体轨数据库路径（业务数据归属）。
+# 架构约定：9007 = 智能体执行平台（不留业务数据），9006 = 配置页 + 查询页。
+# 因此 ABox 业务库固定落在 9006 的 contract_ontology.db（与业务库分离，避免写锁争用），
+# 9006 侧以 mode=ro 只读打开查询。可由 DEPLOY_ONT_DB_PATH 覆盖。
+ONT_DB_TARGET="${DEPLOY_ONT_DB_PATH:-/home/ubuntu/contract-compare/contract_ontology.db}"
+_put_env "ONT_DB_PATH" "$ONT_DB_TARGET"
 
 # 敏感凭据从 CI secrets 注入（不落仓库）
 _put_env "PROC_MAIL_USERNAME" "${DEPLOY_PROC_MAIL_USERNAME:-}"
