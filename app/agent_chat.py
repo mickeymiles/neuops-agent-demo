@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import json
 import os
+import re
 import time
 import uuid
 
@@ -899,6 +900,9 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
       2) base_url = http(s)://...     → 通过 HTTP 转发（复用 routes_local_tools / mcp_gateway 的 BaseModel 校验与参数映射）
       3) Server 记录缺失             → 兜底：neuops-local → 9007 HTTP，mcp-gateway → 9010 HTTP
     """
+    # 经营/运维类工具直连 9006/9007（绕过未部署的 9010 网关），保证"智能问数"可用
+    if tool_id in GATEWAY_DIRECT:
+        return await execute_gateway_tool(tool_id, args)
     t = db_get_mcp_tool(tool_id)
     if not t:
         return {"error": f"工具 {tool_id} 不存在"}
@@ -1216,35 +1220,85 @@ async def _run_employee_general_loop(employee_id: str, employee_name: str, query
     yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
 
 
-async def execute_biz_tool(name: str, args: dict) -> dict:
-    """执行经营业务原子工具，调用 9006 真实接口"""
+# ────────────────────────────────────────────
+# 直连 9006/9007 执行：绕过未部署的 9010 网关
+# ────────────────────────────────────────────
+# 经营业务（财务/合同/指标/原子本体）→ 9006；运维/AI 自监控 → 9007。
+# 全部走 GET + query params（与 9006/9007 真实 REST 接口一致），保证数字员工"智能问数"可用。
+# 映射：(host_key, method, path_template, param_map)
+#   host_key: "9006" | "9007"
+#   param_map: { 工具入参名: 下游接口参数名 }，仅透传非空参数；path_template 中的 {xxx} 用入参替换
+GATEWAY_HOSTS = {
+    "9006": os.getenv("BIZ_9006_BASE", "http://127.0.0.1:9006"),
+    "9007": os.getenv("NEUOPS_BASE", "http://127.0.0.1:9007"),
+}
+
+GATEWAY_DIRECT = {
+    # ── 经营类（9006 经营分析系统真实数据）──
+    "query_contracts": ("9006", "GET", "/api/contracts", {}),
+    "get_comparison_results": ("9006", "GET", "/api/contract/{cid}/compare/results", {"cid": "cid"}),
+    "get_contract_stats": ("9006", "GET", "/api/contract/{cid}/stats", {"cid": "cid"}),
+    "export_report": ("9006", "GET", "/api/contract/{cid}/compare/export", {"cid": "cid"}),
+    "get_etl_metrics": ("9006", "GET", "/api/etl/metrics",
+                        {"job_key": "job_key", "metric_name": "metric_name", "dim_type": "dim_type"}),
+    "query_ontology": ("9006", "GET", "/api/mcp/ontology/query",
+                       {"table_name": "table_name", "keyword": "keyword", "limit": "limit"}),
+    "list_tables": ("9006", "GET", "/api/mcp/ontology/tables", {}),
+    "get_table_schema": ("9006", "GET", "/api/mcp/ontology/schema", {"table_name": "table_name"}),
+    "query_table": ("9006", "GET", "/api/mcp/ontology/query",
+                    {"table_name": "table_name", "keyword": "keyword", "limit": "limit"}),
+    "get_metrics": ("9006", "GET", "/api/etl/metrics", {"job_key": "job_key", "dim_type": "dim_type"}),
+    # ── 运维/AI 自监控类（9007 一体化监控平台真实数据）──
+    "ops_overview": ("9007", "GET", "/api/ops/overview", {}),
+    "ops_entities": ("9007", "GET", "/api/ops/entities", {"type": "type"}),
+    "ops_topology": ("9007", "GET", "/api/ops/topology", {}),
+    "ops_metrics": ("9007", "GET", "/api/ops/metrics",
+                    {"entity_type": "entity_type", "entity_name": "entity_name",
+                     "metric": "metric", "minutes": "minutes"}),
+    "ops_logs": ("9007", "GET", "/api/ops/logs",
+                 {"source": "source", "level": "level", "minutes": "minutes", "limit": "limit"}),
+    "ops_alerts_aggregate": ("9007", "GET", "/api/ops/alerts/aggregate", {"status": "status"}),
+    "ops_settings": ("9007", "GET", "/api/ops/settings", {}),
+    "monitor_agents": ("9007", "GET", "/api/monitor/agents", {}),
+    "monitor_alerts": ("9007", "GET", "/api/monitor/alerts", {"status": "status", "limit": "limit"}),
+    "monitor_alert_rules": ("9007", "GET", "/api/monitor/alert-rules", {}),
+    "monitor_timeseries": ("9007", "GET", "/api/monitor/timeseries", {"days": "days"}),
+    "long_tasks": ("9007", "GET", "/api/long-tasks", {}),
+}
+
+
+async def execute_gateway_tool(tool_id: str, args: dict) -> dict:
+    """直连 9006/9007 执行经营/运维类原子工具（绕过未部署的 9010 网关）。"""
+    spec = GATEWAY_DIRECT.get(tool_id)
+    if not spec:
+        return {"error": f"未配置直连映射: {tool_id}"}
+    host_key, method, path_tpl, param_map = spec
+    base = GATEWAY_HOSTS.get(host_key, "")
+    if not base:
+        return {"error": f"未知主机: {host_key}"}
+    # 路径参数替换（如 {cid}）
+    path = path_tpl
+    for ph in re.findall(r"\{(\w+)\}", path_tpl):
+        path = path.replace("{" + ph + "}", str(args.get(ph, "")))
+    # 仅透传该工具声明的非空参数
+    params = {}
+    for src, dst in param_map.items():
+        v = args.get(src)
+        if v not in (None, ""):
+            params[dst] = v
+    url = f"{base}{path}"
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            if name == "list_tables":
-                r = await client.get(f"{BIZ_9006_BASE}/api/mcp/ontology/tables")
+            if method == "GET":
+                r = await client.get(url, params=params)
+            else:
+                r = await client.post(url, json=params)
+            try:
                 return r.json()
-            if name == "get_table_schema":
-                r = await client.get(f"{BIZ_9006_BASE}/api/mcp/ontology/schema", params={
-                    "table_name": args.get("table_name", "")})
-                return r.json()
-            if name == "query_table":
-                r = await client.get(f"{BIZ_9006_BASE}/api/mcp/ontology/query", params={
-                    "table_name": args.get("table_name", ""),
-                    "columns": args.get("columns", ""),
-                    "keyword": args.get("keyword", ""),
-                    "time_column": args.get("time_column", ""),
-                    "start_date": args.get("start_date", ""),
-                    "end_date": args.get("end_date", ""),
-                    "limit": args.get("limit", 100),
-                })
-                return r.json()
-            if name == "get_metrics":
-                r = await client.get(f"{BIZ_9006_BASE}/api/etl/metrics", params={
-                    "job_key": args.get("job_key", ""), "dim_type": args.get("dim_type", "")})
-                return r.json()
-            return {"error": f"未知工具 {name}"}
+            except Exception:
+                return {"content": r.text[:8000], "http_status": r.status_code}
     except Exception as e:
-        return {"error": f"工具执行失败: {e}"}
+        return {"error": f"调用 {host_key} 失败: {e}"}
 
 
 # ────────────────────────────────────────────
