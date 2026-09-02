@@ -6,7 +6,6 @@ import asyncio
 import datetime
 import json
 import os
-import re
 import time
 import uuid
 
@@ -900,12 +899,6 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
       2) base_url = http(s)://...     → 通过 HTTP 转发（复用 routes_local_tools / mcp_gateway 的 BaseModel 校验与参数映射）
       3) Server 记录缺失             → 兜底：neuops-local → 9007 HTTP，mcp-gateway → 9010 HTTP
     """
-    # 经营/运维类工具直连 9006/9007（绕过未部署的 9010 网关），保证"智能问数"可用
-    if tool_id in GATEWAY_DIRECT:
-        return await execute_gateway_tool(tool_id, args)
-    # 项目治理类工具：直连 9006 真实数据（里程碑/指标）或优雅降级（无后端的核算类）
-    if tool_id in PROJECT_TOOLS:
-        return await execute_project_tool(tool_id, args)
     t = db_get_mcp_tool(tool_id)
     if not t:
         return {"error": f"工具 {tool_id} 不存在"}
@@ -915,11 +908,6 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
         # Server 缺失兜底：统一走 HTTP 转发（避免因 Server 未注册导致工具完全不可用）
         fallback_base = "http://127.0.0.1:9010" if server_id == "mcp-gateway" else "http://127.0.0.1:9007"
         server = {"id": server_id, "name": server_id, "base_url": fallback_base, "type": "gateway"}
-    # mcp-gateway(9010) 当前未部署：对仍指向它的工具返回清晰说明，避免前端"调用工具失败"
-    if server_id == "mcp-gateway":
-        return {"available": False, "tool": tool_id,
-                "message": f"工具「{tool_id}」依赖的 MCP 网关(9010)当前未部署，该能力暂不可用。",
-                "note": "经营/财务/合同/运维类工具已直连 9006/9007 可正常使用；项目四算/工时/成本类计算逻辑将后续补充。"}
     base = (server.get("base_url") or "").rstrip("/")
     path = t.get("path") or f"/tools/{tool_id}"
     method = (t.get("method") or "POST").upper()
@@ -954,21 +942,23 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
         except Exception as e:
             return {"error": f"调用本地工具 {tool_id} 失败: {type(e).__name__}: {e}"}
 
-    # ── 网关型工具：走 HTTP 转发 ──
+    # ── 网关型工具：走 HTTP 转发（统一经 mcp-gateway 9010）──
     url = f"{base}{path}"
+    # 过滤 None，避免把 None 当字符串传入；网关端点以 Query 接收，故 POST 也带 params
+    fwd = {k: v for k, v in (args or {}).items() if v is not None}
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             if method == "GET":
-                r = await client.get(url, params=args)
+                r = await client.get(url, params=fwd)
             elif method == "PUT":
-                r = await client.put(url, json=args)
+                r = await client.put(url, json=fwd)
             elif method == "PATCH":
-                r = await client.patch(url, json=args)
+                r = await client.patch(url, json=fwd)
             elif method == "DELETE":
-                r = await client.request("DELETE", url, json=args)
+                r = await client.request("DELETE", url, json=fwd)
             else:
-                # POST 默认用 JSON body（兼容 /local/tools/* BaseModel 路由与 mcp-gateway 路由）
-                r = await client.post(url, json=args)
+                # POST：同时带 query(params) 与 body(json)，兼容网关 Query 接收与本地 BaseModel 接收
+                r = await client.post(url, params=fwd, json=fwd)
             try:
                 return r.json()
             except Exception:
@@ -1227,172 +1217,6 @@ async def _run_employee_general_loop(employee_id: str, employee_name: str, query
 
     yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
 
-
-# ────────────────────────────────────────────
-# 直连 9006/9007 执行：绕过未部署的 9010 网关
-# ────────────────────────────────────────────
-# 经营业务（财务/合同/指标/原子本体）→ 9006；运维/AI 自监控 → 9007。
-# 全部走 GET + query params（与 9006/9007 真实 REST 接口一致），保证数字员工"智能问数"可用。
-# 映射：(host_key, method, path_template, param_map)
-#   host_key: "9006" | "9007"
-#   param_map: { 工具入参名: 下游接口参数名 }，仅透传非空参数；path_template 中的 {xxx} 用入参替换
-GATEWAY_HOSTS = {
-    "9006": os.getenv("BIZ_9006_BASE", "http://127.0.0.1:9006"),
-    "9007": os.getenv("NEUOPS_BASE", "http://127.0.0.1:9007"),
-}
-
-GATEWAY_DIRECT = {
-    # ── 经营类（9006 经营分析系统真实数据）──
-    "query_contracts": ("9006", "GET", "/api/contracts", {}),
-    "get_comparison_results": ("9006", "GET", "/api/contract/{cid}/compare/results", {"cid": "cid"}),
-    "get_contract_stats": ("9006", "GET", "/api/contract/{cid}/stats", {"cid": "cid"}),
-    "export_report": ("9006", "GET", "/api/contract/{cid}/compare/export", {"cid": "cid"}),
-    "get_etl_metrics": ("9006", "GET", "/api/etl/metrics",
-                        {"job_key": "job_key", "metric_name": "metric_name", "dim_type": "dim_type"}),
-    "query_ontology": ("9006", "GET", "/api/mcp/ontology/query",
-                       {"table_name": "table_name", "keyword": "keyword", "limit": "limit"}),
-    "list_tables": ("9006", "GET", "/api/mcp/ontology/tables", {}),
-    "get_table_schema": ("9006", "GET", "/api/mcp/ontology/schema", {"table_name": "table_name"}),
-    "query_table": ("9006", "GET", "/api/mcp/ontology/query",
-                    {"table_name": "table_name", "keyword": "keyword", "limit": "limit"}),
-    "get_metrics": ("9006", "GET", "/api/etl/metrics", {"job_key": "job_key", "dim_type": "dim_type"}),
-    # ── 运维/AI 自监控类（9007 一体化监控平台真实数据）──
-    "ops_overview": ("9007", "GET", "/api/ops/overview", {}),
-    "ops_entities": ("9007", "GET", "/api/ops/entities", {"type": "type"}),
-    "ops_topology": ("9007", "GET", "/api/ops/topology", {}),
-    "ops_metrics": ("9007", "GET", "/api/ops/metrics",
-                    {"entity_type": "entity_type", "entity_name": "entity_name",
-                     "metric": "metric", "minutes": "minutes"}),
-    "ops_logs": ("9007", "GET", "/api/ops/logs",
-                 {"source": "source", "level": "level", "minutes": "minutes", "limit": "limit"}),
-    "ops_alerts_aggregate": ("9007", "GET", "/api/ops/alerts/aggregate", {"status": "status"}),
-    "ops_settings": ("9007", "GET", "/api/ops/settings", {}),
-    "monitor_agents": ("9007", "GET", "/api/monitor/agents", {}),
-    "monitor_alerts": ("9007", "GET", "/api/monitor/alerts", {"status": "status", "limit": "limit"}),
-    "monitor_alert_rules": ("9007", "GET", "/api/monitor/alert-rules", {}),
-    "monitor_timeseries": ("9007", "GET", "/api/monitor/timeseries", {"days": "days"}),
-    "long_tasks": ("9007", "GET", "/api/long-tasks", {}),
-}
-
-
-async def execute_gateway_tool(tool_id: str, args: dict) -> dict:
-    """直连 9006/9007 执行经营/运维类原子工具（绕过未部署的 9010 网关）。"""
-    spec = GATEWAY_DIRECT.get(tool_id)
-    if not spec:
-        return {"error": f"未配置直连映射: {tool_id}"}
-    host_key, method, path_tpl, param_map = spec
-    base = GATEWAY_HOSTS.get(host_key, "")
-    if not base:
-        return {"error": f"未知主机: {host_key}"}
-    # 路径参数替换（如 {cid}）
-    path = path_tpl
-    for ph in re.findall(r"\{(\w+)\}", path_tpl):
-        path = path.replace("{" + ph + "}", str(args.get(ph, "")))
-    # 仅透传该工具声明的非空参数
-    params = {}
-    for src, dst in param_map.items():
-        v = args.get(src)
-        if v not in (None, ""):
-            params[dst] = v
-    url = f"{base}{path}"
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            if method == "GET":
-                r = await client.get(url, params=params)
-            else:
-                r = await client.post(url, json=params)
-            try:
-                return r.json()
-            except Exception:
-                return {"content": r.text[:8000], "http_status": r.status_code}
-    except Exception as e:
-        return {"error": f"调用 {host_key} 失败: {e}"}
-
-
-# 项目治理类工具（原 server_id=mcp-gateway，9010 未部署）：直连 9006 真实数据或优雅降级
-PROJECT_TOOLS = {
-    "pm_project_read", "pm_task_read", "pm_workhour_read", "pm_cost_calc", "biz_metric_read",
-}
-
-
-async def execute_project_tool(tool_id: str, args: dict) -> dict:
-    """项目治理类工具：直连 9006 真实数据（里程碑/指标），无后端的核算类返回清晰说明而非连接错误。
-
-    这些工具原 server_id=mcp-gateway（→9010，未部署），导致对话中"调用工具失败"。
-    现绕过网关：有真实数据的（里程碑表、ETL 指标）直连 9006；纯计算/核对类（工时→成本、
-    工单任务一致性）当前无后端数据，返回 available=False 的说明，由 LLM 转述给用户，不再报错。
-    """
-    base = GATEWAY_HOSTS["9006"]
-    # 1) 项目里程碑与四算查询：直连 9006 原子本体表（真实数据）
-    if tool_id == "pm_project_read":
-        table = "项目里程碑表"
-        keyword = args.get("project_id") or args.get("keyword") or ""
-        try:
-            limit = int(args.get("limit") or 50)
-        except (TypeError, ValueError):
-            limit = 50
-        params = {"table_name": table, "limit": limit}
-        if keyword:
-            params["keyword"] = keyword
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                r = await client.get(f"{base}/api/mcp/ontology/query", params=params)
-                data = r.json()
-            rows = data.get("rows", []) or []
-            headers = data.get("headers", []) or []
-            # 尝试拉取四算指标（可能尚未计算，ETL 为空）
-            four = []
-            try:
-                async with httpx.AsyncClient(timeout=30) as client:
-                    fr = await client.get(f"{base}/api/etl/metrics", params={"job_key": "project-four-calc"})
-                    fd = fr.json()
-                    four = fd.get("metrics", []) or fd.get("rows", []) or []
-            except Exception:
-                four = []
-            return {
-                "tool": "pm_project_read",
-                "source_table": table,
-                "headers": headers,
-                "rows": rows,
-                "row_count": len(rows),
-                "four_calc_metrics": four,
-                "four_calc_available": bool(four),
-                "note": "已返回项目里程碑真实数据" + ("；项目四算指标暂未计算（ETL 为空）。" if not four else "。"),
-            }
-        except Exception as e:
-            return {"error": f"查询项目里程碑失败: {e}"}
-    # 2) 经营集团指标：直连 9006 ETL 指标
-    if tool_id == "biz_metric_read":
-        metric = args.get("metric_name") or ""
-        params = {}
-        if metric:
-            params["metric_name"] = metric
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                r = await client.get(f"{base}/api/etl/metrics", params=params)
-                data = r.json()
-            metrics = data.get("metrics", []) or data.get("rows", []) or []
-            return {
-                "tool": "biz_metric_read",
-                "metric_name": metric or "(全部)",
-                "metrics": metrics[:50],
-                "metric_count": len(metrics),
-                "note": "已返回经营/集团预计算指标（若为空表示对应指标尚未计算）。",
-            }
-        except Exception as e:
-            return {"error": f"查询集团指标失败: {e}"}
-    # 3) 计算/核对类：当前无后端数据，返回清晰说明而非连接错误
-    graceful = {
-        "pm_cost_calc": "人力成本折算（按日报工时折算项目人力成本）所需的工时明细后端数据尚未接入，暂无法计算。可先通过 pm_project_read 查询项目里程碑与四算指标。",
-        "pm_workhour_read": "日报工时明细查询所需的工时后端数据尚未接入，暂不可用。",
-        "pm_task_read": "工单/任务/工时一致性校验所需的明细后端数据尚未接入，暂不可用。",
-    }
-    return {
-        "tool": tool_id,
-        "available": False,
-        "message": graceful.get(tool_id, "该项目管理工具的后端数据尚未接入。"),
-        "note": "项目四算/工时/成本类计算逻辑将按计划后续补充；当前智能问数已覆盖经营/财务/合同/运维及项目里程碑数据。",
-    }
 
 
 # ────────────────────────────────────────────
