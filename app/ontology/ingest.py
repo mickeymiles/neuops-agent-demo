@@ -110,11 +110,28 @@ _SCAN_OVERLAP = 3600  # 水位回退缓冲：容忍投递延迟与时钟漂移
 
 
 def _ont_participants():
-    """读白名单与自身邮箱（配置缺失时静默降级为不限制）。"""
+    """读发起人白名单与自身邮箱（配置缺失时静默降级为不限制）。
+
+    白名单来源（合并去重，任一为空则忽略）：
+      1) 9006「发起人白名单」页面（procurement_requester，新增的配置入口）
+      2) ONT_REQUESTERS 环境变量（历史来源，保留向后兼容）
+    两者皆空 = 不限制任何人（_requester_allowed 的空列表语义）。
+    """
     allow, self_email = [], ""
+    # 1) 页面配置（优先新增来源）
+    try:
+        from app.db.proc_9006_config import load_requesters
+        for e in load_requesters():
+            if e and e not in allow:
+                allow.append(e)
+    except Exception:
+        pass
+    # 2) 环境变量（向后兼容）
     try:
         from app.config import ONT_REQUESTERS, ONT_MAIL_USERNAME
-        allow = [e.strip() for e in (ONT_REQUESTERS or "").split(",") if e.strip()]
+        for e in [x.strip() for x in (ONT_REQUESTERS or "").split(",") if x.strip()]:
+            if e not in allow:
+                allow.append(e)
         self_email = (ONT_MAIL_USERNAME or "").strip()
     except Exception:
         pass

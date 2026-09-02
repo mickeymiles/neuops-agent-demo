@@ -6,6 +6,7 @@
   - 「审批人」  → procurement_approver      （替代 ONT_APPROVERS 环境变量）
   - 「邮件模板」→ procurement_mail_template （A-G，可改措辞）
   - 「抄送」    → procurement_mail_cc       （全局抄送，系统配置）
+  - 「白名单」  → procurement_requester      （发起人白名单，emp-009 询价拦截）
 
 智能体侧**只读**。所有函数容错：库不可达 / 表不存在 / 未配置时返回空，
 不抛异常、不阻断主流程（由调用方决定如何降级）。
@@ -89,6 +90,26 @@ def load_global_cc():
             conn.close()
             return []
         rows = c.execute("SELECT email FROM procurement_mail_cc ORDER BY id ASC").fetchall()
+        conn.close()
+    except Exception:
+        return []
+    return [(r["email"] or "").strip() for r in rows if (r["email"] or "").strip()]
+
+
+def load_requesters():
+    """['a@b.com', '@b.com', ...] 9006「发起人白名单」页维护的启用中条目。
+
+    空白名单 = 不限制（与页面提示语义一致）。智能体(emp-009)据此过滤询价发件人，
+    拦截广告 / 垃圾邮件。支持整邮箱与 @域名 两种写法。
+    """
+    try:
+        conn = _connect()
+        c = conn.cursor()
+        if not _table_exists(c, "procurement_requester"):
+            conn.close()
+            return []
+        rows = c.execute(
+            "SELECT email FROM procurement_requester WHERE enabled=1 ORDER BY id ASC").fetchall()
         conn.close()
     except Exception:
         return []
