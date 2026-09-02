@@ -111,6 +111,31 @@ def _self_email():
         return ""
 
 
+def _cc_all(ctx, *extra):
+    """统一的抄送名单构造函数（唯一来源，避免各处漏配）。
+
+    规则（与业务约定一致）：
+      抄送 = 系统配置审批人 + 首封询价 A 的抄送（全局携带）+ 系统配置抄送 + extra
+    并做：去空、按邮箱小写去重、排除智能体自身邮箱（防自激循环）。
+
+    extra 用于把「发起人」等本轮特定角色并入抄送（如 E/G 主送供应商时发起人改抄送）。
+    """
+    items = []
+    items.extend(ctx.get("approver_emails") or [])
+    items.extend(ctx.get("inquiry_cc") or [])
+    items.extend(ctx.get("global_cc") or [])
+    items.extend([e for e in extra if e])
+    self_mail = (_self_email() or "").strip().lower()
+    out, seen = [], set()
+    for e in items:
+        k = str(e or "").strip().lower()
+        if not k or k in seen or k == self_mail:
+            continue
+        seen.add(k)
+        out.append(str(e).strip())
+    return out
+
+
 def _send_tpl(mg, tpl_key, ctx, task, *, to, cc=None, reply_to=None, refs=None,
               original_body=None, reply_all_from=None):
     """按模板渲染并发信；携带原文（===）、线程头（In-Reply-To/References）、可选 Reply-All。
@@ -152,9 +177,9 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         by_sup = dict((task.get("spare_info") or {}).get("b_msg_by_supplier") or {})
         for email in to:
             subj, _body = mail_tpl.render("B", ctx, task)
-            # B 也携带初始询价 A 的抄送观察者 + 系统配置抄送（两路都要携带）
+            # B 抄送 = 审批人 + 首封 A 抄送 + 系统配置抄送（三路都要携带）
             r = mg.send_mail(to=[email], subject=subj, body_text=_body,
-                             cc=(ctx.get("inquiry_cc") or []) + (ctx.get("global_cc") or []) or None)
+                             cc=_cc_all(ctx) or None)
             _mid = (r or {}).get("message_id") or (r or {}).get("msg_id") if isinstance(r, dict) else ""
             if _mid:
                 b_mids.append(_mid)
@@ -176,8 +201,7 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         reply_to = (q.get("msg_id") or "").strip()
         refs = (q.get("refs") or "").strip() or ((meta.get("b_msg_by_supplier") or {}).get(sel) or "")
         ok, detail, r = _send_tpl(mg, "E", ctx, task, to=[sel],
-                                  cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or [])
-                                     + (ctx.get("inquiry_cc") or []) + (ctx.get("global_cc") or []),
+                                  cc=_cc_all(ctx, ctx.get("from_email")),
                                   reply_to=reply_to or None, refs=refs or None,
                                   original_body=q.get("raw"))
         meta["e_msg_id"] = ((r or {}).get("message_id") or (r or {}).get("msg_id")
@@ -191,8 +215,7 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         meta = dict(task.get("spare_info") or {})
         # D 内部流：回复工程师询价(A)线程，携带原始采购申请原文；To工程师 + Cc审批人
         ok, detail, r = _send_tpl(mg, "D", ctx, task, to=[ctx.get("from_email")],
-                                  cc=(ctx.get("approver_emails") or []) + (ctx.get("inquiry_cc") or [])
-                         + (ctx.get("global_cc") or []),
+                                  cc=_cc_all(ctx),
                                   reply_to=(meta.get("inquiry_mid") or "").strip() or None,
                                   refs=((meta.get("inquiry_refs") or "") + " " +
                                         (meta.get("inquiry_mid") or "")).strip() or None,
@@ -230,8 +253,7 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
             refs = (q.get("refs") or "").strip()
             orig = (q.get("raw") or "") + "\n" + (meta.get("ship_raw") or "")
             ok, detail, r = _send_tpl(mg, "G", ctx, task, to=[sup] if sup else [ctx.get("from_email")],
-                                      cc=[ctx.get("from_email")] + (ctx.get("approver_emails") or [])
-                                     + (ctx.get("inquiry_cc") or []) + (ctx.get("global_cc") or []),
+                                      cc=_cc_all(ctx, ctx.get("from_email")),
                                       reply_to=reply_to or None, refs=refs or None,
                                       original_body=orig)
             meta["g_msg_id"] = ((r or {}).get("message_id") or (r or {}).get("msg_id")
@@ -247,8 +269,7 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
         if mg:
             # F 中止：回复工程师询价(A)线程，携带原始采购申请原文；To工程师 + Cc审批人
             _send_tpl(mg, "F", ctx, task, to=[ctx.get("from_email")],
-                      cc=(ctx.get("approver_emails") or []) + (ctx.get("inquiry_cc") or [])
-                         + (ctx.get("global_cc") or []),
+                      cc=_cc_all(ctx),
                       reply_to=(meta.get("inquiry_mid") or "").strip() or None,
                       refs=((meta.get("inquiry_refs") or "") + " " +
                             (meta.get("inquiry_mid") or "")).strip() or None,

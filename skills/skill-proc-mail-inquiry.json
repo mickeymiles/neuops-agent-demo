@@ -178,19 +178,6 @@
     "proc_mail_username": "",
     "proc_mail_host": "",
     "proc_mail_port": "",
-    "approver_emails": [
-      "biquanzhi5@163.com"
-    ],
-    "default_suppliers": [
-      {
-        "name": "供应商1",
-        "email": "13260023678@163.com"
-      },
-      {
-        "name": "供应商2",
-        "email": "biquanzhi@163.com"
-      }
-    ],
     "mail_enabled": true
   },
   "templates": {
