@@ -66,7 +66,6 @@ async def lifespan(app: FastAPI):
     except Exception as _e:
         print(f"[scheduler] emp-009 sync failed: {_e}")
     yield
-    proc_task.cancel()
     try:
         from app.ontology.runtime import stop_now
         stop_now()
