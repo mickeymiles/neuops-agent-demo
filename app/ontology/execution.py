@@ -319,6 +319,14 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
                          reply_to_mail_id=bmid or None, reply_refs_chain=bmid or None)
             asked[ke] = miss
             sent.append(email)
+        # 幂等：本轮既没发信、催补台账也没变化 → 静默返回，不写 upsert/审计。
+        # （此前发信已去重但审计仍每轮追加，线上单任务刷出 36 条同名日志。）
+        prev = {str(k).lower(): sorted(v or []) for k, v in
+                (task.get("spare_info") or {}).get("clarification_requested", {}).items()} \
+            if isinstance(task.get("spare_info"), dict) else {}
+        cur = {k: sorted(v or []) for k, v in asked.items()}
+        if not sent and prev == cur:
+            return True, "clarification already requested (skip re-audit)"
         meta["clarification_requested"] = asked
         store.upsert_task({**task, "spare_info": meta})
         store.audit("Task", task["task_id"], "requestQuoteClarification", operator="emp-009",
@@ -471,6 +479,15 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
                     snapshot={"reason": meta["manual_close_reason"]})
         return True, "task manually closed"
 
+    # 兜底：动作无执行器（多为邮件网关未就绪导致 `and mg` 未命中）。
+    # 幂等：同一动作只记一次 noop，否则每轮(约60s)都会追加 noop:xxx 刷屏。
+    meta = dict(task.get("spare_info") or {})
+    noops = list(meta.get("noop_logged") or [])
+    if action_id in noops:
+        return False, f"no executor for {action_id} (already logged)"
+    noops.append(action_id)
+    meta["noop_logged"] = noops
+    store.upsert_task({**task, "spare_info": meta})
     store.audit("Task", task.get("task_id"), f"noop:{action_id}", operator="emp-009",
                 remark="action has no executor yet")
     return False, f"no executor for {action_id}"
