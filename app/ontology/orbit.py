@@ -7,6 +7,7 @@ import os
 import re
 import time
 import json
+from datetime import timezone, timedelta
 
 from . import store, execution
 from app.config import settlement_enabled
@@ -37,6 +38,12 @@ _SHIP_KW = ("单号", "快递单号", "物流单号", "运单")
 _SHIP_ACTION_KW = ("发货", "已发", "已寄", "寄出", "发出", "已发出", "物流", "揽收", "出库")
 _REMIND_WINDOW = 3600  # 临期提醒窗口（秒）：截止前 1 小时主动催报价
 
+# 业务时区：本轨服务对象为中国采购业务，所有"墙上时间"字符串（截止时间、展示时间）
+# 均为北京时间 GMT+8。deadline 的【生成】与【解析比较】必须统一用此时区，
+# 否则在服务器本地为 UTC 时，字符串按 GMT+8 生成却被当 UTC 解析 → 超时判定整体晚 8 小时
+# （表现为"超时没人回复却不中止"）。
+BIZ_TZ = timezone(timedelta(hours=8))
+
 
 # ── 截止时间（对齐现役轨 routes_procurement_agent.py:2700-2728 的口径）──
 # 关键：基准取「邮件头 Date（发送方声明时间）」，不是扫描时刻。
@@ -66,8 +73,9 @@ def _mail_date_ts(mail: dict) -> int:
             from email.utils import parsedate_to_datetime
             dt = parsedate_to_datetime(d)
             if dt.tzinfo is None:
-                import datetime as _dt
-                dt = dt.replace(tzinfo=_dt.timezone.utc)
+                # 无偏移的邮件头时间按业务时区（中国 GMT+8）解释，而非 UTC，
+                # 否则 base epoch 整体错 8 小时，连带后续截止判定失效。
+                dt = dt.replace(tzinfo=BIZ_TZ)
             return int(dt.timestamp())
         except Exception:
             pass
@@ -76,20 +84,21 @@ def _mail_date_ts(mail: dict) -> int:
 
 
 def _inquiry_deadline(mail: dict, urgent: str) -> str:
-    """报价截止时间 = 邮件头 Date（发送时间）+ 紧急时长。"""
+    """报价截止时间 = 邮件头 Date（发送时间）+ 紧急时长。结果按业务时区 GMT+8 格式化。"""
     from datetime import datetime
     base_ts = _mail_date_ts(mail)
-    return datetime.fromtimestamp(base_ts + _urgent_to_seconds(urgent)).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.fromtimestamp(base_ts + _urgent_to_seconds(urgent), tz=BIZ_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _deadline_passed(meta: dict) -> bool:
-    """到点判定（现役轨:3435 同口径：all_replied or now >= deadline）。"""
+    """到点判定（现役轨:3435 同口径：all_replied or now >= deadline）。
+    截止字符串为 GMT+8 墙上时间，必须按 BIZ_TZ 解析为 UTC epoch 再与 time.time() 比较。"""
     from datetime import datetime
     dl = (meta or {}).get("quote_deadline") or ""
     if not dl:
         return False
     try:
-        return int(time.time()) >= int(datetime.strptime(dl, "%Y-%m-%d %H:%M:%S").timestamp())
+        return int(time.time()) >= int(datetime.strptime(dl, "%Y-%m-%d %H:%M:%S").replace(tzinfo=BIZ_TZ).timestamp())
     except Exception:
         return False
 
@@ -623,7 +632,7 @@ def _maybe_remind_quotes(task, ctx, mg):
         return
     try:
         from datetime import datetime
-        remain = int(datetime.strptime(dl, "%Y-%m-%d %H:%M:%S").timestamp()) - int(time.time())
+        remain = int(datetime.strptime(dl, "%Y-%m-%d %H:%M:%S").replace(tzinfo=BIZ_TZ).timestamp()) - int(time.time())
     except Exception:
         return
     if remain > _REMIND_WINDOW or meta.get("reminded_at"):

@@ -8,8 +8,12 @@ Governor 默认 'off'（不接管、不执行任何变更，零影响现轨）�
 """
 import os
 import time
+from datetime import datetime, timezone, timedelta
 
 from . import store, mail_tpl
+
+# 业务时区：与中国采购业务一致，所有"墙上时间"字符串用 GMT+8（见 orbit.BIZ_TZ，保持同步）。
+BIZ_TZ = timezone(timedelta(hours=8))
 from app.config import settlement_enabled
 
 # 治理：本轨默认 off（不接管、不执行变更，零影响现轨，本体轨暂停改走传统状态机）。
@@ -167,7 +171,7 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
 
     if action_id == "createTask":
         store.upsert_task({**task, "status": "INIT", "mode": "ontology",
-                           "quote_deadline": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(_deadline(ctx.get("urgent"))))})
+                           "quote_deadline": datetime.fromtimestamp(_deadline(ctx.get("urgent")), tz=BIZ_TZ).strftime("%Y-%m-%d %H:%M:%S")})
         store.audit("Task", task["task_id"], "createTask", operator="emp-009", snapshot={"fields": ctx})
         return True, "task created"
 
