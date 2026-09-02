@@ -16,6 +16,7 @@ _APPROVE_KW = ("确认", "采购", "同意", "采纳", "就选")
 _REJECT_KW = ("拒绝", "不同意", "不选", "不采纳", "否决", "驳回", "不采购")
 _CLOSE_KW = ("完成", "测试完毕", "更换完成", "采购结束")
 _SHIP_KW = ("单号", "快递单号", "物流单号", "运单")
+_SHIP_ACTION_KW = ("发货", "已发", "已寄", "寄出", "发出", "已发出", "物流", "揽收", "出库")
 _REMIND_WINDOW = 3600  # 临期提醒窗口（秒）：截止前 1 小时主动催报价
 
 
@@ -286,6 +287,8 @@ def ctx_from_task(task):
         "collection_done": bool(deadline_passed or (valid and len(quotes) >= len(target_list) and target_list)),
         "deadline_passed": bool(deadline_passed),
         "unparseable_supplier_emails": list(meta.get("unparseable_replies") or []),
+        "premature_track_supplier": meta.get("premature_track_supplier") or "",
+        "premature_track_replied": bool(meta.get("premature_track_requested_at")),
     }
     return ctx
 
@@ -432,12 +435,28 @@ def process_replies(mg):
                 meta["approval_rejected"] = False
                 emit = "approval"
         elif any(k in body_new for k in _SHIP_KW):
+            ext = str(cur.get("external_status") or "")
+            in_order = ext in ("R_ORDER", "R_WAIT_ORDER", "ORDER_CONFIRM")
+            has_action = any(k in body_new for k in _SHIP_ACTION_KW)
             mn = re.search(r"([A-Za-z]{0,6}[\d]{6,})", body_new)
-            meta["tracking_no"] = mn.group(1) if mn else body[:80]
-            meta["ship_raw"] = body
-            meta["ship_mid"] = mid
-            meta["ship_reply_from"] = mail_meta
-            emit = "shipping"
+            # 正式发货 = 含单号 且（有明确发货动作 或 已处于下单阶段）；否则视为
+            # 提前/含糊的"单号"邮件（如"补充单号"），不是正式发货通知。
+            is_real_shipment = bool(mn) and (has_action or in_order)
+            if is_real_shipment:
+                meta["tracking_no"] = mn.group(1)
+                meta["ship_raw"] = body
+                meta["ship_mid"] = mid
+                meta["ship_reply_from"] = mail_meta
+                # 正式发货后清除此前"补充单号"误标记
+                meta.pop("premature_track_supplier", None)
+                meta.pop("premature_track_requested_at", None)
+                emit = "shipping"
+            else:
+                # 不记为运单号；回复发货快递单号（仅一次），等正式发货通知再接收。
+                meta["premature_track_supplier"] = from_e
+                meta["premature_track_mid"] = mid
+                meta["premature_track_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                emit = "premature_tracking"
         elif (raw_q := _parse_quote_robust(body_new, from_e=from_e)):
             has_price = bool(raw_q.get("unit_price"))
             via_llm = bool(raw_q.get("_via_llm"))

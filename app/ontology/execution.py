@@ -371,6 +371,28 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
                     snapshot={"supplier": sup})
         return True, "tracking no requested"
 
+    if action_id == "requestShippingTracking" and mg:
+        # 供应商发了含糊/提前的"单号"邮件（非发货通知）→ 回复发货快递单号（仅一次）
+        meta = dict(task.get("spare_info") or {})
+        if meta.get("premature_track_requested_at"):
+            return True, "shipping tracking already requested"
+        sup = (ctx.get("premature_track_supplier") or ctx.get("target_supplier")
+               or meta.get("target_supplier") or "")
+        if not sup:
+            return False, "no supplier for shipping tracking request"
+        subj = "Re: 请回复发货快递单号"
+        body = ("您好，收到您补充的单号，但暂未收到正式发货通知及有效快递单号，"
+                "请回复正式发货的快递单号以便跟踪物流。\n"
+                f"任务编号：{task.get('task_id')}\n- NeuOps 备件询价(emp-009)")
+        mg.send_mail(to=[sup], subject=subj, body_text=body,
+                     reply_to_mail_id=meta.get("premature_track_mid") or None,
+                     reply_refs_chain=meta.get("premature_track_mid") or None)
+        meta["premature_track_requested_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        store.upsert_task({**task, "spare_info": meta})
+        store.audit("Task", task["task_id"], "requestShippingTracking", operator="emp-009",
+                    snapshot={"supplier": sup})
+        return True, "shipping tracking requested"
+
     if action_id == "receiveSupplierQuote":
         # 报价收集由 process_replies 内联完成；此处仅落审计，避免 noop 误报
         store.audit("Task", task["task_id"], "receiveSupplierQuote", operator="emp-009",

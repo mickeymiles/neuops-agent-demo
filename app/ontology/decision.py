@@ -95,6 +95,11 @@ def propose_action(ctx: dict):
     if ctx.get("approval_rejected"):
         return ("abortTask", "CLOSED_ABORT", internal, "审批驳回，任务中止")
 
+    # 收到提前/含糊的"单号"邮件（非正式发货通知，如"补充单号"）→ 回复发货快递单号（仅一次）
+    if ctx.get("premature_track_supplier") and not ctx.get("premature_track_replied"):
+        return ("requestShippingTracking", ctx.get("external_status", ""), ctx.get("internal_status", ""),
+                "收到非发货类单号邮件，回复发货快递单号")
+
     # S1 立项·尚未分发：有目标供应商 → 分发询价 B
     if external in ("R_SEND", "R_INIT") and (ctx.get("target_supplier_list") or []):
         return ("distributeInquiry", "INVITE_QUOTE", "R_INIT", "向目标供应商分发询价 B")
