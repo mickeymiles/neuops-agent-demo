@@ -573,7 +573,14 @@ def drive(mode="off", use_llm=False, mg=None):
         # 此前该字段只有读取方（orbit ctx / ontology.py / decision.py）而无任何写入点，
         # 恒为初始 False → 依赖它的 abortTask（超时中止）永不触发，等于死代码。
         try:
-            _meta = json.loads(t.get("spare_info") or "{}")
+            # spare_info 经 store._row_to_task 已被 json.loads 成 dict；
+            # 此处若再 json.loads(dict) 会抛 TypeError 被 except 吞掉，导致 deadline_passed 永不刷新。
+            _meta = t.get("spare_info") or {}
+            if isinstance(_meta, str):
+                try:
+                    _meta = json.loads(_meta)
+                except Exception:
+                    _meta = {}
             if _meta.get("quote_deadline"):
                 _passed = _deadline_passed(_meta)
                 if _passed != _meta.get("deadline_passed"):
