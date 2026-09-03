@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/ops", tags=["ops"])
 # 部署指纹：每次上线部署时手工 +1，用于线上核对「当前进程跑的是不是最新代码」。
 # 背景：曾出现 CI 全绿、健康检查通过，但 9007 端口被旧孤儿进程霸占，线上仍是旧逻辑。
 # 本接口让一次 curl 就能判定线上到底加载了哪份代码。
-DEPLOY_BUILD = "2026-09-03.2-tz-fix-orphan-kill"
+DEPLOY_BUILD = "2026-09-03.3-tpl-sign-delivery-split"
 
 
 @router.get("/deploy-info")

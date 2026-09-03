@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """本体轨邮件模板渲染（emp-009，独立于现轨 routes_procurement_agent）。
 
-复用 skill-proc-mail-inquiry 的 A-G 模板（DB `proc_templates` 优先覆盖现轨自定义），
+复用 skill-proc-mail-inquiry 的 A-G 模板（skill JSON 为主源，9006 页面自定义最高优先），
 提供：安全 format 渲染、原文引用（=== 分隔，比 `>` 在 webmail 更稳定）、
 内外流收件人/Reply-All 辅助。只读复用，不改动现轨文件。
 """
@@ -10,10 +10,20 @@ from datetime import datetime
 
 
 def load_templates():
-    """加载 A-G 邮件模板：DB `proc_templates` 覆盖 skill；再从 skill JSON 文件兜底补全缺失宏模板。"""
+    """加载 A-G 邮件模板：skill JSON 为主源；DB 遗留行与文件兜底仅补缺失；9006 页面自定义最高优先。
+
+    层级（高 → 低）：
+      1. 9006「邮件模板」页面自定义（procurement_mail_template，只覆盖非空字段）
+      2. skill JSON（skills/skill-proc-mail-inquiry.json，唯一维护源，mtime 热加载）
+      3. DB `spare_mail_config.proc_templates` —— **历史迁移遗留快照**，全库无写入方，
+         旧行会冻结旧模板盖掉 JSON 的新措辞（签名/货期行改了不生效的根因），
+         故降级为"仅补 JSON 缺失的模板"，不再覆盖。
+    """
     tpls = {}
+    # 主源：skill_loader（注意旧代码误写 `from app.utils import load_skill`，
+    # 该模块不存在 → ImportError 被吞 → 主加载路径从未生效，只剩文件兜底）
     try:
-        from app.utils import load_skill
+        from app.skill_loader import load_skill
         sk = load_skill("skill-proc-mail-inquiry") or {}
         skill_def = sk.get("skill") or {}
         tpls = dict(skill_def.get("templates") or {}) or dict(sk.get("templates") or {})
@@ -35,13 +45,14 @@ def load_templates():
                 tpls[want] = ptpl[want]
         except Exception:
             pass
+    # 遗留 DB 行：仅补缺失（不覆盖 JSON —— 见 docstring 第 3 层说明）
     try:
         from app.db.spare_mail import spare_mail_get_config
         db = spare_mail_get_config("proc_templates") or {}
-        if isinstance(db, dict) and db:
-            merged = dict(tpls)
-            merged.update({k: v for k, v in db.items() if v})
-            tpls = merged
+        if isinstance(db, dict):
+            for k, v in db.items():
+                if v and k not in tpls:
+                    tpls[k] = v
     except Exception:
         pass
     # 最高优先级：9006「邮件模板」页面维护的自定义模板
@@ -105,6 +116,68 @@ def _supplier_name_map():
         return {}
 
 
+# ── 收货地址拆分（模板E【收货信息】三字段）─────────────────────
+# 工程师在模板A的「收货地址」里常把收件人和电话一并写入，例如：
+#   "北京市海淀区软件园二期A区3号楼 张三 13800138000"
+#   "收货人：张三，电话：13800138000，地址：北京市海淀区xx路xx号"
+# E 模板需要拆出 receiver_name / receiver_phone / 纯 address 三个字段。
+_PHONE_PATS = [
+    re.compile(r"1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}"),   # 手机号（含 138-0013-8000 写法）
+    re.compile(r"0\d{2,3}-?\d{7,8}"),                # 座机（区号-号码）
+]
+_NAME_LABEL_RE = re.compile(r"(?:收货人|收件人|联系人|收件方)\s*[:：]\s*([\u4e00-\u9fa5·]{2,4})")
+_LABEL_PREFIX_RE = re.compile(r"(?:收货人|收件人|联系人|收件方|收货电话|联系电话|联系方式|电话|手机号码|手机|地址)\s*[:：]\s*")
+# 人名候选若含地址后缀字（路/街/号/区…）视为误把地址片段当人名
+_ADDR_SUFFIX_CHARS = set("路街号区园座楼室道巷镇县村厦栋单元层省市")
+
+
+def _clean_phone(raw_phone: str) -> str:
+    """手机号去掉空格/连字符（138-0013-8000 → 13800138000）；座机保持原样。"""
+    digits = re.sub(r"\D", "", raw_phone)
+    return digits if len(digits) == 11 and digits[:2] in (
+        "13", "14", "15", "16", "17", "18", "19") else raw_phone
+
+
+def split_receiver_info(address: str):
+    """从收货地址串拆出 (收货人, 联系电话, 纯地址)。
+
+    拆不出的字段返回空串（调用方回退默认值）；地址 = 去掉人名/电话/标签后的原串。
+    """
+    raw = str(address or "").strip()
+    if not raw:
+        return "", "", ""
+    phone, phone_raw, phone_span = "", "", None
+    for pat in _PHONE_PATS:
+        m = pat.search(raw)
+        if m:
+            phone_raw, phone_span = m.group(0), m.span()
+            phone = _clean_phone(phone_raw)
+            break
+    name = ""
+    m = _NAME_LABEL_RE.search(raw)
+    if m:
+        name = m.group(1)
+    elif phone_span:
+        # 无标签时取电话前邻 2-4 个汉字：要求与地址之间有分隔符/非汉字边界，
+        # 且不包含路/街/号等地址后缀字（防把"…3号楼张三"整段误当人名）。
+        head = raw[:phone_span[0]]
+        m2 = re.search(r"(?:^|[^\u4e00-\u9fa5])([\u4e00-\u9fa5·]{2,4})[\s,，、;；/()（）-]*$", head)
+        if m2 and not (_ADDR_SUFFIX_CHARS & set(m2.group(1))):
+            name = m2.group(1)
+    # 纯地址：按电话原匹配串的 span 剥离（清洗后的号码可能带不出原串），
+    # 人名可能在电话前后，先按位置删除再收敛残留分隔符。
+    if phone_span:
+        lo, hi = phone_span
+        pure = raw[:lo] + " " + raw[hi:]
+    else:
+        pure = raw
+    pure = _LABEL_PREFIX_RE.sub("", pure)
+    if name:
+        pure = pure.replace(name, "", 1)
+    pure = re.sub(r"[\s,，、;；]{2,}", " ", pure).strip(" ,，、;；")
+    return name, phone, pure
+
+
 def build_fields(ctx: dict, task: dict, supplier_names: dict = None) -> dict:
     """把任务事实（ctx/task）映射为模板占位符取值。
     supplier_names：可选 {email: 实名} 映射（如 中软国际/神州数码），缺省回退 ONT_SUPPLIERS 解析。"""
@@ -124,6 +197,13 @@ def build_fields(ctx: dict, task: dict, supplier_names: dict = None) -> dict:
                  "拆机二手": "拆机二手（无保修）"}.get(condition, condition)
     deadline = meta.get("quote_deadline") or ctx.get("quote_deadline") or ""
     approvers = ctx.get("approver_emails") or meta.get("approver_emails") or []
+    # 收货三字段：工程师邮件按标签解析的值优先 → 地址串拆分 → 系统默认值兜底
+    raw_addr = str(meta.get("address") or ctx.get("address") or "")
+    _s_name, _s_phone, _s_addr = split_receiver_info(raw_addr)
+    receiver_name = str(meta.get("receiver_name") or "").strip() or _s_name or "运维部"
+    receiver_phone = str(meta.get("receiver_phone") or "").strip() or _s_phone or "（请回复本会话提供）"
+    # 货期：claim 时按「最晚发货日期 - 询价邮件日期」推算；推算不出回退默认文案
+    delivery_days = str(meta.get("delivery_days") or ctx.get("delivery_days") or "").strip() or "按实际情况填写"
     base = {
         "project_no": meta.get("project_no") or ctx.get("project_no") or "",
         "project_name": meta.get("project_name") or ctx.get("project_name") or "",
@@ -133,7 +213,8 @@ def build_fields(ctx: dict, task: dict, supplier_names: dict = None) -> dict:
         "spec": meta.get("spec") or ctx.get("spec") or "",
         "condition": condition, "condition_display": cond_disp,
         "count": meta.get("count") or ctx.get("count") or "",
-        "address": meta.get("address") or ctx.get("address") or "",
+        "address": _s_addr or raw_addr,
+        "delivery_days": delivery_days,
         "urgent": meta.get("urgent") or meta.get("urgency_raw") or ctx.get("urgent") or "",
         "inquiry_dur": meta.get("urgent") or meta.get("urgency_raw") or ctx.get("urgent") or "",
         "latest_ship_time": meta.get("latest_ship_time") or ctx.get("latest_ship_time") or "",
@@ -146,7 +227,7 @@ def build_fields(ctx: dict, task: dict, supplier_names: dict = None) -> dict:
         "lowest_supplier": _sn((lowest or {}).get("email", "")) if lowest else "",
         "approver_emails": "、".join(approvers),
         "quote": (target_quote or {}).get("unit_price", "") or (lowest or {}).get("unit_price", "") or "",
-        "receiver_name": "运维部", "receiver_phone": "（请回复本会话提供）",
+        "receiver_name": receiver_name, "receiver_phone": receiver_phone,
         "stop_reason": ctx.get("stop_reason") or "无供应商报价且已到询价截止",
         "body_placeholder": "",
     }

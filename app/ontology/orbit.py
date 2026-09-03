@@ -90,6 +90,33 @@ def _inquiry_deadline(mail: dict, urgent: str) -> str:
     return datetime.fromtimestamp(base_ts + _urgent_to_seconds(urgent), tz=BIZ_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _delivery_days(mail: dict, latest_ship_time: str) -> str:
+    """货期推算：最晚发货日期 - 询价邮件日期（邮件头 Date，与紧急程度算法同基准）。
+
+    参照 _urgent_to_seconds/_inquiry_deadline 的口径：
+      - 基准取「邮件头 Date（发送方声明时间）」而非扫描时刻，保证重跑结果一致；
+      - 最晚发货时间支持 YYYY-MM-DD / YYYY/M/D / YYYY年M月D日（可带时分秒，取日期部分）；
+      - 差值按天向上取整，不足 1 天按 1 天计（当天/次日发货都属于"最迟明天到"的紧迫区间）；
+      - 解析失败或未填最晚发货时间 → 返回空串，由模板层回退「按实际情况填写」。
+    """
+    from datetime import datetime
+    import math
+    s = str(latest_ship_time or "").strip()
+    if not s:
+        return ""
+    m = re.search(r"(\d{4})[-/年.](\d{1,2})[-/月.](\d{1,2})", s)
+    if not m:
+        return ""
+    try:
+        ship = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), tzinfo=BIZ_TZ)
+    except ValueError:
+        return ""
+    days = (int(ship.timestamp()) - _mail_date_ts(mail)) / 86400.0
+    if days < 1:
+        return ""
+    return f"{math.ceil(days)}天"
+
+
 def _deadline_passed(meta: dict) -> bool:
     """到点判定（现役轨:3435 同口径：all_replied or now >= deadline）。
     截止字符串为 GMT+8 墙上时间，必须按 BIZ_TZ 解析为 UTC epoch 再与 time.time() 比较。"""
@@ -366,6 +393,9 @@ def claim_inquiries(mg, mode="off", roll=0.0):
             #   基准 = 邮件头 Date（发送方声明时间），而非扫描时刻
             #   时长 = 紧急程度换算（_urgent_to_seconds）
             into["quote_deadline"] = _inquiry_deadline(mail, fields.get("urgent", ""))
+            # 货期：最晚发货日期 - 询价邮件日期（同上基准口径）；解析不出留空，
+            # 模板层 build_fields 回退「按实际情况填写」。
+            into["delivery_days"] = _delivery_days(mail, fields.get("latest_ship_time", ""))
             into["deadline_passed"] = False
             task = {"task_id": tid, "session_id": tid + "-S", "threat_msg_id": fid,
                     "from_email": fields.get("from_email", ""), "urgency_raw": fields.get("urgent", ""),
