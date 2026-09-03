@@ -916,6 +916,7 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
     if base == "local://python":
         try:
             from app import mcp_tools as _mt
+            from app import ontos_compute as _oc
             fn_map = {
                 "table_query": _mt.tool_table_query,
                 "table_insert": _mt.tool_table_insert,
@@ -932,6 +933,8 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
                 "procurement_query_contract": _mt.tool_procurement_query_contract,
                 "procurement_query_spare_part": _mt.tool_procurement_query_spare_part,
                 "procurement_query_supplier": _mt.tool_procurement_query_supplier,
+                # 本体计算：直接 import 共享 ontos 子模块，与 9006 固化显示调用同一份算法
+                "ontology_compute": _oc.compute,
             }
             fn = fn_map.get(tool_id)
             if not fn:

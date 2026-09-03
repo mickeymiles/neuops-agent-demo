@@ -954,6 +954,19 @@ MCP_TOOL_SEED = [
      "params_schema": [
          {"name": "keyword", "type": "string", "required": False, "desc": "供应商名称或邮箱关键字（模糊匹配，可空=返回全部）"},
      ]},
+
+    # =====================================================================
+    # 本体计算类（探索/溯源/模拟/预测等临时口径，直调共享 ontos 子模块，与 9006 固化显示同一份算法）
+    # =====================================================================
+    {"id": "ontology_compute", "name": "本体计算(临时口径)", "icon": "🧮", "tag": "只读计算", "danger": 0, "category": "本体",
+     "desc": "直接调用本体 TBox 纯函数做回款周期/资金占用/毛利率/ROI/成本预警等计算（探索/模拟/预测等临时口径，不依赖 9006 固化报表）。结果属临时口径，非固化口径。",
+     "method": "POST", "path": "/local/tools/ontology_compute", "server_id": "neuops-local", "group": "本体计算",
+     "params_schema": [
+         {"name": "function", "type": "string", "required": True,
+          "desc": "计算函数名：payment_cycle / capital_occupation / project_margin / project_roi / cost_rollup / receivable_status / project_cost_warning（亦支持 F- 前缀）"},
+         {"name": "params", "type": "object", "required": False,
+          "desc": "参数字典，如 {'sign_date':'2024-01-01','receipts':[{'received_date':'2024-05-01'}],'basis':'first'}"},
+     ]},
 ]
 
 

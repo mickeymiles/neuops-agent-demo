@@ -387,6 +387,40 @@ async def get_table_schema(
 
 
 # ═══════════════════════════════════════════
+# 经营业务：本体计算（转发 9006 权威计算面 /api/ontos/compute）
+# ═══════════════════════════════════════════
+
+@app.post("/tools/ontology_compute")
+@app.get("/tools/ontology_compute")
+async def ontology_compute(
+    function: str = Query(default=""),
+    params: str = Query(default="{}"),
+):
+    """本体计算（经营语义计算，转发 9006 /api/ontos/compute）。
+
+    与 demo 本地直调共享 ontos 子模块调用同一份 ontos 纯函数，保证口径一致。
+    参数：function=函数名(或 F-xxx)；params=JSON 字符串（GET）或 JSON body（POST）。
+    """
+    import json as _json
+    try:
+        p = _json.loads(params) if params else {}
+    except Exception:
+        p = {}
+    if not isinstance(p, dict):
+        p = {}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(f"{BIZ_9006_BASE}/api/ontos/compute",
+                                 json={"function": function, "params": p})
+            data = r.json()
+    except Exception as e:
+        return tool_response("ontology_compute", False,
+                             {"error": f"无法连接9006经营分析系统: {e}"})
+    return tool_response("ontology_compute", data.get("success", False), data,
+                         source="9006", function=function)
+
+
+# ═══════════════════════════════════════════
 # 经营业务：合同比对引擎（转发 9006）
 # ═══════════════════════════════════════════
 
