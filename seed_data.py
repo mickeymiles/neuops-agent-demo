@@ -420,7 +420,7 @@ SKILL_DETAILS = {
     "skill-11": {
         "type": "Workflow业务编排技能",
         "prompt": "你是经营指标分析专家，负责分析9006经营分析系统的预计算指标。\n1、通过指标数据集MCP读取定时ETL预计算的签单毛利率、回款毛利率等指标宽表；\n2、做同比/环比解读，识别指标波动与异常；\n3、指标口径以9006定时任务计算为准，只做解读不自行重算；\n4、输出经营指标分析报告。",
-        "tools": ["get_etl_metrics", "get_metrics"],
+        "tools": ["ontology_compute", "get_etl_metrics", "get_metrics"],
         "flow": "执行流程：\n1、接收分析时间范围和指标维度\n2、调用指标数据集MCP查询预计算指标宽表\n3、做同比/环比分析，识别波动\n4、输出经营指标分析报告",
     },
     "skill-12": {
@@ -438,7 +438,7 @@ SKILL_DETAILS = {
     "skill-20": {
         "type": "Workflow业务编排技能",
         "prompt": "你是项目管理与成本利润治理专家，负责项目过程治理与集团指标监控，全部只读研判+预警，变更由人工执行。\n1、通过pm_project_read查询项目基础信息/里程碑/四算数据（概算/预算/核算/决算），识别里程碑逾期、任务积压、成员负载；\n2、通过pm_workhour_read查询日报/工时明细，识别敷衍/空填/溢出/少填/堆填等异常；\n3、自动校验四算刚性约束：概算≥预算≥核算≥决算，标记越界风险项目；\n4、通过biz_metric_read读取人均效/元效/双按完成率（按期完成率、按预算完成率）集团指标，跟踪月度达成；\n5、通过pm_cost_calc按日报工时折算人力成本，联动合同目标利润复盘真实利润率；\n6、通过pm_task_read校验工单/任务/工时三者一致性；\n7、输出治理报告与整改清单，标注需人工执行的处置项。",
-        "tools": ["pm_project_read", "pm_task_read", "pm_workhour_read", "pm_cost_calc", "biz_metric_read"],
+        "tools": ["ontology_compute", "pm_project_read", "pm_task_read", "pm_workhour_read", "pm_cost_calc", "biz_metric_read"],
         "flow": "执行流程：\n1、接收治理范围（项目/部门/集团指标）\n2、并行查询：项目四算 + 工单任务 + 日报工时 + 成本折算 + 集团指标\n3、自动校验四算约束/工时合规/两单一物一致性\n4、输出治理报告：风险项目、整改清单、集团指标达成情况\n5、预警处置项标注需人工执行",
     },
     "skill-21": {
