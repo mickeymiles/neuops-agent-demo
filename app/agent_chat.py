@@ -77,7 +77,7 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
 4. 执行模式：定向技能模式""")
         await asyncio.sleep(0.6)
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
             # ── 步骤1：获取真实合同列表 ──
             yield sse_event("agent_thought", "步骤1/3：正在连接9006合同比对系统，获取合同列表...")
             await asyncio.sleep(0.3)
@@ -305,7 +305,7 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
         yield sse_event("agent_thought", "步骤：调用指标数据集MCP → GET /api/etl/metrics（签单毛利率，按年份）...")
         await asyncio.sleep(0.4)
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
                 r = await client.get(f"{BASE}/api/etl/metrics", params={"job_key": "gross-margin", "dim_type": "year"})
                 data = r.json()
             metrics = data.get('metrics', [])
@@ -358,7 +358,7 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
         yield sse_event("agent_thought", f"步骤：调用原子本体MCP → GET /api/mcp/ontology/query（总合同表，关键词={kw or '全部'}）...")
         await asyncio.sleep(0.4)
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
                 r = await client.get(f"{BASE}/api/mcp/ontology/query", params={"table_name": "总合同表", "keyword": kw, "limit": 20})
                 data = r.json()
             rows = data.get('rows', []); headers = data.get('headers', [])
@@ -950,7 +950,7 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
     # 过滤 None，避免把 None 当字符串传入；网关端点以 Query 接收，故 POST 也带 params
     fwd = {k: v for k, v in (args or {}).items() if v is not None}
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
             if method == "GET":
                 r = await client.get(url, params=fwd)
             elif method == "PUT":

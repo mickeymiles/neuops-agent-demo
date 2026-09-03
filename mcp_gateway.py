@@ -319,7 +319,7 @@ async def query_ontology(
 ):
     """查询原始明细（原子本体 MCP，只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/mcp/ontology/query",
                                  params={"table_name": table_name, "keyword": keyword, "limit": limit})
             data = r.json()
@@ -335,7 +335,7 @@ async def query_ontology(
 async def query_ontology_tables():
     """列出原始本体表（原子本体 MCP，只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/mcp/ontology/tables")
             data = r.json()
     except Exception as e:
@@ -357,7 +357,7 @@ async def get_etl_metrics(
 ):
     """查询指标汇总宽表（指标数据集 MCP，只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/etl/metrics",
                                  params={"job_key": job_key, "metric_name": metric_name, "dim_type": dim_type})
             data = r.json()
@@ -375,7 +375,7 @@ async def get_table_schema(
 ):
     """获取表结构（原子本体 MCP，只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/mcp/ontology/schema",
                                  params={"table_name": table_name})
             data = r.json()
@@ -409,7 +409,7 @@ async def ontology_compute(
     if not isinstance(p, dict):
         p = {}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.post(f"{BIZ_9006_BASE}/api/ontos/compute",
                                  json={"function": function, "params": p})
             data = r.json()
@@ -429,7 +429,7 @@ async def ontology_compute(
 async def query_contracts():
     """获取全部合同及比对进度概览（合同比对引擎，只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/contracts")
             data = r.json()
     except Exception as e:
@@ -445,7 +445,7 @@ async def get_contract_stats(
 ):
     """获取指定合同的比对统计汇总（合同比对引擎，只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/contract/{cid}/stats")
             data = r.json()
     except Exception as e:
@@ -462,7 +462,7 @@ async def get_comparison_results(
 ):
     """获取指定合同逐项比对明细（合同比对引擎，只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/contract/{cid}/compare/results")
             data = r.json()
     except Exception as e:
@@ -479,7 +479,7 @@ async def export_report(
 ):
     """导出合同比对报告 Excel（合同比对引擎，只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/contract/{cid}/compare/export")
             data = r.json()
     except Exception as e:
@@ -500,7 +500,7 @@ async def export_report(
 async def _neuops_forward(tool_name: str, path: str, params: dict = None) -> dict:
     """统一转发 9007 一体化监控平台（全部只读）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{NEUOPS_BASE}{path}", params=params or {})
             data = r.json()
     except Exception as e:
@@ -616,7 +616,7 @@ async def long_tasks():
 async def list_project_files():
     """列出 9006 项目代码文件（只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/code/files")
             data = r.json()
     except Exception as e:
@@ -632,7 +632,7 @@ async def read_code_file(
 ):
     """读取 9006 项目文件内容（只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/code/file",
                                  params={"path": file_path})
             data = r.json()
@@ -651,7 +651,7 @@ async def edit_code_file(
 ):
     """编辑 9006 项目文件（写入，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.post(f"{BIZ_9006_BASE}/api/code/edit",
                                   json={"path": file_path, "old_text": old_text, "new_text": new_text})
             data = r.json()
@@ -668,7 +668,7 @@ async def search_code(
 ):
     """搜索 9006 项目代码（只读，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/code/search",
                                  params={"keyword": keyword})
             data = r.json()
@@ -686,7 +686,7 @@ async def write_new_file(
 ):
     """新建 9006 项目文件（写入，转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.post(f"{BIZ_9006_BASE}/api/code/new",
                                   json={"path": file_path, "content": content})
             data = r.json()
@@ -703,7 +703,7 @@ async def run_shell(
 ):
     """执行 9006 白名单只读验证命令（转发 9006）"""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
             r = await client.get(f"{BIZ_9006_BASE}/api/code/run",
                                  params={"command": command})
             data = r.json()
