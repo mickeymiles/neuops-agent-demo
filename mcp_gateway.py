@@ -15,7 +15,7 @@ import os
 import json
 import httpx
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -393,19 +393,46 @@ async def get_table_schema(
 @app.post("/tools/ontology_compute")
 @app.get("/tools/ontology_compute")
 async def ontology_compute(
+    request: Request,
     function: str = Query(default=""),
     params: str = Query(default="{}"),
 ):
     """本体计算（经营语义计算，转发 9006 /api/ontos/compute）。
 
     与 demo 本地直调共享 ontos 子模块调用同一份 ontos 纯函数，保证口径一致。
-    参数：function=函数名(或 F-xxx)；params=JSON 字符串（GET）或 JSON body（POST）。
+    参数：function=函数名(或 F-xxx)；params=JSON 字符串（GET query）或 JSON body（POST）。
+
+    入参优先级：POST body > query string。
+    params 可接受 dict（body）或 JSON 字符串（body/query 皆可）。
     """
     import json as _json
-    try:
-        p = _json.loads(params) if params else {}
-    except Exception:
-        p = {}
+
+    # ---- 读取 POST body（若为 GET 或空 body 则忽略）----
+    body = {}
+    if request.method in ("POST", "PUT", "PATCH"):
+        try:
+            raw = await request.body()
+            if raw:
+                parsed = _json.loads(raw)
+                if isinstance(parsed, dict):
+                    body = parsed
+        except Exception:
+            body = {}
+
+    # function：body 优先，query 兜底
+    function = body.get("function") or function
+
+    # params：body 优先，query 兜底；支持 dict 或 JSON 字符串
+    raw_params = body.get("params", None)
+    if raw_params is None:
+        raw_params = params if params else "{}"
+    if isinstance(raw_params, dict):
+        p = raw_params
+    else:
+        try:
+            p = _json.loads(raw_params) if raw_params else {}
+        except Exception:
+            p = {}
     if not isinstance(p, dict):
         p = {}
     try:
