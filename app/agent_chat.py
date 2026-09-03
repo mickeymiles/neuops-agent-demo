@@ -934,7 +934,13 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
                 "procurement_query_spare_part": _mt.tool_procurement_query_spare_part,
                 "procurement_query_supplier": _mt.tool_procurement_query_supplier,
                 # 本体计算：直接 import 共享 ontos 子模块，与 9006 固化显示调用同一份算法
-                "ontology_compute": _oc.compute,
+                # 适配层：LLM 常把 params 序列化为 JSON 字符串传入，这里兼容 string/dict 两种形态
+                "ontology_compute": (
+                    lambda function, params=None, **kw: _oc.compute(
+                        function,
+                        (json.loads(params) if isinstance(params, str) else params),
+                    )
+                ),
             }
             fn = fn_map.get(tool_id)
             if not fn:
