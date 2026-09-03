@@ -22,11 +22,17 @@ _TERMINAL_STATUS = ("CLOSED", "CLOSED_ABORT", "CLOSED_MANUAL")
 _TERMINAL_EXT = ("CLOSED_ABORT", "CLOSED_MANUAL", "R_SETTLE", "R_CLOSED", "R_PROC_DONE")
 # 兼容旧引用（含 R_PROC_DONE：当前版本"供应商回传单号即结束"的终态）
 _TERMINAL = _TERMINAL_EXT
+# 页面侧业务状态：9006「取消任务」只写 task_status，不动 status/external_status。
+# 用户在页面点了取消（或任务已闭环）就必须视作终态，否则 drive() 每 60s 仍在推进
+# 一个"页面已取消"的任务 → 僵尸。取消后的规范落库由 reclaim_canceled() 补齐。
+_TERMINAL_TASK_STATUS = ("任务已取消", "流程闭环")
 
 
 def is_terminal(task) -> bool:
     """任务是否已到终态（不再被 drive/process_replies 推进）。"""
     t = task or {}
+    if str(t.get("task_status") or "") in _TERMINAL_TASK_STATUS:
+        return True
     return (str(t.get("status") or "") in _TERMINAL_STATUS
             or str(t.get("external_status") or "") in _TERMINAL_EXT)
 
@@ -694,10 +700,41 @@ def _maybe_remind_quotes(task, ctx, mg):
     store.upsert_task({**task, "spare_info": meta})
 
 
+# ── 页面取消兜底收口 ────────────────────────────────────────────
+def reclaim_canceled(limit=200):
+    """把「页面已取消」但智能体状态列未置终态的任务补齐收口（不发任何邮件）。
+
+    背景：9006「取消任务」只 `UPDATE procurement_task SET task_status='任务已取消'`，
+    不动 `status` / `external_status`。`is_terminal()` 认 task_status 之后这些任务
+    已不会再被 drive 推进，但两个状态列仍停在 INIT/ORDER_CONFIRM 的"半终态"，
+    页面与智能体口径不一致。这里补一次 manualCloseTask 让两边对齐。
+    幂等：已终态的任务直接跳过。
+    """
+    done = []
+    for t in store.list_tasks(limit=limit):
+        if str(t.get("task_status") or "") != "任务已取消":
+            continue
+        if is_terminal({"status": t.get("status"), "external_status": t.get("external_status")}):
+            continue
+        try:
+            ok, detail = execution.execute_action(
+                "manualCloseTask", t,
+                {"operator": "web",
+                 "manual_close_reason": t.get("cancel_reason") or "页面取消任务"},
+                force=True)
+            done.append({"task_id": t.get("task_id"), "ok": ok, "detail": detail})
+        except Exception as e:  # 兜底：单个任务收口失败不影响整轮
+            done.append({"task_id": t.get("task_id"), "ok": False,
+                         "detail": f"{type(e).__name__}: {e}"})
+    return done
+
+
 # ── 全流程：认领 + 回复 + 驱动 ────────────────────────────────────
 def run_full(mg, use_llm=False):
     g = execution.governor()
+    reclaimed = reclaim_canceled()
     claimed = claim_inquiries(mg, g["mode"], g["roll"])
     replies = process_replies(mg)
     reports = drive(g["mode"], use_llm=use_llm, mg=mg)
-    return {"claim": claimed, "replies": replies, "drive": reports, "governor": g}
+    return {"claim": claimed, "replies": replies, "drive": reports,
+            "reclaimed": reclaimed, "governor": g}

@@ -148,6 +148,9 @@ def _connect():
     return conn
 
 
+# 页面侧业务终态（由用户操作写入，智能体不得覆盖）
+_PAGE_TERMINAL_STATUS = ("任务已取消", "流程闭环")
+
 # ── 状态映射：本体双流状态 → 业务表中文 task_status ──────────────────
 #   注意：R_WAIT_SHIPPING / R_PROC_DONE / ORDER_CONFIRM 都是**外部流**取值，
 #   必须对 e 判断（历史实现只判 i，导致"供应商发货中"永远命中不到）。
@@ -162,6 +165,19 @@ _STATUS_RULES = [
      or e in ("R_WAIT_SHIPPING", "R_WAIT_ENGINEER_CLOSE", "SHIPPED", "R_WAIT_ACCEPTANCE"), "供应商发货中"),
     (lambda i, e: i in ("R_SEND",) or e in ("ORDER_CONFIRM", "R_ORDER", "R_WAIT_ORDER"), "已选型确认"),
 ]
+
+
+def _resolve_task_status(task: dict) -> str:
+    """页面侧终态一旦写入，就不再被智能体按 internal/external 重算覆盖。
+
+    此前 `_task_to_row` 无条件重算 task_status，导致用户在页面点了「取消任务」后，
+    智能体任一次 upsert（如供应商回邮件触发 process_replies）就把"任务已取消"
+    冲回"询比价进行中"——页面看到已取消、智能体却还在推进。
+    """
+    cur = str((task or {}).get("task_status") or "")
+    if cur in _PAGE_TERMINAL_STATUS:
+        return cur
+    return _task_status(task.get("internal_status"), task.get("external_status"))
 
 
 def _task_status(internal="", external=""):
@@ -225,10 +241,11 @@ def _task_to_row(task: dict):
         "lowest_quote": low_price,
         "logistics_no": str(task.get("tracking_number") or si.get("tracking_no") or ""),
         "deal_unit_price": _fnum(low_price, 0.0) if low_price else 0.0,
-        "task_status": _task_status(task.get("internal_status"), task.get("external_status")),
+        "task_status": _resolve_task_status(task),
         "creator": str(task.get("from_email") or ""),
         "create_time": task.get("create_time") or _now(),
-        "updated_at": task.get("update_time") or _now(),
+        # 字段名是 updated_at（此前误写成 update_time，恒取不到 → 每次 upsert 都刷新成当前时间）
+        "updated_at": str(task.get("updated_at") or _now()),
         "project_no": str(si.get("project_no") or ""),
         "project_name": str(si.get("project_name") or ""),
         "part_type": str(si.get("part_type") or ""),
