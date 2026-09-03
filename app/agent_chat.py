@@ -40,6 +40,31 @@ from .mcp_tools import (
 router = APIRouter()
 
 
+def _find_employee_by_skill(skill_id: str) -> str:
+    """按技能 ID 反查持有该技能的数字员工（用于用户显式选技能时锁定路由）。
+
+    通用循环原本完全忽略 selected_skill，只交给 LLM 意图识别，出现过
+    选了「项目治理」却被路由到「运维巡检专家」的误判。本函数在用户显式
+    选择技能时直接锁定持有者，跳过意图识别。
+
+    返回 employee_id；查不到或异常时返回空串（由调用方回落到 LLM 路由）。
+    """
+    if not skill_id:
+        return ""
+    try:
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT employee_id FROM employee_skills "
+                "WHERE skill_id=? AND enabled=1 ORDER BY employee_id LIMIT 1",
+                (skill_id,)).fetchone()
+            return row[0] if row else ""
+        finally:
+            conn.close()
+    except Exception:
+        return ""
+
+
 async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_action: str = None, history: list = None, conversation_id: str = None):
     """模拟 Agent 执行过程，产生 SSE 事件流"""
     
@@ -66,362 +91,58 @@ async def mock_agent_run(query: str, mode: str, selected_skill: str, approved_ac
     # ──── 定向技能模式 ────
     # skill-3（运维脚本与日志排障）等技能均已改为自由路由/通用循环（build_employee_tools + execute_configured_tool 真实执行 9007/9006）
 
-    # ──── 采购清单比对 Skill（真实调用9006合同比对系统）────
-    if mode == "skill" and selected_skill == "skill-10":
-        BASE = "http://127.0.0.1:9006"
-        
-        yield sse_event("agent_thought", """任务分析：
-1. 用户请求执行采购清单比对，已选择「采购清单比对Skill」
-2. 需要从9006合同比对系统获取真实数据
-3. 解析用户意图 → 查询合同列表 → 获取比对结果 → 生成报告
-4. 执行模式：定向技能模式""")
-        await asyncio.sleep(0.6)
 
-        async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
-            # ── 步骤1：获取真实合同列表 ──
-            yield sse_event("agent_thought", "步骤1/3：正在连接9006合同比对系统，获取合同列表...")
-            await asyncio.sleep(0.3)
-            
-            try:
-                contracts_resp = await client.get(f"{BASE}/api/contracts")
-                contracts_data = contracts_resp.json()
-                all_contracts = contracts_data.get("contracts", [])
-            except Exception as e:
-                yield sse_event("agent_thought", f"⚠️ 无法连接9006系统：{e}")
-                yield sse_event("agent_message", {
-                    "content": f"## ⚠️ 合同比对系统连接失败\n\n无法访问 9006 端口服务，请确认服务是否正常运行。\n\n> 错误：{e}",
-                    "actions": [{"id": "open_9006", "label": "🔗 打开9006系统", "type": "link", "url": f"{BASE}"}]
-                })
-                yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
-                return
 
-            yield sse_event("tool_call", {
-                "tool": "query_contracts",
-                "source": "9006合同比对系统",
-                "total_contracts": len(all_contracts),
-                "contracts": [{"name": c["contract_name"], "status": c["status"], "progress": c["progress"]} for c in all_contracts[:5]]
-            })
 
-            # ── 步骤2：匹配用户提到的合同 ──
-            # 尝试从用户query中提取合同名关键词
-            contract_keywords = ["雷神", "药监", "国药", "亿道", "测试"]
-            matched_contract = None
-            for c in all_contracts:
-                name = c.get("contract_name", "")
-                # 精确匹配或关键词匹配
-                for kw in contract_keywords:
-                    if kw in query or kw in name:
-                        if (kw in query and kw in name) or query in name:
-                            matched_contract = c
-                            break
-                if matched_contract:
-                    break
-            
-            # 如果没匹配到，取最近有比对结果的那个
-            if not matched_contract:
-                for c in all_contracts:
-                    if c.get("progress", 0) > 0:
-                        matched_contract = c
-                        break
-                if not matched_contract and all_contracts:
-                    matched_contract = all_contracts[0]
-
-            cid = matched_contract["id"]
-            cname = matched_contract["contract_name"]
-            cstatus = matched_contract["status"]
-            supplier_name = matched_contract.get("latest_supplier", "未上传")
-
-            yield sse_event("agent_thought", f"""步骤2/3：已定位目标合同
-- 合同名称：{cname}
-- 合同编号：{matched_contract.get('contract_no', 'N/A')}
-- 当前状态：{cstatus}
-- 供应商：{supplier_name}
-- 比对进度：{matched_contract.get('progress', 0)}%
-
-正在拉取详细比对结果...""")
-            await asyncio.sleep(0.6)
-
-            # ── 步骤3：获取真实比对结果 ──
-            try:
-                stats_resp = await client.get(f"{BASE}/api/contract/{cid}/stats")
-                stats = stats_resp.json().get("stats", {})
-                
-                results_resp = await client.get(f"{BASE}/api/contract/{cid}/compare/results")
-                results_data = results_resp.json()
-                results = results_data.get("results", [])
-                total = results_data.get("total", 0)
-            except Exception as e:
-                yield sse_event("agent_thought", f"⚠️ 获取比对结果失败：{e}")
-                yield sse_event("agent_message", {
-                    "content": f"## ⚠️ 比对结果获取异常\n\n合同「{cname}」已定位，但获取比对详情时出错。\n\n> 请直接访问9006系统查看：{BASE}",
-                    "actions": [{"id": "open_9006", "label": "🔗 打开9006系统", "type": "link", "url": f"{BASE}"}]
-                })
-                yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
-                return
-
-            yield sse_event("tool_call", {
-                "tool": "get_comparison_results",
-                "contract": cname,
-                "total_items": total,
-                "matched": stats.get("matched_count", 0),
-                "anomaly": stats.get("anomaly_count", 0),
-                "pending": stats.get("pending_count", 0),
-                "extra": stats.get("extra_count", 0),
-                "progress": stats.get("progress", 0),
-                "source": "9006真实比对引擎"
-            })
-
-            # ── 步骤4：汇总报告 ──
-            yield sse_event("agent_thought", "步骤3/3：正在基于真实比对数据生成分析报告...")
-            await asyncio.sleep(0.8)
-
-            # 分类统计
-            matched_count = stats.get("matched_count", 0)
-            anomaly_count = stats.get("anomaly_count", 0)
-            pending_count = stats.get("pending_count", 0)
-            extra_count = stats.get("extra_count", 0)
-            progress = stats.get("progress", 0)
-            contract_total = stats.get("contract_total", total)
-            
-            match_rate = round(matched_count / max(contract_total, 1) * 100, 1)
-
-            # 提取差异明细（实时数据）
-            anomaly_items = [r for r in results if r.get("match_status") != "匹配成功"]
-            # 按类别分组
-            from collections import Counter
-            status_counter = Counter(r.get("match_status", "未知") for r in results)
-            
-            # 构建报告
-            report_lines = [
-                "## 📊 采购清单比对报告",
-                "",
-                f"**合同名称**：{cname}  ",
-                f"**合同编号**：{matched_contract.get('contract_no', 'N/A')}  ",
-                f"**供应商**：{supplier_name}  ",
-                f"**状态**：{cstatus}  ",
-                f"**比对项数**：{contract_total} 项  ",
-                f"**匹配率**：{match_rate}%（{matched_count}/{contract_total}）",
-                "",
-                "---",
-                "",
-                "### 一、比对结果总览",
-                "",
-                "| 状态 | 数量 | 占比 |",
-                "|------|------|------|",
-            ]
-            
-            status_labels = {
-                "匹配成功": f"✅ 完全匹配 | {status_counter.get('匹配成功', 0)} | {round(status_counter.get('匹配成功',0)/max(total,1)*100,1)}%",
-                "匹配异常": f"⚠️ 匹配异常 | {anomaly_count} | {round(anomaly_count/max(contract_total,1)*100,1)}%",
-                "待采购": f"❌ 供应商未报价 | {pending_count} | {round(pending_count/max(contract_total,1)*100,1)}%",
-                "供应商增项": f"📌 供应商增项 | {extra_count} | {round(extra_count/max(contract_total,1)*100,1)}%",
-            }
-            for status_key in ["匹配成功", "匹配异常", "待采购", "供应商增项"]:
-                if status_counter.get(status_key, 0) > 0:
-                    report_lines.append(f"| {status_labels[status_key]} |")
-
-            report_lines.extend([
-                "",
-                "### 二、差异明细（真实数据来源：9006比对引擎）",
-                "",
-            ])
-
-            if anomaly_items:
-                # 合并同类差异显示
-                anomaly_by_type = {}
-                for item in anomaly_items:
-                    status = item.get("match_status", "未知")
-                    name = item.get("ct_name") or item.get("sp_name", "未知")
-                    detail = item.get("anomaly_detail", "")
-                    key = f"{status}|{name}"
-                    if key not in anomaly_by_type:
-                        anomaly_by_type[key] = {"count": 0, "detail": detail, "status": status, "name": name}
-                    anomaly_by_type[key]["count"] += 1
-                
-                report_lines.append("| 设备名称 | 差异类型 | 数量 | 说明 |")
-                report_lines.append("|----------|---------|------|------|")
-                status_emoji = {"待采购": "❌", "匹配异常": "⚠️", "供应商增项": "📌"}
-                for key, item in sorted(anomaly_by_type.items()):
-                    emoji = status_emoji.get(item["status"], "•")
-                    detail_short = item["detail"][:60] + ("..." if len(item.get("detail","")) > 60 else "")
-                    report_lines.append(f"| {item['name']} | {emoji} {item['status']} | {item['count']} | {detail_short} |")
-                
-                if len(anomaly_by_type) > 20:
-                    report_lines.append(f"| ... | 还有 {len(anomaly_by_type)-20} 类差异 | ... | 请在9006系统查看完整明细 |")
-            else:
-                report_lines.append("> ✅ 所有合同项与供应商报价完全匹配，无差异项。")
-
-            report_lines.extend([
-                "",
-                "### 三、评审建议",
-                "",
-            ])
-            
-            if pending_count > 0:
-                report_lines.append(f"1. **供应商未报价 {pending_count} 项**：占合同总量 {round(pending_count/max(contract_total,1)*100,1)}%，需联系供应商补充报价。")
-                # 列出主要未报价类别（取前5）
-                pending_items = [r for r in results if r.get("match_status") == "待采购"]
-                pending_names = list(set(r.get("ct_name", "未知") for r in pending_items))[:5]
-                report_lines.append(f"   主要缺失项：{'、'.join(pending_names)}")
-            
-            if anomaly_count > 0:
-                report_lines.append(f"2. **匹配异常 {anomaly_count} 项**：需逐项人工确认，可在9006系统中标记「已确认」。")
-            
-            if progress >= 100:
-                report_lines.append("3. 该合同已全部比对完毕，可直接导出Excel报告。")
-            else:
-                report_lines.append(f"3. 当前比对进度 {progress}%，尚有 {contract_total - matched_count - anomaly_count - pending_count - extra_count} 项待处理。")
-
-            report_lines.extend([
-                "",
-                "---",
-                "",
-                "> 💡 **数据来源**：以上所有数据均来自9006合同比对系统真实API",
-                f"> 📋 [查看9006系统完整明细]({BASE}) | 📊 [导出Excel报告]({BASE}/api/contract/{cid}/export/report?version_id={stats.get('version_id', '')})",
-            ])
-
-            report = "\n".join(report_lines)
-            
-            yield sse_event("agent_message", {
-                "content": report,
-                "actions": [
-                    {"id": "view_9006", "label": "🔗 查看9006系统完整明细", "type": "link", "url": f"{BASE}"},
-                    {"id": "export_report", "label": "📊 导出Excel报告", "type": "link", "url": f"{BASE}/api/contract/{cid}/export/report?version_id={stats.get('version_id', '')}"},
-                ]
-            })
-        
-        yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
-        return
-
-    # ──── 经营指标分析 Skill（调9006指标数据集MCP）────
-    if mode == "skill" and selected_skill == "skill-11":
-        BASE = "http://127.0.0.1:9006"
-        yield sse_event("agent_thought", """任务分析：
-1. 用户选择「经营指标分析Skill」，查询经营指标
-2. 通过9006指标数据集MCP读取定时ETL预计算的指标宽表
-3. 目标指标：签单毛利率（按年份维度）
-4. 指标口径以9006定时任务计算为准，本Skill只做解读不做原始聚合""")
-        await asyncio.sleep(0.6)
-        yield sse_event("agent_thought", "步骤：调用指标数据集MCP → GET /api/etl/metrics（签单毛利率，按年份）...")
-        await asyncio.sleep(0.4)
-        try:
-            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
-                r = await client.get(f"{BASE}/api/etl/metrics", params={"job_key": "gross-margin", "dim_type": "year"})
-                data = r.json()
-            metrics = data.get('metrics', [])
-        except Exception:
-            metrics = []
-        if not metrics:
-            yield sse_event("agent_message", {
-                "content": f"## ⚠️ 指标数据获取失败\n\n无法连接9006指标数据集MCP，或指标宽表尚未计算。\n\n> 请先在9006执行定时任务「签单毛利指标计算」，或打开 {BASE} 查看。",
-                "actions": [{"id": "open_9006", "label": "🔗 打开9006系统", "type": "link", "url": BASE}]
-            })
-            yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
-            return
-        yield sse_event("tool_call", {"tool": "get_etl_metrics", "source": "9006指标数据集MCP", "job_key": "gross-margin", "dim_type": "year", "rows": len(metrics)})
-        await asyncio.sleep(0.6)
-        by_year = {m['year']: m for m in metrics}
-        years = sorted([y for y in by_year.keys() if y.isdigit()])
-        recent = years[-3:] if len(years) >= 3 else years
-        lines = ["## 📈 签单毛利经营分析报告", "", "**数据来源**：9006 指标数据集MCP（定时ETL预计算宽表）", "", "| 年份 | 合同额(万) | 签单毛利(万) | 签单毛利率 |", "|------|-----------:|-------------:|-----------:|"]
-        for y in recent:
-            m = by_year[y]
-            lines.append(f"| {y} | {m['contract_amt']/10000:.0f} | {m['gross_profit']/10000:.0f} | {m['gross_rate']*100:.2f}% |")
-        if len(recent) >= 2:
-            cur = by_year[recent[-1]]; prev = by_year[recent[-2]]
-            diff = (cur['gross_rate'] - prev['gross_rate']) * 100
-            lines.append("")
-            lines.append(f"**同比解读**：{recent[-1]} 年签单毛利率 {cur['gross_rate']*100:.2f}%，较 {recent[-2]} 年 {prev['gross_rate']*100:.2f}% {'上升' if diff >= 0 else '下降'} {abs(diff):.2f} 个百分点。")
-        lines.append("")
-        lines.append("> 💡 指标口径以9006定时任务计算为准，本报告仅做解读，不自行重算。")
-        yield sse_event("agent_message", {
-            "content": "\n".join(lines),
-            "actions": [{"id": "view_9006", "label": "🔗 查看9006完整指标", "type": "link", "url": BASE}]
-        })
-        yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
-        return
-
-    # ──── 合同明细探查 Skill（调9006原子本体MCP）────
-    if mode == "skill" and selected_skill == "skill-12":
-        import re as _re
-        BASE = "http://127.0.0.1:9006"
-        kw = ""
-        m = _re.search(r'[A-Za-z]{2,}[0-9A-Za-z]{4,}', query)
-        if m:
-            kw = m.group(0)
-        yield sse_event("agent_thought", f"""任务分析：
-1. 用户选择「合同明细探查Skill」，探查原始合同明细
-2. 通过9006原子本体MCP查询原始明细表（只读）
-3. 提取查询关键词：{kw or '（未识别，将查询全部）'}
-4. 目标表：总合同表（付款/收款明细表可通过数据源管理上传）""")
-        await asyncio.sleep(0.6)
-        yield sse_event("agent_thought", f"步骤：调用原子本体MCP → GET /api/mcp/ontology/query（总合同表，关键词={kw or '全部'}）...")
-        await asyncio.sleep(0.4)
-        try:
-            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
-                r = await client.get(f"{BASE}/api/mcp/ontology/query", params={"table_name": "总合同表", "keyword": kw, "limit": 20})
-                data = r.json()
-            rows = data.get('rows', []); headers = data.get('headers', [])
-        except Exception:
-            rows, headers = [], []
-        if not rows:
-            yield sse_event("agent_message", {
-                "content": f"## ⚠️ 明细探查无结果\n\n未查询到与「{kw}」匹配的合同明细。\n\n> 请确认关键词，或打开 {BASE} 数据源管理查看。",
-                "actions": [{"id": "open_9006", "label": "🔗 打开9006系统", "type": "link", "url": BASE}]
-            })
-            yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
-            return
-        yield sse_event("tool_call", {"tool": "query_ontology", "source": "9006原子本体MCP", "table_name": "总合同表", "keyword": kw, "rows": len(rows)})
-        await asyncio.sleep(0.6)
-
-        def _cidx(name):
-            for i, h in enumerate(headers):
-                if name in h: return i
-            return None
-        i_no = _cidx('合同编号'); i_amt = _cidx('合同总金额'); i_gross = _cidx('签单毛利'); i_date = _cidx('统计日期')
-        lines = ["## 📋 合同明细探查结果", "", f"**查询关键词**：{kw or '全部'}　**命中**：{len(rows)} 条", "", "| 合同编号 | 合同总金额 | 签单毛利 | 统计日期 |", "|---------|-----------:|---------:|---------|"]
-        for r in rows[:10]:
-            no = r[i_no] if i_no is not None and i_no < len(r) else '-'
-            amt = r[i_amt] if i_amt is not None and i_amt < len(r) else ''
-            gross = r[i_gross] if i_gross is not None and i_gross < len(r) else ''
-            dt = r[i_date] if i_date is not None and i_date < len(r) else ''
-            lines.append(f"| {no} | {amt} | {gross} | {dt} |")
-        lines.append("")
-        lines.append(f"> 💡 明细数据来自9006原子本体MCP（只读原始表），共 {data.get('count', len(rows))} 条。")
-        yield sse_event("agent_message", {
-            "content": "\n".join(lines),
-            "actions": [{"id": "view_9006", "label": "🔗 打开9006数据源管理", "type": "link", "url": BASE}]
-        })
-        yield sse_event("message_end", {"conversation_id": "conv-demo-001"})
-        return
-
+    # ───────────────────────────────────────────────────────────────
+    # 注：skill-10 / skill-11 / skill-12 原有的硬编码演示分支已移除。
+    # 这些分支直接调固定接口拼装报告，完全绕过 LLM 与工具编排，
+    # 导致本体计算工具(ontology_compute)永不触发（问 ROI 却答毛利率）。
+    # 现在统一走下方「自由 Agent 模式」：真实意图识别 + 数字员工路由 +
+    # tool calling，与其余 Skill 处理方式一致。
+    # ───────────────────────────────────────────────────────────────
     # ──── 自由 Agent 模式（真实 DeepSeek：意图识别 + 数字员工路由 + tool calling）────
-    yield sse_event("agent_thought", "🧠 主智能体正在识别任务意图，进行数字员工路由...")
+    # 用户显式选择了技能时，直接锁定到持有该技能的数字员工。
+    # 背景：通用循环原本完全忽略 selected_skill，只交给 LLM 意图识别，
+    # 出现过选了「项目治理」却被路由到「运维巡检专家」的误判（实测）。
+    pinned_employee = ""
+    if mode == "skill" and selected_skill:
+        pinned_employee = _find_employee_by_skill(selected_skill)
+        if pinned_employee:
+            yield sse_event("agent_thought",
+                            f"🎯 用户显式选择技能 {selected_skill}，"
+                            f"直接路由到持有该技能的数字员工 {pinned_employee}（跳过意图识别）")
 
-    route_system = build_route_system_prompt()
-    # 主路由带最近 2 轮历史，帮助理解追问/指代（如"那错误率呢"）
-    route_history = (history or [])[-4:]
-    route_resp = await deepseek_chat(
-        [{"role": "system", "content": route_system}] + route_history + [{"role": "user", "content": query}],
-        tools=build_route_tools(), temperature=0, max_tokens=800,
-        trace_ctx={"conversation_id": conversation_id, "stage": "intent_route",
-                   "employee_id": "", "employee_name": "意图路由"})
-    employee = "emp-001"
-    route_reason = ""
-    if "error" in route_resp:
-        yield sse_event("agent_thought", "⚠️ 意图识别调用失败：" + str(route_resp["error"]))
+    if pinned_employee:
+        employee = pinned_employee
+        route_reason = f"用户显式选择技能 {selected_skill}"
     else:
-        rmsg = route_resp["choices"][0]["message"]
-        rtc = rmsg.get("tool_calls")
-        if rtc:
-            try:
-                rargs = json.loads(rtc[0]["function"]["arguments"])
-                employee = rargs.get("employee", "emp-001")
-                route_reason = rargs.get("reason", "")
-            except Exception:
-                pass
-        if rmsg.get("reasoning_content"):
-            yield sse_event("agent_thought", "💭 主智能体思考：" + rmsg["reasoning_content"])
+        yield sse_event("agent_thought", "🧠 主智能体正在识别任务意图，进行数字员工路由...")
+
+        route_system = build_route_system_prompt()
+        # 主路由带最近 2 轮历史，帮助理解追问/指代（如"那错误率呢"）
+        route_history = (history or [])[-4:]
+        route_resp = await deepseek_chat(
+            [{"role": "system", "content": route_system}] + route_history + [{"role": "user", "content": query}],
+            tools=build_route_tools(), temperature=0, max_tokens=800,
+            trace_ctx={"conversation_id": conversation_id, "stage": "intent_route",
+                       "employee_id": "", "employee_name": "意图路由"})
+        employee = "emp-001"
+        route_reason = ""
+        if "error" in route_resp:
+            yield sse_event("agent_thought", "⚠️ 意图识别调用失败：" + str(route_resp["error"]))
+        else:
+            rmsg = route_resp["choices"][0]["message"]
+            rtc = rmsg.get("tool_calls")
+            if rtc:
+                try:
+                    rargs = json.loads(rtc[0]["function"]["arguments"])
+                    employee = rargs.get("employee", "emp-001")
+                    route_reason = rargs.get("reason", "")
+                except Exception:
+                    pass
+            if rmsg.get("reasoning_content"):
+                yield sse_event("agent_thought", "💭 主智能体思考：" + rmsg["reasoning_content"])
 
     if employee == "emp-004":
         yield sse_event("route", {"employee": "emp-004", "name": "经营业务分析专家", "reason": route_reason or "经营业务类任务"})
