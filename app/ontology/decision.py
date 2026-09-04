@@ -52,6 +52,9 @@ def build_fact_context(task: dict) -> dict:
         "raw_quote_count": len(qjson),
         "valid_supplier_emails": [q.get("email", "") for q in valid_quotes if q.get("email")],
         "target_supplier": task.get("target_supplier") or "",
+        # 定标模式：True=AI 自动比价直送审批；False=先交项目经理定标（人工轨）
+        "auto_award": bool(meta.get("auto_award")),
+        "pm_emails": meta.get("pm_emails") or [],
         "approval_choice": (task.get("approval_choice") or task.get("approval_params") or {}).get("supplier", "") if isinstance(task.get("approval_params"), dict) else (task.get("target_supplier") or ""),
         "tracking_number_candidate": task.get("shipped_no") or (task.get("shipped_mail_meta") or ""),
         # 收集/截止：以运行时 meta 的 deadline_passed 为准，叠加步骤字符串口径，确保两条路径一致
@@ -116,13 +119,28 @@ def propose_action(ctx: dict):
                 return ("requestQuoteClarification", external, internal,
                         "报价解析失败，催促供应商补全后重发")
             return ("receiveSupplierQuote", external, internal, "继续收集报价")
-        # 收集结束且内部审批尚未发出 → 发 D 审批汇总
+        # 收集结束且内部审批尚未发出 → 按定标模式分叉
         if internal != "R_APPROVAL":
-            return ("submitApproval", "R_DECIDING", "R_APPROVAL", "发起审批汇总 D")
+            if ctx.get("auto_award"):
+                # 自动轨：A 已声明「无特殊要求，最低价中标」→ AI 比价后直送审批。
+                # 审批人只需回「确认采购」，process_replies 会自动沿用最低价（见 orbit 审批分支）。
+                return ("submitApproval", "R_DECIDING", "R_APPROVAL", "自动轨：发起审批汇总 D")
+            # 人工轨：未声明自动定标 → 报价汇总交项目经理定标，
+            # PM 线下比选（可含特殊要求处理）后自行送审批，智能体不代发审批邮件。
+            return ("requestPmDecision", "R_WAIT_PM", internal, "人工轨：报价交项目经理定标")
         # 审批已发出但仍滞留收集中（收尾）→ 确认下单
         if ctx.get("target_supplier"):
             return ("confirmOrderToSupplier", "R_ORDER", "R_APPROVAL", "审批选定，下达订货")
         return ("processApprovalDecision", external, "R_APPROVAL", "等待审批选择")
+
+    # S2.5 人工轨·待定标：P 已发项目经理，等审批结论回流。
+    # 中间环节（PM 线下比选 / 特殊要求处理 / 转交审批）智能体不感知，
+    # 唯一推进信号是审批人在本线程内回复的「确认采购」（由 process_replies 写入 target_supplier）。
+    # 若审批人另起新邮件回复，线程匹配失败 → 任务将长期滞留此态，需在看板上监控。
+    if external == "R_WAIT_PM":
+        if ctx.get("target_supplier"):
+            return ("confirmOrderToSupplier", "R_ORDER", "R_APPROVAL", "人工轨：审批通过，下达订货")
+        return ("processApprovalDecision", external, "R_APPROVAL", "等待项目经理定标后审批")
 
     # S3 审批阶段：等审批人选定/确认供应商 → 发出订货 E
     if external in ("R_APPROVAL", "R_DECIDING", "R_WAIT_APPROVAL"):

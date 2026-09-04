@@ -65,7 +65,7 @@ def mg(monkeypatch):
     m = FakeMG()
     monkeypatch.setattr(orbit, "config", lambda: {
         "suppliers": [{"name": "供A", "email": "s1@x.com"}, {"name": "供B", "email": "s2@x.com"}],
-        "approvers": ["ap@x.com"]})
+        "approvers": ["ap@x.com"], "pms": ["pm@corp.com"]})
     return m
 
 
@@ -78,13 +78,20 @@ def _meta_update(task, **kw):
 _MAKE_SEQ = [0]
 
 
-def _make_task(mg, body_extra=""):
-    """建一个字段齐全、已发询价B的本体轨任务，返回 task_id。每次调用 message_id 唯一，便于并发建多个任务。"""
+def _make_task(mg, body_extra="", auto_award=True):
+    """建一个字段齐全、已发询价B的本体轨任务，返回 task_id。每次调用 message_id 唯一，便于并发建多个任务。
+
+    auto_award=True（默认）会在正文追加「无特殊要求，最低价中标」，走**自动轨**
+    ——收集完报价直接发审批 D。本文件多数用例验证的是报价解析 / 审批 / 中止等
+    自动轨机制；要验证人工轨（交项目经理定标）请显式传 auto_award=False。
+    """
     _MAKE_SEQ[0] += 1
+    _award = "\n无特殊要求，最低价中标" if auto_award else ""
     inquiry = {
         "message_id": f"<A{_MAKE_SEQ[0]}@eng>", "subject": "【备件询价】PRJ-1 硬盘",
         "mail_body_text": ("项目编号：PRJ-1\n项目名称：N\n类型：硬盘\n品牌：Seagate\nPN：ST-1\n"
-                           "规格：1T\n成色：全新\n数量：3\n收货地址：addr\n紧急程度：48h" + body_extra),
+                           "规格：1T\n成色：全新\n数量：3\n收货地址：addr\n紧急程度：48h"
+                           + body_extra + _award),
         "from_email": "eng@x.com", "in_reply_to": "", "references": "",
     }
     mg.mailbox = [inquiry]

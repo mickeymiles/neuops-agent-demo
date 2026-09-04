@@ -4,6 +4,7 @@
 页面维护入口（均在 9006）：
   - 「供应商」  → procurement_supplier      （资源池主数据）
   - 「审批人」  → procurement_approver      （替代 ONT_APPROVERS 环境变量）
+  - 「项目经理」→ procurement_pm            （人工轨定标责任人）
   - 「邮件模板」→ procurement_mail_template （A-G，可改措辞）
   - 「抄送」    → procurement_mail_cc       （全局抄送，系统配置）
   - 「白名单」  → procurement_requester      （发起人白名单，emp-009 询价拦截）
@@ -75,6 +76,26 @@ def load_approvers():
             return []
         rows = c.execute(
             "SELECT email FROM procurement_approver WHERE enabled=1 ORDER BY id ASC").fetchall()
+        conn.close()
+    except Exception:
+        return []
+    return [(r["email"] or "").strip() for r in rows if (r["email"] or "").strip()]
+
+
+def load_project_managers():
+    """['a@b.com', ...] 仅启用中的项目经理。
+
+    人工轨（A 邮件未声明「无特殊要求，最低价中标」）的定标责任人：
+    报价收集完成后，智能体把汇总发给他们选定供应商，再由 PM 自行送审批。
+    """
+    try:
+        conn = _connect()
+        c = conn.cursor()
+        if not _table_exists(c, "procurement_pm"):
+            conn.close()
+            return []
+        rows = c.execute(
+            "SELECT email FROM procurement_pm WHERE enabled=1 ORDER BY id ASC").fetchall()
         conn.close()
     except Exception:
         return []

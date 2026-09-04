@@ -9,6 +9,24 @@ import re
 from datetime import datetime
 
 
+# P（定标请求）代码级兜底：skill JSON 是主源，但若读到旧版 JSON（无 P）或文件缺失，
+# 缺模板会让 render 返回空串 → 发给项目经理一封空白邮件，比"报错"更糟。
+# 这里给一份最小可用版，保证人工轨永远发得出去。
+_FALLBACK_P = {
+    "subject": "【定标请求】{project_no} {brand} {pn} — {suppliers_count}家报价待定标 [{task_no}]",
+    "body": ("各位好，备件询价任务 {task_no} 已完成 {suppliers_count} 家供应商报价汇总：\n\n"
+             "项目：{project_no} / {project_name}\n"
+             "备件：{part_type} / {brand} / {pn} / {spec}\n"
+             "成色：{condition} x {count}\n\n"
+             "【报价列表】\n{suppliers}\n\n"
+             "【比价参考】最低报价：{lowest_quote}（{lowest_supplier}）\n\n"
+             "本次询价未声明「无特殊要求，最低价中标」，请项目经理 {pm_emails} 定标，"
+             "涉及特殊要求请先完成线下处理，再提交审批人审批。\n"
+             "请审批人在本线程内回复「确认采购」，系统将下达订货邮件。\n\n"
+             "- NeuAgent 备件采购智能体"),
+}
+
+
 def load_templates():
     """加载 A-G 邮件模板：skill JSON 为主源；DB 遗留行与文件兜底仅补缺失；9006 页面自定义最高优先。
 
@@ -30,7 +48,7 @@ def load_templates():
     except Exception:
         tpls = {}
     # 兜底：直接读 skill JSON 文件，确保 A-G 齐全（部分装载源可能缺宏模板 G）
-    for want in ("A", "B", "C", "D", "E", "F", "G"):
+    for want in ("A", "B", "C", "D", "E", "F", "G", "P"):
         if want in tpls:
             continue
         try:
@@ -72,6 +90,8 @@ def load_templates():
             tpls = merged
     except Exception:
         pass
+    if not tpls.get("P", {}).get("body"):
+        tpls["P"] = dict(_FALLBACK_P)
     return tpls or {}
 
 
@@ -197,6 +217,7 @@ def build_fields(ctx: dict, task: dict, supplier_names: dict = None) -> dict:
                  "拆机二手": "拆机二手（无保修）"}.get(condition, condition)
     deadline = meta.get("quote_deadline") or ctx.get("quote_deadline") or ""
     approvers = ctx.get("approver_emails") or meta.get("approver_emails") or []
+    pms = ctx.get("pm_emails") or meta.get("pm_emails") or []
     # 收货三字段：工程师邮件按标签解析的值优先 → 地址串拆分 → 系统默认值兜底
     raw_addr = str(meta.get("address") or ctx.get("address") or "")
     _s_name, _s_phone, _s_addr = split_receiver_info(raw_addr)
@@ -226,6 +247,7 @@ def build_fields(ctx: dict, task: dict, supplier_names: dict = None) -> dict:
         "lowest_quote": f"¥{lowest.get('unit_price')}" if lowest else "",
         "lowest_supplier": _sn((lowest or {}).get("email", "")) if lowest else "",
         "approver_emails": "、".join(approvers),
+        "pm_emails": "、".join(pms),
         "quote": (target_quote or {}).get("unit_price", "") or (lowest or {}).get("unit_price", "") or "",
         "receiver_name": receiver_name, "receiver_phone": receiver_phone,
         "stop_reason": ctx.get("stop_reason") or "无供应商报价且已到询价截止",

@@ -137,27 +137,33 @@ def _deadline_passed(meta: dict) -> bool:
 
 
 def config():
-    """读本体轨参与者配置：供应商 + 审批人。
+    """读本体轨参与者配置：供应商 + 审批人 + 项目经理。
 
     唯一来源 = 9006 页面维护的 contract_compare.db（本轨只读，**不再有任何硬编码/环境变量兜底**）：
       - 供应商：procurement_supplier（9006「供应商」页）
       - 审批人：procurement_approver（9006「审批人」页）
+      - 项目经理：procurement_pm（9006「项目经理」页，仅人工轨需要）
     页面未配置时返回空并打 ERROR —— 不回退任何旧链路，避免配置来源二义。
     """
-    suppliers, approvers = [], []
+    suppliers, approvers, pms = [], [], []
     try:
         from app.db import proc_9006_config as p9
         suppliers = p9.load_suppliers() or []
         approvers = p9.load_approvers() or []
+        pms = p9.load_project_managers() or []
     except Exception as e:
-        suppliers, approvers = [], []
+        suppliers, approvers, pms = [], [], []
         _log_cfg_error("读取 9006 页面配置失败：%s", e)
     if not suppliers or not approvers:
         _log_cfg_error(
             "9006 页面配置不完整：供应商 %d / 审批人 %d。"
             "请到 9006「供应商」「审批人」页面维护（代码已不再有环境变量兜底）",
             len(suppliers), len(approvers))
-    return {"suppliers": suppliers, "approvers": approvers}
+    if not pms:
+        # 不阻断：只有人工轨（A 未声明自动定标）才真正需要，自动轨空着无副作用。
+        # 但空配置下人工轨会卡在"待定标"，因此按 ERROR 暴露，便于上线前发现。
+        _log_cfg_error("9006「项目经理」页未配置启用中的邮箱，人工轨将卡在 R_WAIT_PM")
+    return {"suppliers": suppliers, "approvers": approvers, "pms": pms}
 
 
 def _log_cfg_error(fmt, *args):
@@ -182,7 +188,9 @@ def _mids_of(task):
     meta = task.get("spare_info") or {}
     mids = [(task.get("threat_msg_id") or "").strip()]
     mids += [m for m in (meta.get("b_msg_ids") or []) if m]
-    for k in ("d_msg_id", "e_msg_id"):
+    # p_msg_id：人工轨发给项目经理的定标请求。纳入后，PM/审批人在该线程内的回复
+    # （含 Reply-All）才能被 _thread_match 认领，否则审批结论永远收不回来。
+    for k in ("d_msg_id", "e_msg_id", "p_msg_id"):
         if meta.get(k):
             mids.append(meta[k])
     return {m.strip() for m in mids if m and m.strip()}
@@ -314,6 +322,12 @@ def ctx_from_task(task):
     meta = task.get("spare_info") or {}
     quotes = meta.get("quotes") or []
     approvers = meta.get("approver_emails") or []
+    # 项目经理：建任务时已快照进 meta（与审批人同策略，避免中途改配置影响在途任务），
+    # 老任务（无该字段）回退读当前配置。
+    # 用 .get() 而非下标：config() 常被测试/外部 monkeypatch 成只含 suppliers/approvers
+    # 的简化字典，新增键直接用 [] 取会抛 KeyError，并被上层宽 except 吞掉，
+    # 症状退化成"任务凭空消失"，极难排查。
+    pms = meta.get("pm_emails") or (config().get("pms") or [])
     target_list = meta.get("suppliers") or config()["suppliers"]
     valid = [q for q in quotes if q.get("email") and q.get("unit_price")]
     lowest = min(valid, key=lambda q: float(q.get("unit_price") or 10 ** 12)) if valid else None
@@ -330,6 +344,10 @@ def ctx_from_task(task):
         "spec": meta.get("spec"), "condition": meta.get("condition"), "count": meta.get("count"),
         "address": meta.get("address"), "urgent": meta.get("urgent"),
         "from_email": task.get("from_email"), "approver_emails": approvers,
+        "pm_emails": pms,
+        # 定标模式：A 邮件声明了「无特殊要求，最低价中标」→ 自动轨（AI 比价后直送审批）；
+        # 否则人工轨（先交项目经理定标）。缺省 False = 保守走人工轨。
+        "auto_award": bool(meta.get("auto_award")),
         # 初始询价 A 的抄送人（运维工程师在发 A 时抄送的观察者），须透传到后续所有邮件
         "inquiry_cc": list((meta.get("inquiry_reply_from") or {}).get("cc_email_list") or []),
         # 系统配置抄送（9006「抄送」页维护的全局抄送），与 A 抄送叠加，两路都要携带
@@ -382,6 +400,7 @@ def claim_inquiries(mg, mode="off", roll=0.0):
         try:
             into = {**fields, "suppliers": config()["suppliers"],
                     "approver_emails": config()["approvers"],
+                    "pm_emails": config().get("pms") or [],
                     "quotes": [], "received_reply_ids": []}
             # 携带工程师原始采购申请（A）原文与线程元数据：供 D/F 回复同一线程并携带原文
             into["inquiry_raw"] = (fields.get("mail_body") or fields.get("body")

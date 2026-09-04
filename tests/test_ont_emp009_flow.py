@@ -53,11 +53,14 @@ class FakeMG:
 def fake(monkeypatch):
     monkeypatch.setattr(orbit, "config", lambda: {
         "suppliers": [{"name": "供A", "email": "s1@x.com"}, {"name": "供B", "email": "s2@x.com"}],
-        "approvers": ["approve@x.com"]})
+        "approvers": ["approve@x.com"], "pms": ["pm@corp.com"]})
     inquiry = {
         "message_id": "<A1@eng>", "subject": "【备件询价】PRJ-1 硬盘",
+        # 追加「无特殊要求，最低价中标」→ 走自动轨（收集后直送审批 D），
+        # 本文件验证的是自动轨的建任务/发信/回信编排链路。
         "mail_body_text": ("项目编号：PRJ-1\n项目名称：N\n类型：硬盘\n品牌：Seagate\nPN：ST-1\n"
-                           "规格：1T\n成色：全新\n数量：3\n收货地址：addr\n紧急程度：5min"),
+                           "规格：1T\n成色：全新\n数量：3\n收货地址：addr\n紧急程度：5min\n"
+                           "无特殊要求，最低价中标"),
         "from_email": "eng@x.com", "in_reply_to": "", "references": "",
     }
     mg = FakeMG(inquiry)
@@ -145,12 +148,14 @@ def fake_thread(monkeypatch):
     """经真实入向回复编排（process_replies）驱动全流程的 FakeMG。"""
     monkeypatch.setattr(orbit, "config", lambda: {
         "suppliers": [{"name": "供A", "email": ADDR_SUP1}, {"name": "供B", "email": ADDR_SUP2}],
-        "approvers": [ADDR_APPROVER]})
+        "approvers": [ADDR_APPROVER], "pms": ["pm@corp.com"]})
     class MG(FakeMG):
         def __init__(self):
             mail = {"message_id": "<A-ENG@test>", "subject": "【备件询价】PRJ-G 硬盘",
+                    # 自动轨：声明「无特殊要求，最低价中标」→ 收集后直送审批 D
                     "mail_body_text": ("项目编号：PRJ-G\n项目名称：二期\n类型：硬盘\n品牌：Seagate\nPN：ST-G\n"
-                                       "规格：2T\n成色：全新\n数量：5\n收货地址：B4\n紧急程度：5min"),
+                                       "规格：2T\n成色：全新\n数量：5\n收货地址：B4\n紧急程度：5min\n"
+                                       "无特殊要求，最低价中标"),
                     "from_email": ADDR_ENG, "in_reply_to": "", "references": ""}
             super().__init__(mail)
 

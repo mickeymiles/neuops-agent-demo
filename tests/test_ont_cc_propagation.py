@@ -27,6 +27,8 @@ S2 = "s2@x.com"   # 供应商B（1200）
 AP = "ap@x.com"   # 审批人
 SUPPLIERS = [{"name": "供A", "email": S1}, {"name": "供B", "email": S2}]
 APPROVERS = [AP]
+PM = "pm@corp.com"  # 项目经理（人工轨定标责任人）
+PMS = [PM]
 
 # 初始询价 A 的抄送观察者（真实场景：审批人 b5 + 两个外部观察者）
 OBS = [AP, "watcher1@neusoft.com", "watcher2@qq.com"]
@@ -93,7 +95,8 @@ def gov():
 @pytest.fixture()
 def mg(monkeypatch):
     m = FakeMG()
-    monkeypatch.setattr(orbit, "config", lambda: {"suppliers": SUPPLIERS, "approvers": APPROVERS})
+    monkeypatch.setattr(orbit, "config",
+                        lambda: {"suppliers": SUPPLIERS, "approvers": APPROVERS, "pms": PMS})
     return m
 
 
@@ -123,7 +126,9 @@ def test_cc_propagated_b_to_g(mg, gov):
     mg.mailbox = [_mail("<A@t>", ENG,
                         "项目编号: PRJ001\n项目名称: 服务器硬盘备件\n备件类型: 硬盘\n"
                         "品牌: Seagate\n型号: ST8000\n规格: 8TB SATA\n成色: 全新\n"
-                        "数量: 2\n收货地址: 北京市海淀区科技路1号\n紧急程度: 3天\n询价",
+                        "数量: 2\n收货地址: 北京市海淀区科技路1号\n紧急程度: 3天\n"
+                        # 自动轨：声明「无特殊要求，最低价中标」→ 收集后直送审批（不经项目经理）
+                        "无特殊要求，最低价中标\n询价",
                         cc=OBS)]
     _run(mg)  # → 发 B 询价函
 

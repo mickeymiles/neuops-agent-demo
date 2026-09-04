@@ -215,6 +215,36 @@ def execute_action(action_id: str, task: dict, ctx: dict, mg=None, force: bool =
                     snapshot={"supplier": sel, "reply_to": reply_to, "refs": refs})
         return True, "order E sent"
 
+    if action_id == "requestPmDecision" and mg:
+        # 人工轨：A 邮件未声明「无特殊要求，最低价中标」→ 报价汇总交项目经理定标。
+        #
+        # 与自动轨(D 审批汇总)的关键差异：
+        #   - 主送 = 项目经理（定标责任人），而非发起人；
+        #   - 抄送仍含审批人（_cc_all 必带），这是**线程连续性的关键**：
+        #     PM 后续线下比选 / 转交审批时，只要审批人是在本线程内回复（或 Reply-All），
+        #     其 In-Reply-To/References 就能命中 p_msg_id，智能体才能认领审批结论；
+        #     若审批人另起新邮件回复，智能体会收不到，任务将停在 R_WAIT_PM（见下方审计备注）。
+        #   - 智能体发完即停，不代发审批邮件、不推进状态，中间环节由 PM/审批人线下完成。
+        meta = dict(task.get("spare_info") or {})
+        pm_list = [p for p in (ctx.get("pm_emails") or []) if p]
+        if not pm_list:
+            store.audit("Task", task["task_id"], "requestPmDecision:blocked", operator="emp-009",
+                        remark="9006「项目经理」页未配置启用中的邮箱，人工轨无法定标")
+            return False, "未配置项目经理"
+        ok, detail, r = _send_tpl(mg, "P", ctx, task, to=pm_list,
+                                  cc=_cc_all(ctx, ctx.get("from_email")),
+                                  reply_to=(meta.get("inquiry_mid") or "").strip() or None,
+                                  refs=((meta.get("inquiry_refs") or "") + " " +
+                                        (meta.get("inquiry_mid") or "")).strip() or None,
+                                  original_body=meta.get("inquiry_raw"))
+        meta["p_msg_id"] = ((r or {}).get("message_id") or (r or {}).get("msg_id")
+                            if isinstance(r, dict) else "") or meta.get("p_msg_id", "")
+        meta["pm_notified_at"] = datetime.now(BIZ_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        store.upsert_task({**task, "external_status": "R_WAIT_PM", "spare_info": meta})
+        store.audit("Task", task["task_id"], "requestPmDecision", operator="emp-009",
+                    snapshot={"pm": pm_list})
+        return True, "pm decision request P sent"
+
     if action_id == "submitApproval" and mg:
         meta = dict(task.get("spare_info") or {})
         # D 内部流：回复工程师询价(A)线程，携带原始采购申请原文；To工程师 + Cc审批人

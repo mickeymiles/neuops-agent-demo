@@ -33,6 +33,24 @@ def _ship_time(body: str) -> str:
             .replace("月", "-").replace("日", ""))
 
 
+# 自动定标声明：「无特殊要求，最低价中标」
+# 命中 → 智能体比价后直接发审批邮件（自动轨）；
+# 未命中 → 报价汇总先交项目经理定标，再由 PM 自行送审批（人工轨）。
+# 匹配前抹掉所有空白，因此对换行/空格/全半角标点不敏感。
+_AUTO_AWARD_RE = re.compile(r"无特殊要求[，,、;；:：\s]*最低价中标")
+
+
+def _auto_award(body: str) -> bool:
+    """是否声明「无特殊要求，最低价中标」。
+
+    发起人在 A 邮件正文写下该句，即授权智能体按最低价自动定标、跳过项目经理定标环节。
+    确定性正则，不交 LLM：这是**授权判据**，交给模型存在被措辞扰动的风险。
+    """
+    if not body:
+        return False
+    return bool(_AUTO_AWARD_RE.search(re.sub(r"\s+", "", body)))
+
+
 def parse_inquiry_fields(body: str, subject: str = "") -> dict:
     """从工程师询价邮件正文/主题抽取本体轨事实字段（确定性，不交 LLM）。"""
     text = body or ""
@@ -56,6 +74,8 @@ def parse_inquiry_fields(body: str, subject: str = "") -> dict:
         "latest_ship_time": _ship_time(text),
         "receiver_name": _field(text, "联系人", "收货人"),
         "receiver_phone": _field(text, "电话", "手机"),
+        # 定标模式：True=AI 自动比价直接送审批；False=先交项目经理定标（人工轨）
+        "auto_award": _auto_award(text),
     }
 
 

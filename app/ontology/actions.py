@@ -38,6 +38,13 @@ ACTION_REGISTRY = {
         "kind": "send",
         "next_internal": "R_APPROVAL",
     },
+    "requestPmDecision": {
+        "desc": "人工轨：A 未声明「无特殊要求，最低价中标」→ 报价汇总交项目经理定标。"
+                "PM 线下比选（可含特殊要求的线下处理）后自行送审批人，智能体不介入中间环节，"
+                "待审批人回复「确认采购」后直接下达订货 E",
+        "kind": "send",
+        "next_external": "R_WAIT_PM",
+    },
     "processApprovalDecision": {
         "desc": "解析审批回复，校验 ∈ 有效候选池，非法回信重选，合法写入 target_supplier",
         "kind": "process",
