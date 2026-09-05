@@ -22,7 +22,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from mock_data import (
     MOCK_METRICS, MOCK_LOGS, MOCK_CMDB,
     MOCK_CHANGES, MOCK_ALARMS,
-    MOCK_PM_PROJECTS, MOCK_PM_TASKS, MOCK_PM_WORKHOURS, MOCK_PM_COSTS,
     MOCK_BIZ_METRICS, MOCK_BID_KB, MOCK_BID_TEMPLATES,
     get_timestamps,
 )
@@ -46,6 +45,31 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # ═══════════════════════════════════════════
 # 统一工具响应格式
 # ═══════════════════════════════════════════
+
+async def merge_params(request, **query):
+    """合并入参：POST/PUT body 优先，query 兜底（★防「body 参数被静默丢弃」）。
+
+    历史缺陷（ontology_compute 曾中招，PM 域工具同样存在）：工具只声明 Query(...) 参数，
+    而智能体多以 JSON body 传参 → 参数静默丢失，工具用默认值算出结果且 success 仍为 true，
+    比显式报错危险得多。故所有接受入参的工具统一走本函数。
+    """
+    body = {}
+    if request is not None and request.method in ("POST", "PUT", "PATCH"):
+        try:
+            raw = await request.body()
+            if raw:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    body = parsed
+        except Exception:
+            body = {}
+    out = dict(query)
+    for k, v in body.items():
+        # 仅当 body 值非空时才覆盖（避免空值把 query 的有效值冲掉）
+        if v not in (None, ""):
+            out[k] = v
+    return out
+
 
 def tool_response(tool_name: str, success: bool, data: dict, **extra) -> dict:
     # source 参数用于标记真实数据源（9006/9007），优先于全局 DATA_SOURCE
@@ -749,87 +773,116 @@ async def run_shell(
 @app.post("/tools/pm_project_read")
 @app.get("/tools/pm_project_read")
 async def pm_project_read(
+    request: Request,
     project_id: str = Query(default=""),
+    limit: int = Query(default=20),
 ):
-    """查询项目基础信息、里程碑进度与四算数据（概算/预算/核算/决算）"""
-    projects = MOCK_PM_PROJECTS
-    if project_id:
-        projects = [p for p in projects if p["project_id"] == project_id]
-    if not projects:
+    """查询项目档案与成本执行（★读共享本体 ontos.abox_project，真实业务数据）。
+
+    数据源：项目主数据 md_contract（合同:项目=1:1，project_id 即合同编号）。
+    含：部门/责任人/区域/合同状态/签约额 + 预算/当前成本 + 本体 F-project-cost-warning 判定。
+    ⌛四算（概算/预算/核算/决算）未接入 —— 返回 not_available，**不再返回演示数据**
+    （历史教训：曾返回 P-2026-* 假项目，导致成本分析结论全错）。
+    不传 project_id 时返回前 limit 条，并给出总数与预警分布。
+    """
+    p = await merge_params(request, project_id=project_id, limit=limit)
+    project_id, limit = str(p.get("project_id") or ""), int(p.get("limit") or 20)
+    try:
+        from app import ontos_compute as _oc
+        rows = _oc.project_read(project_id or None, limit=limit or 20)
+        if project_id and not rows:
+            return tool_response("pm_project_read", False,
+                                 {"error": f"未在项目主数据中找到项目 {project_id}"
+                                           f"（project_id = 合同编号，如 DFSY1410017C）"})
+        status_count = {}
+        for r in rows:
+            status_count[r.get("cost_status")] = status_count.get(r.get("cost_status"), 0) + 1
+        return tool_response("pm_project_read", True, {
+            "projects": rows,
+            "count": len(rows),
+            "status_count": status_count,
+            # ⌛未接入：四算与里程碑如实标注，杜绝智能体拿假数据作答
+            "four_calc": _oc.not_available("four_calc"),
+            "note": "数据源=共享本体 ontos（md_contract 项目主数据），与 9006 成本预警同源；"
+                    "project_id 即合同编号；预算=累计实施成本预估、成本=累计实施成本实际。",
+        }, source="ontos")
+    except Exception as e:
         return tool_response("pm_project_read", False,
-                             {"error": f"未找到项目 {project_id}"})
-    # 附带四算刚性约束校验结果（概算≥预算≥核算≥决算）
-    checked = []
-    for p in projects:
-        p = dict(p)
-        p["four_calc_check"] = _check_four_calc(p["four_calc"])
-        checked.append(p)
-    return tool_response("pm_project_read", True, {"projects": checked}, source="mock")
-
-
-def _check_four_calc(fc: dict) -> dict:
-    """校验四算刚性约束：概算 ≥ 预算 ≥ 核算 ≥ 决算（0 表示未发生，跳过比较）"""
-    issues = []
-    if fc["budget"] and fc["estimate"] and fc["budget"] > fc["estimate"]:
-        issues.append(f"预算({fc['budget']})超概算({fc['estimate']})")
-    if fc["accounting"] and fc["budget"] and fc["accounting"] > fc["budget"]:
-        issues.append(f"核算({fc['accounting']})超预算({fc['budget']})")
-    if fc["final"] and fc["accounting"] and fc["final"] > fc["accounting"]:
-        issues.append(f"决算({fc['final']})超核算({fc['accounting']})")
-    return {"ok": not issues, "issues": issues}
+                             {"error": f"本体读取失败: {type(e).__name__}: {e}"})
 
 
 @app.post("/tools/pm_task_read")
 @app.get("/tools/pm_task_read")
 async def pm_task_read(
+    request: Request,
     project_id: str = Query(default=""),
     status: str = Query(default=""),
 ):
-    """查询两单一物工单、任务明细与状态"""
-    tasks = MOCK_PM_TASKS
-    if project_id:
-        tasks = [t for t in tasks if t["project_id"] == project_id]
-    if status:
-        tasks = [t for t in tasks if t["status"] == status]
-    return tool_response("pm_task_read", True, {"tasks": tasks}, source="mock")
+    """查询两单一物工单、任务明细与状态。
+
+    ⌛**数据源未接入**（plm_task / plm_assignment 均为空表）。★红线：此处曾返回
+    MOCK_PM_TASKS 演示数据，导致智能体拿假工单作答；现改为显式返回 not_available，
+    不做估算、不返回演示数据。
+    """
+    from app import ontos_compute as _oc
+    return tool_response("pm_task_read", False, {
+        "tasks": [],
+        **_oc.not_available("task"),
+    }, source="ontos", project_id=project_id)
 
 
 @app.post("/tools/pm_workhour_read")
 @app.get("/tools/pm_workhour_read")
 async def pm_workhour_read(
+    request: Request,
     project_id: str = Query(default=""),
     date: str = Query(default=""),
 ):
-    """查询日报、工时明细与人员填报数据（含合规质检标记）"""
-    hours = MOCK_PM_WORKHOURS
-    if project_id:
-        hours = [h for h in hours if h["project_id"] == project_id]
-    if date:
-        hours = [h for h in hours if h["date"] == date]
-    # 合规率统计
-    total = len(hours)
-    ok_cnt = len([h for h in hours if h["status"] == "ok"])
-    abnormal = [h for h in hours if h["status"] != "ok"]
-    return tool_response("pm_workhour_read", True, {
-        "records": hours,
-        "compliance_rate": round(ok_cnt / total, 2) if total else 1.0,
-        "abnormal_records": abnormal,
-    }, source="mock")
+    """查询日报、工时明细与人员填报数据。
+
+    ⌛**数据源未接入**（md_contract 205 列无工时列，plm_timesheet 等表为空，PMO 域未建设）。
+    ★红线：此处曾返回 MOCK_PM_WORKHOURS 演示数据（含假合规率），现改为显式 not_available。
+    """
+    from app import ontos_compute as _oc
+    return tool_response("pm_workhour_read", False, {
+        "records": [],
+        "compliance_rate": None,
+        "abnormal_records": [],
+        **_oc.not_available("workhour"),
+    }, source="ontos")
 
 
 @app.post("/tools/pm_cost_calc")
 @app.get("/tools/pm_cost_calc")
 async def pm_cost_calc(
+    request: Request,
     project_id: str = Query(default=""),
+    limit: int = Query(default=20),
 ):
-    """按日报工时折算项目人力成本与成本明细"""
-    costs = MOCK_PM_COSTS
-    if project_id:
-        costs = [c for c in costs if c["project_id"] == project_id]
-    if not costs:
+    """项目成本明细（★读共享本体 ontos.abox_cost，真实业务数据）。
+
+    返回预算三分量（硬件集成费/服务预估成本/软件预估实施费）与成本六分量
+    （硬件集成费实际/软件实际实施费/往年·当年实际服务直接·间接）+ 本体预警判定。
+    口径与 9006 成本预警页同源。
+    """
+    p = await merge_params(request, project_id=project_id, limit=limit)
+    project_id, limit = str(p.get("project_id") or ""), int(p.get("limit") or 20)
+    try:
+        from app import ontos_compute as _oc
+        costs = _oc.cost_detail(project_id or None, limit=limit or 20)
+        if project_id and not costs:
+            return tool_response("pm_cost_calc", False,
+                                 {"error": f"未找到项目 {project_id} 的成本数据"})
+        return tool_response("pm_cost_calc", True, {
+            "costs": costs,
+            "count": len(costs),
+            "note": "数据源=共享本体 ontos（md_contract），预算/成本分量列名取 "
+                    "COST_FORMULA_POLICY，与 9006 成本预警同源；"
+                    "人力成本折算依赖工时数据，当前 ⌛未接入。",
+        }, source="ontos")
+    except Exception as e:
         return tool_response("pm_cost_calc", False,
-                             {"error": f"未找到项目 {project_id} 的成本数据"})
-    return tool_response("pm_cost_calc", True, {"costs": costs}, source="mock")
+                             {"error": f"本体读取失败: {type(e).__name__}: {e}"})
 
 
 @app.post("/tools/biz_metric_read")
@@ -838,16 +891,32 @@ async def biz_metric_read(
     metric_name: str = Query(default=""),
     period: str = Query(default=""),
 ):
-    """读取预计算经营&项目集团指标（人均效/元效/双按完成率/四算偏差）"""
+    """读取预计算经营&项目集团指标（人均效/元效/双按完成率/四算偏差）。
+
+    ⚠ **本工具仍为演示数据（MOCK_BIZ_METRICS），非本体真实数据**：集团预计算指标
+    尚未接入本体。响应体带 data_status.available=False 与 demo=True 标记，
+    智能体须如实说明「该指标为演示数据」，不得当作真实经营指标引用。
+    """
+    demo_warn = {
+        "available": False,
+        "demo": True,
+        "blocked_by": "集团预计算指标（人均效/元效/双按完成率/四算偏差）尚未接入本体",
+        "message": "以下为演示数据（MOCK_BIZ_METRICS），不是本体真实数据；"
+                   "回答时须明确标注为演示口径。",
+    }
     if metric_name and metric_name in MOCK_BIZ_METRICS:
         metric = dict(MOCK_BIZ_METRICS[metric_name])
         if period and metric.get("period") != period:
             metric["note"] = metric.get("note", "") + f"（当前库内仅有 {metric.get('period')} 周期数据）"
-        return tool_response("biz_metric_read", True, {"metric": metric}, source="mock")
+        return tool_response("biz_metric_read", True,
+                             {"metric": metric, "data_status": demo_warn}, source="mock")
     if not metric_name:
-        return tool_response("biz_metric_read", True, {"metrics": MOCK_BIZ_METRICS}, source="mock")
+        return tool_response("biz_metric_read", True,
+                             {"metrics": MOCK_BIZ_METRICS, "data_status": demo_warn},
+                             source="mock")
     return tool_response("biz_metric_read", False,
-                         {"error": f"未找到指标 {metric_name}，可选：{list(MOCK_BIZ_METRICS.keys())}"})
+                         {"error": f"未找到指标 {metric_name}，可选：{list(MOCK_BIZ_METRICS.keys())}",
+                          "data_status": demo_warn}, source="mock")
 
 
 # ═══════════════════════════════════════════

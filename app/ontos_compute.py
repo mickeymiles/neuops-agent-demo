@@ -55,10 +55,34 @@ _DEFAULT_DB = os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..', 'contract-compare', 'contract_compare.db'))
 
 
-def _abox_db_path(params: dict) -> str:
+def _abox_db_path(params: dict = None) -> str:
     """ABox 数据库路径解析：params.db_path > 环境变量 ONTOS_DB_PATH > 同仓默认路径。"""
     p = (params or {}).get('db_path') or os.getenv('ONTOS_DB_PATH') or _DEFAULT_DB
     return str(p)
+
+
+def abox():
+    """返回共享本体 ABox 适配层模块（ontos.abox_cost）。失败抛异常由调用方处理。"""
+    _ensure_ontos_importable()
+    from ontos import abox_cost
+    return abox_cost
+
+
+def project_read(project_id: str = None, limit: int = None) -> list:
+    """项目档案（读本体 md_contract）：档案列 + 预算/成本 + 本体预警判定。"""
+    return abox().project_facts(_abox_db_path(), contract_no=project_id or None,
+                                limit=limit)
+
+
+def cost_detail(project_id: str = None, limit: int = None) -> list:
+    """成本明细（读本体 md_contract）：预算三分量 / 成本六分量 + 本体预警。"""
+    return abox().project_cost_detail(_abox_db_path(), contract_no=project_id or None,
+                                      limit=limit)
+
+
+def not_available(domain: str) -> dict:
+    """⌛未接入数据域的标准说明（红线：不得用演示数据冒充真实数据）。"""
+    return abox().not_available(domain)
 
 
 def _compute_abox(fn: str, params: dict) -> dict:
