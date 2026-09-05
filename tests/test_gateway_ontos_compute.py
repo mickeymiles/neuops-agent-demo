@@ -108,10 +108,13 @@ def test_params_accepts_json_string_in_body(client):
 
 
 def test_response_source_is_ontos(client):
-    """★同源契约：网关本地直调共享 ontos（source='ontos'），不再转发 9006"""
+    """★同源契约：网关本地直调共享 ontos（data_source='ontos'），不再转发 9006。
+
+    tool_response 内部把 source 参数映射为响应体的 data_source 字段（缺省为全局
+    DATA_SOURCE=mock），故断言 data_source 而非 source。
+    """
     r = client.post("/tools/ontology_compute",
                     json={"function": "project_cost_warning", "params": {"budget": 100}})
     assert r.status_code == 200
     body = r.json()
-    # tool_response 包装：source 标记为 ontos（本地共享本体，非 9006 HTTP）
-    assert body.get("source") == "ontos" or "ontos" in json.dumps(body, ensure_ascii=False)
+    assert body.get("data_source") == "ontos"
