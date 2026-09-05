@@ -69,9 +69,25 @@ def abox():
 
 
 def project_read(project_id: str = None, limit: int = None) -> list:
-    """项目档案（读本体 md_contract）：档案列 + 预算/成本 + 本体预警判定。"""
+    """项目档案（读本体 md_contract）：档案列 + 预算/成本 + 本体预警判定。
+
+    ⚠ 只返回条目；需要 total/truncated 请用 project_portfolio。
+    """
     return abox().project_facts(_abox_db_path(), contract_no=project_id or None,
                                 limit=limit)
+
+
+def project_portfolio(project_id: str = None, status: str = None,
+                      limit: int = 20, offset: int = 0) -> dict:
+    """项目组合查询：条目 + 全库总数/截断标记/全量预警分布（★防「把样本当全集」）。"""
+    return abox().project_portfolio(_abox_db_path(), contract_no=project_id or None,
+                                    status=status or None, limit=limit, offset=offset)
+
+
+def cost_detail_page(project_id: str = None, limit: int = 20, offset: int = 0) -> dict:
+    """成本明细（带 total/truncated 元信息）。"""
+    return abox().project_cost_detail_page(_abox_db_path(), contract_no=project_id or None,
+                                           limit=limit, offset=offset)
 
 
 def cost_detail(project_id: str = None, limit: int = None) -> list:

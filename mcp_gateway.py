@@ -775,32 +775,52 @@ async def run_shell(
 async def pm_project_read(
     request: Request,
     project_id: str = Query(default=""),
+    status: str = Query(default=""),
     limit: int = Query(default=20),
+    offset: int = Query(default=0),
 ):
-    """查询项目档案与成本执行（★读共享本体 ontos.abox_project，真实业务数据）。
+    """查询项目档案与成本执行（★读共享本体 ontos，真实业务数据）。
 
     数据源：项目主数据 md_contract（合同:项目=1:1，project_id 即合同编号）。
     含：部门/责任人/区域/合同状态/签约额 + 预算/当前成本 + 本体 F-project-cost-warning 判定。
-    ⌛四算（概算/预算/核算/决算）未接入 —— 返回 not_available，**不再返回演示数据**
-    （历史教训：曾返回 P-2026-* 假项目，导致成本分析结论全错）。
-    不传 project_id 时返回前 limit 条，并给出总数与预警分布。
+    ⌛四算（概算/预算/核算/决算）未接入 —— 返回 not_available，**不再返回演示数据**。
+
+    ★分页语义（务必遵守）：不传 project_id 时只返回前 limit 条（默认 20），
+    响应中 total / total_all / status_count 是**全量统计**，truncated=True 表示被截断。
+    **不得把本页条目当作全集**回答「共有 X 个项目」——要总数看 total_all，
+    要某类项目用 status=超支/预警/正常 筛选后按 offset 翻页遍历。
     """
-    p = await merge_params(request, project_id=project_id, limit=limit)
-    project_id, limit = str(p.get("project_id") or ""), int(p.get("limit") or 20)
+    p = await merge_params(request, project_id=project_id, limit=limit, status=status,
+                           offset=offset)
+    project_id = str(p.get("project_id") or "")
+    status = str(p.get("status") or "")
+    limit = int(p.get("limit") or 20)
+    offset = int(p.get("offset") or 0)
     try:
         from app import ontos_compute as _oc
-        rows = _oc.project_read(project_id or None, limit=limit or 20)
+        res = _oc.project_portfolio(project_id or None, status or None, limit, offset)
+        rows = res["items"]
         if project_id and not rows:
             return tool_response("pm_project_read", False,
                                  {"error": f"未在项目主数据中找到项目 {project_id}"
                                            f"（project_id = 合同编号，如 DFSY1410017C）"})
-        status_count = {}
-        for r in rows:
-            status_count[r.get("cost_status")] = status_count.get(r.get("cost_status"), 0) + 1
+        # ★防「把样本当全集」：明确告知总数、是否截断、如何翻页
+        hint = None
+        if res["truncated"]:
+            hint = (f"⚠ 本次仅返回第 {res['offset'] + 1}-{res['offset'] + res['returned']} 条，"
+                    f"符合条件共 {res['total']} 个（全库 {res['total_all']} 个）——"
+                    f"**这不是全集**，不得据此回答「共有 X 个项目」；"
+                    f"继续取下一页请带 offset={res['next_offset']}，"
+                    f"或按 status=超支/预警/正常 筛选后分页遍历。")
         return tool_response("pm_project_read", True, {
             "projects": rows,
-            "count": len(rows),
-            "status_count": status_count,
+            "count": res["returned"],          # 本页条数
+            "total": res["total"],             # 筛选后全量
+            "total_all": res["total_all"],     # 全库
+            "truncated": res["truncated"],
+            "next_offset": res["next_offset"],
+            "status_count": res["status_count"],   # ★全库分布，不是本页分布
+            "hint": hint,                          # 截断时的翻页/口径提示
             # ⌛未接入：四算与里程碑如实标注，杜绝智能体拿假数据作答
             "four_calc": _oc.not_available("four_calc"),
             "note": "数据源=共享本体 ontos（md_contract 项目主数据），与 9006 成本预警同源；"
@@ -858,24 +878,36 @@ async def pm_cost_calc(
     request: Request,
     project_id: str = Query(default=""),
     limit: int = Query(default=20),
+    offset: int = Query(default=0),
 ):
     """项目成本明细（★读共享本体 ontos.abox_cost，真实业务数据）。
 
     返回预算三分量（硬件集成费/服务预估成本/软件预估实施费）与成本六分量
     （硬件集成费实际/软件实际实施费/往年·当年实际服务直接·间接）+ 本体预警判定。
     口径与 9006 成本预警页同源。
+
+    ★分页语义：不传 project_id 时只返回前 limit 条，total 为全量条数，
+    truncated=True 时须带 offset=next_offset 继续翻页，不得把本页当全集。
     """
-    p = await merge_params(request, project_id=project_id, limit=limit)
-    project_id, limit = str(p.get("project_id") or ""), int(p.get("limit") or 20)
+    p = await merge_params(request, project_id=project_id, limit=limit, offset=offset)
+    project_id = str(p.get("project_id") or "")
+    limit = int(p.get("limit") or 20)
+    offset = int(p.get("offset") or 0)
     try:
         from app import ontos_compute as _oc
-        costs = _oc.cost_detail(project_id or None, limit=limit or 20)
+        res = _oc.cost_detail_page(project_id or None, limit, offset)
+        costs = res["items"]
         if project_id and not costs:
             return tool_response("pm_cost_calc", False,
                                  {"error": f"未找到项目 {project_id} 的成本数据"})
         return tool_response("pm_cost_calc", True, {
             "costs": costs,
-            "count": len(costs),
+            "count": res["returned"],
+            "total": res["total"],
+            "truncated": res["truncated"],
+            "next_offset": res["next_offset"],
+            "hint": (f"⚠ 本页 {res['returned']} 条 / 共 {res['total']} 条，非全集；"
+                     f"翻页带 offset={res['next_offset']}") if res["truncated"] else None,
             "note": "数据源=共享本体 ontos（md_contract），预算/成本分量列名取 "
                     "COST_FORMULA_POLICY，与 9006 成本预警同源；"
                     "人力成本折算依赖工时数据，当前 ⌛未接入。",

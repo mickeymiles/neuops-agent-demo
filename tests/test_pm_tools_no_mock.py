@@ -94,6 +94,34 @@ def test_pm_project_read_uses_ontology(client):
     assert body["data"]["four_calc"]["available"] is False
 
 
+def test_pm_project_read_reports_full_total(client):
+    """★回归：limit 截断时 total/status_count 必须是全量，并显式提示 truncated。
+
+    事故：工具默认 limit=20，智能体拿到 19 条（另 1 行是表头脏数据）后回答
+    「共 19 个项目、3 个超支」——实际全库 629 个、68 个超支，结论严重失真。
+    """
+    d = client.post("/tools/pm_project_read", json={"limit": 1}).json()["data"]
+    assert d["count"] == 1                            # 本页条数
+    assert d["total"] == 1 and d["total_all"] == 1    # 本测试库仅 1 条真实数据
+    assert d["truncated"] is False
+    for k in ("total", "total_all", "truncated", "next_offset", "status_count", "hint"):
+        assert k in d, f"响应缺防误判字段 {k}"
+    assert d["status_count"] == {"超支": 1}           # 全库分布，非本页分布
+
+
+def test_pm_project_read_status_filter(client):
+    d = client.post("/tools/pm_project_read", json={"status": "超支", "limit": 10}).json()["data"]
+    assert d["total"] == 1 and d["total_all"] == 1
+    assert all(p["cost_status"] == "超支" for p in d["projects"])
+    d2 = client.post("/tools/pm_project_read", json={"status": "正常", "limit": 10}).json()["data"]
+    assert d2["total"] == 0
+
+
+def test_pm_cost_calc_has_total(client):
+    d = client.post("/tools/pm_cost_calc", json={"limit": 10}).json()["data"]
+    assert d["total"] == 1 and d["count"] == 1 and d["truncated"] is False
+
+
 def test_pm_project_read_unknown_id(client):
     r = client.post("/tools/pm_project_read", json={"project_id": "P-2026-001"})
     assert r.status_code == 200
