@@ -387,7 +387,7 @@ async def get_table_schema(
 
 
 # ═══════════════════════════════════════════
-# 经营业务：本体计算（转发 9006 权威计算面 /api/ontos/compute）
+# 经营业务：本体计算（★直调共享 ontos 子模块，不经 9006 HTTP API）
 # ═══════════════════════════════════════════
 
 @app.post("/tools/ontology_compute")
@@ -397,9 +397,13 @@ async def ontology_compute(
     function: str = Query(default=""),
     params: str = Query(default="{}"),
 ):
-    """本体计算（经营语义计算，转发 9006 /api/ontos/compute）。
+    """本体计算（经营语义计算，★直调共享 ontos，与 9006 固化显示同一份代码）。
 
-    与 demo 本地直调共享 ontos 子模块调用同一份 ontos 纯函数，保证口径一致。
+    2026-09-05 用户拍板（同源）：本体的计算供 9006 与 9007 共用，9007 不得经 9006 的
+    函数 API 取数——原「转发 9006 /api/ontos/compute」已废弃，改为本地 import 共享
+    ontos 子模块。ABox 场景函数（如 cost_warning_portfolio）由 ontos.abox_cost 直读
+    业务库 SQLite（环境变量 ONTOS_DB_PATH，默认同机 ../contract-compare/contract_compare.db），
+    与 9006 成本预警页面同源。
     参数：function=函数名(或 F-xxx)；params=JSON 字符串（GET query）或 JSON body（POST）。
 
     入参优先级：POST body > query string。
@@ -436,15 +440,13 @@ async def ontology_compute(
     if not isinstance(p, dict):
         p = {}
     try:
-        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
-            r = await client.post(f"{BIZ_9006_BASE}/api/ontos/compute",
-                                 json={"function": function, "params": p})
-            data = r.json()
+        from app import ontos_compute as _oc
+        data = _oc.compute(function, p)
     except Exception as e:
         return tool_response("ontology_compute", False,
-                             {"error": f"无法连接9006经营分析系统: {e}"})
+                             {"error": f"本体计算失败: {e}"}, function=function)
     return tool_response("ontology_compute", data.get("success", False), data,
-                         source="9006", function=function)
+                         source="ontos", function=function)
 
 
 # ═══════════════════════════════════════════

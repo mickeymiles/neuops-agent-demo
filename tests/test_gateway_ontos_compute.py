@@ -9,8 +9,11 @@
 
 修复：改为 body 优先、query 兜底；params 接受 dict 或 JSON 字符串。
 
-本用例用 TestClient + 假 AsyncClient 捕获转发给 9006 的 payload，
-断言各种传参方式下 params 均正确透传（不依赖真实 9006 服务）。
+架构变更（2026-09-05 用户拍板·同源）：
+    网关不再 HTTP 转发 9006 /api/ontos/compute，改为本地 import 共享 ontos
+    （app.ontos_compute.compute）。本用例用 TestClient + monkeypatch 捕获
+    传给 compute 的 (function, params)，断言各种传参方式下 params 均正确透传
+    （不依赖真实 9006 服务，也不需要真实业务库）。
 """
 import json
 import urllib.parse
@@ -22,44 +25,19 @@ import mcp_gateway
 
 PARAMS = {"revenue": 1000000.0, "current_cost": 800000.0}
 
-
-class _FakeResponse:
-    """模拟 9006 /api/ontos/compute 的返回结构"""
-
-    def __init__(self, payload):
-        self._payload = payload
-
-    def json(self):
-        return {
-            "success": True,
-            "function": (self._payload or {}).get("function"),
-            "result": {"echo_params": (self._payload or {}).get("params", {})},
-        }
+# 捕获 (function, params) 的假 ontos_compute.compute
+_captured = []
 
 
-class _FakeAsyncClient:
-    """捕获转发 payload 的假 httpx.AsyncClient（替代真实 9006 调用）"""
-
-    captured = []
-
-    def __init__(self, *a, **kw):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *a):
-        return False
-
-    async def post(self, url, json=None, **kw):
-        _FakeAsyncClient.captured.append(json)
-        return _FakeResponse(json)
+def _fake_compute(function, params=None):
+    _captured.append((function, params))
+    return {"success": True, "function": function, "result": {"echo_params": params or {}}}
 
 
 @pytest.fixture(autouse=True)
-def _patch_httpx(monkeypatch):
-    _FakeAsyncClient.captured = []
-    monkeypatch.setattr(mcp_gateway.httpx, "AsyncClient", _FakeAsyncClient)
+def _patch_compute(monkeypatch):
+    _captured.clear()
+    monkeypatch.setattr("app.ontos_compute.compute", _fake_compute)
     yield
 
 
@@ -68,9 +46,9 @@ def client():
     return TestClient(mcp_gateway.app)
 
 
-def _last_payload():
-    assert _FakeAsyncClient.captured, "未捕获到转发给 9006 的请求"
-    return _FakeAsyncClient.captured[-1]
+def _last_call():
+    assert _captured, "未捕获到本体计算调用"
+    return _captured[-1]
 
 
 def test_post_body_only(client):
@@ -78,9 +56,9 @@ def test_post_body_only(client):
     r = client.post("/tools/ontology_compute",
                     json={"function": "project_roi", "params": PARAMS})
     assert r.status_code == 200
-    payload = _last_payload()
-    assert payload["function"] == "project_roi"
-    assert payload["params"] == PARAMS
+    fn, params = _last_call()
+    assert fn == "project_roi"
+    assert params == PARAMS
 
 
 def test_post_query_only(client):
@@ -88,7 +66,7 @@ def test_post_query_only(client):
     qs = urllib.parse.quote(json.dumps(PARAMS))
     r = client.post(f"/tools/ontology_compute?function=project_roi&params={qs}")
     assert r.status_code == 200
-    assert _last_payload()["params"] == PARAMS
+    assert _last_call()[1] == PARAMS
 
 
 def test_post_body_precedes_query(client):
@@ -96,7 +74,7 @@ def test_post_body_precedes_query(client):
     r = client.post("/tools/ontology_compute?function=project_roi&params={}",
                     json={"function": "project_roi", "params": PARAMS})
     assert r.status_code == 200
-    assert _last_payload()["params"] == PARAMS
+    assert _last_call()[1] == PARAMS
 
 
 def test_get_query_only(client):
@@ -104,21 +82,21 @@ def test_get_query_only(client):
     qs = urllib.parse.quote(json.dumps(PARAMS))
     r = client.get(f"/tools/ontology_compute?function=project_roi&params={qs}")
     assert r.status_code == 200
-    assert _last_payload()["params"] == PARAMS
+    assert _last_call()[1] == PARAMS
 
 
 def test_no_params_defaults_to_empty(client):
     """不传 params 时退化为空 dict，不应抛异常"""
     r = client.post("/tools/ontology_compute", json={"function": "project_roi"})
     assert r.status_code == 200
-    assert _last_payload()["params"] == {}
+    assert _last_call()[1] == {}
 
 
 def test_malformed_params_json_falls_back(client):
     """params 传非法 JSON 字符串时容错为空 dict，不应 500"""
     r = client.post("/tools/ontology_compute?function=project_roi&params=not-json")
     assert r.status_code == 200
-    assert _last_payload()["params"] == {}
+    assert _last_call()[1] == {}
 
 
 def test_params_accepts_json_string_in_body(client):
@@ -126,4 +104,14 @@ def test_params_accepts_json_string_in_body(client):
     r = client.post("/tools/ontology_compute",
                     json={"function": "project_roi", "params": json.dumps(PARAMS)})
     assert r.status_code == 200
-    assert _last_payload()["params"] == PARAMS
+    assert _last_call()[1] == PARAMS
+
+
+def test_response_source_is_ontos(client):
+    """★同源契约：网关本地直调共享 ontos（source='ontos'），不再转发 9006"""
+    r = client.post("/tools/ontology_compute",
+                    json={"function": "project_cost_warning", "params": {"budget": 100}})
+    assert r.status_code == 200
+    body = r.json()
+    # tool_response 包装：source 标记为 ontos（本地共享本体，非 9006 HTTP）
+    assert body.get("source") == "ontos" or "ontos" in json.dumps(body, ensure_ascii=False)
