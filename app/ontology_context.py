@@ -42,11 +42,14 @@ def is_ontology_grounded(emp_id: str) -> bool:
 
 
 def build_ontology_context(emp_id: str) -> str:
-    """把本体声明序列化为【本体语义】markdown 段落，注入员工系统提示。
+    """把本体声明序列化为【本体语义·索引】markdown 段落，注入员工系统提示。
 
-    内容来自 ontos.to_spec()（运行期只读导出），按员工 scope 过滤：
-    函数(含 description + reasoning 推理指引 + 输入/输出)、关系、动作(条件/不变量)、
-    成本策略核心推理。这是员工推理的唯一权威依据。
+    设计：只灌「索引」（每个函数/策略/动作列 id + 一句话用途 + 签名），不灌长字段
+    （函数的 reasoning 推理指引、策略的 params/rules 判定参数）。这些完整定义由 agent
+    在调用前经 ontology_read(kind, id) 按需懒加载——避免上下文随本体规模 O(N) 膨胀，
+    且单条查询只取用到的 1~2 条，其余不陪跑。
+
+    内容来自 ontos.to_spec()（运行期只读导出），按员工 scope 过滤。
     """
     scope = EMP_ONTOLOGY_SCOPE.get(emp_id)
     if not scope:
@@ -56,52 +59,50 @@ def build_ontology_context(emp_id: str) -> str:
     rel_kw = scope.get("relations_keywords", [])
     lines: list = []
 
-    lines.append("## 本体语义（你推理的权威依据）")
-    lines.append("以下实体/关系/函数/动作/策略由本体(TBox/ABox)固化声明，"
-                 "所有含义与判定规则以此为准，不得用你自己的假设替代。")
+    lines.append("## 本体语义（你推理的权威依据 · 索引版）")
+    lines.append("以下为本体(TBox/ABox)与知识层的【索引】，每个函数/策略只列 id 与一句话用途。"
+                 "调用前请用 **ontology_read(kind='function'|'policy'|'entity'|'action', id=...)** "
+                 "取该条的【完整定义 / 推理指引 / 判定参数】，再执行——不要凭索引里的只言片语臆测。")
 
-    # ── 成本策略核心推理（给 LLM 的口径总纲）──
+    # ── 成本策略核心推理（全局口径总纲，短，预灌）──
     cf = (spec.get("policies") or {}).get("costFormula", {}) or {}
     if cf.get("reasoning"):
-        lines.append("\n### 成本口径核心推理")
+        lines.append("\n### 成本口径核心推理（全局总纲）")
         lines.append(cf["reasoning"])
 
-    # ── 知识层：判定标准与治理要求（「该怎么判」；与本体「能不能说」分离）──
+    # ── 知识层索引（独立层；不灌 params/rules，按需经 ontology_read 取）──
     kn = spec.get("knowledge") or {}
     if kn.get("available") and kn.get("policies"):
-        lines.append("\n### 知识/策略（判定标准与治理要求 · 唯一真源在知识层）")
-        lines.append("以下阈值、口径与治理要求由知识层统一管理（含版本 / 责任人 / 生效期），"
-                     "判定项目时必须以此为准，不得自行设定阈值或凭印象下结论；"
-                     "知识层未覆盖的判定，才可用本体语义推演。")
+        lines.append("\n### 知识层（独立层 · 判定标准与治理要求）")
+        lines.append("知识层与本体层分离，统一管阈值/口径/治理。以下为索引；"
+                     "用 ontology_read(kind='policy', id=<策略id>) 取完整参数与规则后再判定。")
         for pid, p in kn["policies"].items():
-            head = f"- **{p.get('name')}** (`{pid}`) · {p.get('kind')} · v{p.get('version')}"
+            head = f"- `{pid}` · {p.get('kind')} · v{p.get('version')}"
             if p.get("owner"):
                 head += f"　责任：{p['owner']}"
             if p.get("effective_from") or p.get("effective_to"):
                 head += f"　生效：{p.get('effective_from') or '不限'} ~ {p.get('effective_to') or '不限'}"
             lines.append(head)
-            if p.get("params"):
-                lines.append("  - 判定参数：" + "、".join(
-                    f"{k}={v}" for k, v in p["params"].items()))
-            for r in (p.get("rules") or []):
-                lines.append(f"  - {r}")
             if p.get("description"):
-                lines.append(f"  - 说明：{p['description']}")
+                lines.append(f"  - 用途：{p['description']}")
 
-    # ── 函数（按域过滤）──
+    # ── 函数索引（按域过滤；不灌 reasoning，按需取）──
     funcs = [f for f in spec.get("functions", []) if (not domains or f.get("domain") in domains)]
     if funcs:
         lines.append("\n### 可用函数（用 ontology_compute 调用，id 即函数名）")
+        lines.append("调用前先用 ontology_read(kind='function', id=<函数id>) 取该函数的推理指引。")
         for f in funcs:
-            lines.append(f"- **{f.get('name')}** (`{f['id']}`)：{f.get('description', '')}")
-            if f.get("reasoning"):
-                lines.append(f"  - 推理指引：{f['reasoning']}")
+            line = f"- `{f['id']}`：{f.get('description', '')}"
+            sig = []
             if f.get("inputs"):
-                lines.append(f"  - 输入：{', '.join(f['inputs'])}")
+                sig.append("入:" + ",".join(f["inputs"]))
             if f.get("outputs"):
-                lines.append(f"  - 输出：{', '.join(f['outputs'])}")
+                sig.append("出:" + ",".join(f["outputs"]))
+            if sig:
+                line += "  [" + " · ".join(sig) + "]"
+            lines.append(line)
 
-    # ── 关系（按关键字过滤）──
+    # ── 关系（按关键字过滤；短，预灌）──
     rels = spec.get("relations", {}) or {}
     if rel_kw:
         rels = {k: v for k, v in rels.items() if any(w in v for w in rel_kw)}
@@ -110,16 +111,13 @@ def build_ontology_context(emp_id: str) -> str:
         for k, v in rels.items():
             lines.append(f"- `{k}`：{v}")
 
-    # ── 动作（含护栏）──
+    # ── 动作索引（含护栏；不灌条件/不变量，按需取）──
     if scope.get("include_actions"):
         acts = spec.get("actions", []) or []
         if acts:
             lines.append("\n### 可用动作（用 ontology_act 触发，先经护栏校验）")
+            lines.append("需看前置条件/不变量时，ontology_read(kind='action', id=<动作id>) 取完整定义。")
             for a in acts:
-                lines.append(f"- **{a.get('name')}**：{a.get('definition', '')}")
-                if a.get("conditions"):
-                    lines.append(f"  - 前置条件：{'; '.join(a['conditions'])}")
-                if a.get("invariants"):
-                    lines.append(f"  - 不变量：{'; '.join(a['invariants'])}")
+                lines.append(f"- `{a.get('name')}`：{a.get('definition', '')}")
 
     return "\n".join(lines)

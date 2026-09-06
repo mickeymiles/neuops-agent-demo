@@ -592,11 +592,18 @@ def _generic_ontology_tools() -> list:
                 "required": ["function"]}}},
         {"type": "function", "function": {
             "name": "ontology_read",
-            "description": "按实体查询本体 ABox 真实事实（如 Project 项目档案/组合）。语义见【本体语义】段落。",
+            "description": "按需读取本体定义或 ABox 事实，两种用法：\n"
+                           "(1) 读定义：传 kind('function'|'policy'|'entity'|'action'|'relation') + id，"
+                           "返回该条完整 spec（含函数的推理指引 / 策略的判定参数与规则 / 实体的属性 / 动作的条件）；\n"
+                           "(2) 读事实：传 entity('Project') + 可选 filters(contract_no/status)，返回真实数据。\n"
+                           "⚠ 调用 ontology_compute 前，必须先 ontology_read(kind='function', id=<函数id>) 取该函数的推理指引；"
+                           "涉及知识阈值时 ontology_read(kind='policy', id=<策略id>) 取完整参数。语义见【本体语义·索引】段落。",
             "parameters": {"type": "object", "properties": {
-                "entity": {"type": "string", "description": "实体名，如 Project"},
+                "kind": {"type": "string", "description": "定义类型：function / policy / entity / action / relation（与 id 配合取完整定义）"},
+                "id": {"type": "string", "description": "定义 id，如 F-project-cost-warning / cost_warning / costFormula / Project"},
+                "entity": {"type": "string", "description": "ABox 实体名，如 Project（与 filters 配合取真实事实）"},
                 "filters": {"type": "object", "description": "过滤条件，如 {contract_no:'xxx', status:'预警'}"}},
-                "required": ["entity"]}}},
+                "required": []}}},
         {"type": "function", "function": {
             "name": "ontology_act",
             "description": "触发本体『动作』前先经护栏校验(validate_project_action)。只读评估是否可执行并返回拒绝原因，"
@@ -698,7 +705,11 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
                     )
                 ),
                 "ontology_read": (
-                    lambda entity, filters=None, **kw: _oc.read_entity(entity, filters or {})
+                    lambda kind=None, id=None, entity=None, filters=None, **kw: (
+                        _oc.read_spec(kind, id)
+                        if (kind and id) else
+                        _oc.read_entity(entity or "Project", filters or {})
+                    )
                 ),
                 "ontology_act": (
                     lambda action, project_id=None, **kw: _oc.eval_action(action, project_id)
@@ -756,8 +767,10 @@ def build_employee_prompt(emp_id: str) -> str:
                 f"你通过 3 个通用原语与本体交互（ontology_compute 计算 / ontology_read 查询 / ontology_act 触发动作），"
                 f"它们本身不携带业务含义，业务含义全部来自下方【本体语义】。\n"
                 f"{ont_block}\n"
-                f"工作方式：先理解需求 → 从【本体语义】中定位相关『函数/关系/动作』→ 用 ontology_compute / ontology_read 查询真实数据 "
-                f"→ 结合函数的『推理指引』自行统计、对比、推演 → 输出结论。"
+                f"工作方式：先理解需求 → 从【本体语义·索引】定位相关『函数/策略/动作』→ "
+                f"调用 ontology_read(kind='function', id=<函数id>) 取该函数的【推理指引】"
+                f"（涉及知识阈值时 ontology_read(kind='policy', id=<策略id>) 取完整判定参数）→ 用 ontology_compute 执行 "
+                f"→ 结合取到的推理指引自行统计、对比、推演 → 输出结论。"
                 f"涉及成本预警/利润/剩余时，一律以『有效成本 = 当前成本 + 预估成本』为准。\n"
                 f"做成本治理类分析（如『项目成本/利润/预估』『哪些项目风险高』『管控预估』）时，必须按【本体语义】的"
                 f"『成本口径核心推理·分析框架』逐项执行：①逐项目算 预算vs实际偏差（完成比/剩余/偏差率）并用表格列 Top 偏差；"

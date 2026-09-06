@@ -125,6 +125,64 @@ def read_entity(entity: str, filters: dict = None) -> dict:
             'message': f'实体 {entity} 的只读查询暂未接入；请用 ontology_compute 调用对应函数'}
 
 
+def read_spec(kind: str, id: str) -> dict:
+    """本体单条定义懒加载（供 ontology_read 原语）：按 kind+id 返回完整 spec 切片。
+
+    用于「索引预灌 + 按需取详情」架构——系统提示只灌索引，agent 调用前用本函数
+    取该条函数的【推理指引】/ 策略的【判定参数与规则】/ 实体的【属性】/ 动作的【条件】。
+
+    kind ∈ {function, policy, entity, action, relation}
+    返回 {'success', 'kind', 'id', 'spec': <完整定义字典>}
+    """
+    _ensure_ontos_importable()
+    from ontos import domain_business as biz
+    spec = biz.to_spec()
+    kind = (kind or '').strip().lower()
+
+    if kind == 'function':
+        for f in (spec.get("functions") or []):
+            if f.get("id") == id:
+                return {'success': True, 'kind': kind, 'id': id, 'spec': f}
+        return {'success': False, 'error': 'function_not_found',
+                'message': f'函数 {id} 不存在；可用 list_functions() 查 id'}
+
+    if kind == 'policy':
+        pol = (spec.get("knowledge") or {}).get("policies", {}).get(id)
+        if pol:
+            return {'success': True, 'kind': kind, 'id': id, 'spec': pol}
+        # 退而查 TBox 内联策略（如 costFormula）
+        tp = (spec.get("policies") or {}).get(id)
+        if tp:
+            return {'success': True, 'kind': kind, 'id': id, 'spec': tp}
+        return {'success': False, 'error': 'policy_not_found',
+                'message': f'策略 {id} 不存在'}
+
+    if kind == 'entity':
+        for e in (spec.get("entities") or []):
+            if e.get("name") == id or e.get("cn") == id:
+                return {'success': True, 'kind': kind, 'id': id, 'spec': e}
+        return {'success': False, 'error': 'entity_not_found',
+                'message': f'实体 {id} 不存在'}
+
+    if kind == 'action':
+        for a in (spec.get("actions") or []):
+            if a.get("id") == id or a.get("name") == id:
+                return {'success': True, 'kind': kind, 'id': id, 'spec': a}
+        return {'success': False, 'error': 'action_not_found',
+                'message': f'动作 {id} 不存在'}
+
+    if kind == 'relation':
+        rels = spec.get("relations", {}) or {}
+        if id in rels:
+            return {'success': True, 'kind': kind, 'id': id,
+                    'spec': {'id': id, 'value': rels[id]}}
+        return {'success': False, 'error': 'relation_not_found',
+                'message': f'关系 {id} 不存在'}
+
+    return {'success': False, 'error': 'unsupported_kind',
+            'message': f"kind={kind} 不支持，用 function/policy/entity/action/relation"}
+
+
 def eval_action(action: str, project_id: str = None) -> dict:
     """本体动作护栏评估（供 ontology_act 原语）：只读校验是否可执行，不写库。
 
