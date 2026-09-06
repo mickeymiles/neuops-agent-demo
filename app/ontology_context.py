@@ -66,6 +66,28 @@ def build_ontology_context(emp_id: str) -> str:
         lines.append("\n### 成本口径核心推理")
         lines.append(cf["reasoning"])
 
+    # ── 知识层：判定标准与治理要求（「该怎么判」；与本体「能不能说」分离）──
+    kn = spec.get("knowledge") or {}
+    if kn.get("available") and kn.get("policies"):
+        lines.append("\n### 知识/策略（判定标准与治理要求 · 唯一真源在知识层）")
+        lines.append("以下阈值、口径与治理要求由知识层统一管理（含版本 / 责任人 / 生效期），"
+                     "判定项目时必须以此为准，不得自行设定阈值或凭印象下结论；"
+                     "知识层未覆盖的判定，才可用本体语义推演。")
+        for pid, p in kn["policies"].items():
+            head = f"- **{p.get('name')}** (`{pid}`) · {p.get('kind')} · v{p.get('version')}"
+            if p.get("owner"):
+                head += f"　责任：{p['owner']}"
+            if p.get("effective_from") or p.get("effective_to"):
+                head += f"　生效：{p.get('effective_from') or '不限'} ~ {p.get('effective_to') or '不限'}"
+            lines.append(head)
+            if p.get("params"):
+                lines.append("  - 判定参数：" + "、".join(
+                    f"{k}={v}" for k, v in p["params"].items()))
+            for r in (p.get("rules") or []):
+                lines.append(f"  - {r}")
+            if p.get("description"):
+                lines.append(f"  - 说明：{p['description']}")
+
     # ── 函数（按域过滤）──
     funcs = [f for f in spec.get("functions", []) if (not domains or f.get("domain") in domains)]
     if funcs:
