@@ -575,12 +575,47 @@ async def deepseek_chat(messages, tools=None, temperature=0.2, max_tokens=4000, 
 # 配置驱动：从 DB 动态构建数字员工工具 / 按 MCP Server 路由执行
 # ────────────────────────────────────────────
 
+from app.ontology_context import is_ontology_grounded, build_ontology_context
+
+
+def _generic_ontology_tools() -> list:
+    """本体锚定员工持有的 3 个薄通用原语：描述极简，业务含义来自【本体语义】段落。"""
+    return [
+        {"type": "function", "function": {
+            "name": "ontology_compute",
+            "description": "调用本体中已注册的『函数』执行计算或查询真实数据（如 cost_warning_portfolio / "
+                           "project_facts / F-project-current-remaining / F-workorder-cost-rollup 等）。"
+                           "函数清单与各自语义见系统提示【本体语义】段落；按语义选取函数与参数，不要臆测。",
+            "parameters": {"type": "object", "properties": {
+                "function": {"type": "string", "description": "函数 id，如 cost_warning_portfolio / project_facts / F-project-current-remaining"},
+                "params": {"type": "object", "description": "参数字典，如 {contract_no:'xxx'} 或 {budget:..,current_cost:..,wo_est_cost:..}"}},
+                "required": ["function"]}}},
+        {"type": "function", "function": {
+            "name": "ontology_read",
+            "description": "按实体查询本体 ABox 真实事实（如 Project 项目档案/组合）。语义见【本体语义】段落。",
+            "parameters": {"type": "object", "properties": {
+                "entity": {"type": "string", "description": "实体名，如 Project"},
+                "filters": {"type": "object", "description": "过滤条件，如 {contract_no:'xxx', status:'预警'}"}},
+                "required": ["entity"]}}},
+        {"type": "function", "function": {
+            "name": "ontology_act",
+            "description": "触发本体『动作』前先经护栏校验(validate_project_action)。只读评估是否可执行并返回拒绝原因，"
+                           "不直接写库。语义见【本体语义】段落。",
+            "parameters": {"type": "object", "properties": {
+                "action": {"type": "string", "description": "动作 id，如 recordReceipt"},
+                "project_id": {"type": "string", "description": "关联项目编号（用于取当前事实做护栏校验）"}},
+                "required": ["action"]}}},
+    ]
+
+
 def build_employee_tools(emp_id: str) -> list:
     """从 DB 读取 员工→技能→工具 三级关联，动态生成 OpenAI function schema。
     替代硬编码 BIZ_TOOLS：工具全部来自 mcp_tools 表（含 method/path/params_schema）。"""
     emp = db_get_employee(emp_id)
     if not emp:
         return []
+    if is_ontology_grounded(emp_id):
+        return _generic_ontology_tools()
     tools = []
     for mid in emp.get("mcp_tools", []):
         t = db_get_mcp_tool(mid)
@@ -662,6 +697,12 @@ async def execute_configured_tool(tool_id: str, args: dict) -> dict:
                         (json.loads(params) if isinstance(params, str) else params),
                     )
                 ),
+                "ontology_read": (
+                    lambda entity, filters=None, **kw: _oc.read_entity(entity, filters or {})
+                ),
+                "ontology_act": (
+                    lambda action, project_id=None, **kw: _oc.eval_action(action, project_id)
+                ),
             }
             fn = fn_map.get(tool_id)
             if not fn:
@@ -703,6 +744,27 @@ def build_employee_prompt(emp_id: str) -> str:
     if not emp:
         return ""
     tools = build_employee_tools(emp_id)
+    skills = db_list_skills()
+    skill_text = "；".join(
+        f"{s['name']}:{s.get('desc','')[:50]}" for s in skills if s["id"] in emp.get("skills", []))
+
+    # ★本体锚定员工：不列手写工具，改为注入【本体语义】段落，由本体驱动推理
+    if is_ontology_grounded(emp_id):
+        ont_block = build_ontology_context(emp_id)
+        return (f"你是「{emp['name']} {emp['id']}」数字员工。{emp.get('desc','')}\n"
+                f"你当前绑定的技能：{skill_text or '无'}\n"
+                f"你通过 3 个通用原语与本体交互（ontology_compute 计算 / ontology_read 查询 / ontology_act 触发动作），"
+                f"它们本身不携带业务含义，业务含义全部来自下方【本体语义】。\n"
+                f"{ont_block}\n"
+                f"工作方式：先理解需求 → 从【本体语义】中定位相关『函数/关系/动作』→ 用 ontology_compute / ontology_read 查询真实数据 "
+                f"→ 结合函数的『推理指引』自行统计、对比、推演 → 输出结论。"
+                f"涉及成本预警/利润/剩余时，一律以『有效成本 = 当前成本 + 预估成本』为准。\n"
+                f"做成本治理类分析（如『项目成本/利润/预估』『哪些项目风险高』『管控预估』）时，必须按【本体语义】的"
+                f"『成本口径核心推理·分析框架』逐项执行：①逐项目算 预算vs实际偏差（完成比/剩余/偏差率）并用表格列 Top 偏差；"
+                f"②区分『有预估(est_cost>0)』与『无预估(est_cost=0)』项目，给出两类数量与占比（无预估即成本可视性缺口）；"
+                f"③有预估项目用有效成本重算并核对 预估 vs 预算（est_cost 远超预算即失真，提示复核）；"
+                f"④结论落到『管控预估』：全量预估覆盖度、无预估须推动 PM 补工单预估、超支/预警给整改建议。\n"
+                f"输出要求：用 Markdown 中文输出；涉及表格用 Markdown 表格；金额保留整数加千分位；最后给简要结论。")
     lines = []
     for i, t in enumerate(tools, 1):
         fn = t["function"]
@@ -714,9 +776,6 @@ def build_employee_prompt(emp_id: str) -> str:
                 f"{k}={v.get('description','')}" for k, v in params.items()) + "）"
         lines.append(f"{i}. {name}：{fn['description']}{param_desc}")
     tool_text = "\n".join(lines) if lines else "（无可用工具）"
-    skills = db_list_skills()
-    skill_text = "；".join(
-        f"{s['name']}:{s.get('desc','')[:50]}" for s in skills if s["id"] in emp.get("skills", []))
     base_prompt = (f"你是「{emp['name']} {emp['id']}」数字员工。{emp.get('desc','')}\n"
                    f"你当前绑定的技能：{skill_text or '无'}\n"
                    f"你有以下原子工具（通过它们查询真实系统的数据，禁止编造数据）：\n{tool_text}\n"

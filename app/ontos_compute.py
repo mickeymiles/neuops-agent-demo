@@ -46,8 +46,13 @@ def compute(function: str, params: dict = None) -> dict:
 # 智能体经 ontology_compute 工具调用；数据/判定均出自共享 ontos 仓的 abox_cost 模块。
 ABOX_SCENARIO_FUNCTIONS = {
     'cost_warning_portfolio': '全量成本预警（读 md_contract，返回 summary+rows，'
-                              '支持 contract_no 参数查单项目）',
+                              '支持 contract_no 参数查单项目；已含预估口径：有效成本=当前成本+预估成本)',
     'cost_warning_all': 'cost_warning_portfolio 别名（9006 同名入口）',
+    'project_facts': '项目档案（读 md_contract）：档案列 + 预算/成本 + 本体预警判定，'
+                     '每条含 est_cost(预估成本)/wo_est_cost；支持 contract_no 查单项目',
+    'project_portfolio': '项目组合查询（条目 + 全库总数/截断标记/全量预警分布）；'
+                         '支持 contract_no/status 过滤，防把样本当全集',
+    'cost_detail': '成本明细：预算三分量 / 成本六分量 + 本体预警；支持 contract_no',
 }
 
 # 默认业务库路径：服务器上 9006 部署于本仓库同级 ../contract-compare/
@@ -101,6 +106,47 @@ def not_available(domain: str) -> dict:
     return abox().not_available(domain)
 
 
+def read_entity(entity: str, filters: dict = None) -> dict:
+    """本体 ABox 只读查询（供 ontology_read 原语）：按实体取真实事实。
+
+    entity='Project'：contract_no 给定查单项目(project_read)，否则返回组合(project_portfolio)。
+    其余实体暂未接入只读查询，提示改用 ontology_compute 调对应函数。
+    """
+    filters = filters or {}
+    pid = filters.get('contract_no') or filters.get('project_id')
+    if entity == 'Project':
+        if pid:
+            return {'success': True, 'entity': entity,
+                    'result': project_read(pid, limit=filters.get('limit'))}
+        return {'success': True, 'entity': entity,
+                'result': project_portfolio(status=filters.get('status'),
+                                            limit=int(filters.get('limit', 20) or 20))}
+    return {'success': False, 'entity': entity, 'error': 'entity_read_not_supported',
+            'message': f'实体 {entity} 的只读查询暂未接入；请用 ontology_compute 调用对应函数'}
+
+
+def eval_action(action: str, project_id: str = None) -> dict:
+    """本体动作护栏评估（供 ontology_act 原语）：只读校验是否可执行，不写库。
+
+    基于 validate_project_action 评估当前事实(ABox)下动作的前置条件/不变量，
+    返回 (executable, reasons)。确需执行须人工/流程确认。
+    """
+    db_path = _abox_db_path({})
+    if not os.path.exists(db_path):
+        return {'success': False, 'error': 'abox_db_not_found',
+                'message': f'业务库不存在：{db_path}'}
+    _ensure_ontos_importable()
+    from ontos import domain_business as biz
+    facts: dict = {}
+    if project_id:
+        rows = abox().project_facts(db_path, contract_no=project_id, limit=1)
+        if rows:
+            facts = rows[0]
+    ok, reasons = biz.validate_project_action(action, facts)
+    return {'success': True, 'action': action, 'executable': ok, 'reasons': reasons,
+            'note': '仅护栏评估，未写库；确需执行需人工/流程确认'}
+
+
 def _compute_abox(fn: str, params: dict) -> dict:
     """ABox 场景计算：调共享 ontos.abox_cost（读 SQLite 业务库 → F-* 判定）。"""
     db_path = _abox_db_path(params)
@@ -113,10 +159,26 @@ def _compute_abox(fn: str, params: dict) -> dict:
     _ensure_ontos_importable()
     from ontos import abox_cost
     try:
-        if fn == 'cost_warning_portfolio' or fn == 'cost_warning_all':
+        if fn in ('cost_warning_portfolio', 'cost_warning_all'):
             result = abox_cost.cost_warning_portfolio(
                 db_path, contract_no=params.get('contract_no') or None)
             return {'success': True, 'function': 'cost_warning_portfolio', 'result': result}
+        if fn == 'project_facts':
+            result = abox_cost.project_facts(
+                db_path, contract_no=params.get('contract_no') or None,
+                limit=params.get('limit'))
+            return {'success': True, 'function': 'project_facts', 'result': result}
+        if fn == 'project_portfolio':
+            result = abox_cost.project_portfolio(
+                db_path, contract_no=params.get('contract_no') or None,
+                status=params.get('status') or None,
+                limit=params.get('limit', 20), offset=params.get('offset', 0))
+            return {'success': True, 'function': 'project_portfolio', 'result': result}
+        if fn == 'cost_detail':
+            result = abox_cost.project_cost_detail(
+                db_path, contract_no=params.get('contract_no') or None,
+                limit=params.get('limit'))
+            return {'success': True, 'function': 'cost_detail', 'result': result}
         return {'success': False, 'function': fn, 'error': 'unknown_abox_function'}
     except Exception as e:
         return {'success': False, 'function': fn, 'error': type(e).__name__,
